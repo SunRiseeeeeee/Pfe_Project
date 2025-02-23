@@ -1,23 +1,25 @@
+// UserService
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User, { IUser, UserRole } from "../models/User";
 
 export class UserService {
-  static async createUser(username: string, password: string, role: UserRole): Promise<IUser> {
-    const existingUser = await User.findOne({ username });
+  static async createUser(username: string, email: string, password: string, role: UserRole): Promise<IUser> {
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      throw new Error("L'utilisateur existe déjà");
+      throw new Error("L'email est déjà utilisé");
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ username, password: hashedPassword, role });
+    const newUser = new User({ username, email, password: hashedPassword, role });
     await newUser.save();
     return newUser;
   }
 
-  // Cette méthode ne prend plus un 'role' en paramètre
-  static async authenticateUser(username: string, password: string): Promise<string> {
-    const user = await User.findOne({ username }); // On ne cherche plus par 'role'
+  static async authenticateUser(usernameOrEmail: string, password: string): Promise<string> {
+    const user = await User.findOne({
+      $or: [{ username: usernameOrEmail }, { email: usernameOrEmail }]
+    });
     if (!user) throw new Error("Utilisateur non trouvé");
 
     const isMatch = await bcrypt.compare(password, user.password);

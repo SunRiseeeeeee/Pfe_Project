@@ -15,12 +15,12 @@ export interface IUser extends Document {
 const UserSchema: Schema = new Schema({
     username: { type: String, required: true, unique: true },
     email: {
-        type: String,
-        unique: true,
-        required: true,
-        match: /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, // Validation regex pour un format d'email valide
-      },
-      
+      type: String,
+      unique: true,
+      required: true,
+      match: /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, // Validation regex
+    }
+    ,
     password: { type: String, required: true },
     role: { type: String, enum: Object.values(UserRole), required: true },
   });
