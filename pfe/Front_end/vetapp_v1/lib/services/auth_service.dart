@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 
 class AuthService {
-  static const String baseUrl = 'http://192.168.188.159:3000/auth/secretary/login';
+  static const String baseUrl = 'http://192.168.188.159:3000/api/auth/login/secretaire';
   final Dio _dio = Dio();
 
   Future<bool> login(String username, String password, String email) async {
