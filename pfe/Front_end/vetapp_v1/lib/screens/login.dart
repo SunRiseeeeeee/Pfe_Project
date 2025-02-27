@@ -1,74 +1,79 @@
 import 'package:flutter/material.dart';
-import 'package:vetapp_v1/services/auth_service.dart'; // Import the AuthService
+import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService class
 
-class LoginScreen extends StatefulWidget {
-  @override
-  _LoginScreenState createState() => _LoginScreenState();
+void main() {
+  runApp(LoginScreen());
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class LoginScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Flutter Login Demo',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: LoginPage(),
+    );
+  }
+}
+
+class LoginPage extends StatefulWidget {
+  @override
+  _LoginPageState createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final AuthService _authService = AuthService(); // Create an instance of AuthService
+  final AuthService _authService = AuthService();
 
-  void _loginUser() async {
-    String username = _usernameController.text.trim();
-    String password = _passwordController.text.trim();
-    String email = _emailController.text.trim();
+  String _message = '';
 
-    if (username.isNotEmpty && password.isNotEmpty && email.isNotEmpty) {
-      bool isLoggedIn = await _authService.login(username, password, email);
+  // Updated login function
+  Future<void> _login() async {
+    String username = _usernameController.text;
+    String password = _passwordController.text;
 
-      if (isLoggedIn) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login Successful!')),
-        );
-        Navigator.pushReplacementNamed(context, '/home'); // Navigate to home
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invalid credentials')),
-        );
-      }
+    // Call the login function with username and password only
+    Map<String, dynamic> response = await _authService.login(username, password);
+
+    if (response["success"]) {
+      setState(() {
+        _message = "Login Successful!";
+      });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please fill in all fields')),
-      );
+      setState(() {
+        _message = response["message"];
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Login'),
-      ),
+      appBar: AppBar(title: Text('Login')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextField(
               controller: _usernameController,
               decoration: InputDecoration(labelText: 'Username'),
             ),
-            SizedBox(height: 16),
-            TextField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: InputDecoration(labelText: 'Email'),
-            ),
-            SizedBox(height: 16),
+            SizedBox(height: 10),
             TextField(
               controller: _passwordController,
-              obscureText: true,
               decoration: InputDecoration(labelText: 'Password'),
+              obscureText: true,
             ),
-            SizedBox(height: 24),
+            SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _loginUser,
+              onPressed: _login,
               child: Text('Login'),
             ),
+            SizedBox(height: 20),
+            Text(_message, style: TextStyle(fontSize: 16, color: Colors.red)),
           ],
         ),
       ),

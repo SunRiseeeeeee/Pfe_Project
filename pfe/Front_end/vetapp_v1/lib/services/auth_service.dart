@@ -1,32 +1,50 @@
 import 'package:dio/dio.dart';
 
 class AuthService {
-  static const String baseUrl = 'http://192.168.188.159:3000/api/auth/login/secretaire';
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(
+    BaseOptions(
+      baseUrl: "http://192.168.1.18:3000/api/auth", // Use machine's IP
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
+    ),
+  );
 
-  Future<bool> login(String username, String password, String email) async {
+  /// Login method for the secretary
+  Future<Map<String, dynamic>> login(String username, String password) async {
     try {
-      Map<String, dynamic> data = {
-        'username': username,
-        'password': password,
-        'email': email,
-      };
-
+      // Send a POST request to the specific endpoint for secretary login
       Response response = await _dio.post(
-        baseUrl,
-        data: data,
+        "/login/secretaire", // Adjusted endpoint for secretary login
+        data: {
+          "username": username,
+          "password": password,
+        },
       );
 
-      if (response.statusCode == 200) {
-        print('Login Successful: ${response.data}');
-        return true;
+      // Print debug information
+      print("Response status: ${response.statusCode}");
+      print("Response data: ${response.data}");
+
+      // Check if the response contains a token
+      if (response.statusCode == 200 && response.data['token'] != null) {
+        return {
+          "success": true,
+          "message": response.data['message'],
+          "token": response.data['token'], // Return the JWT token
+        };
       } else {
-        print('Login Failed: ${response.statusCode} - ${response.data}');
-        return false;
+        return {
+          "success": false,
+          "message": "Unexpected response from server",
+        };
       }
-    } catch (e) {
-      print('Error during login: $e');
-      return false;
+    } on DioException catch (e) {
+      // Handle errors (e.g., invalid credentials, network issues)
+      print("Error occurred: ${e.message}");
+      return {
+        "success": false,
+        "message": e.response?.data["message"] ?? "Login failed",
+      };
     }
   }
 }
