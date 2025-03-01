@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:vetapp_v1/screens/home_screen.dart';
+import 'package:vetapp_v1/screens/signup.dart';
+
 import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService class
 
 void main() {
@@ -28,7 +31,7 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
 
-  String _message = '';
+  String _errorMessage = ''; // To display error messages
 
   // Updated login function
   Future<void> _login() async {
@@ -39,12 +42,15 @@ class _LoginPageState extends State<LoginPage> {
     Map<String, dynamic> response = await _authService.login(username, password);
 
     if (response["success"]) {
-      setState(() {
-        _message = "Login Successful!";
-      });
+      // Navigate to the HomePage on successful login
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => HomeScreen()),
+      );
     } else {
+      // Show an error message if login fails
       setState(() {
-        _message = response["message"];
+        _errorMessage = response["message"] ?? "Login failed";
       });
     }
   }
@@ -56,6 +62,7 @@ class _LoginPageState extends State<LoginPage> {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextField(
               controller: _usernameController,
@@ -72,8 +79,31 @@ class _LoginPageState extends State<LoginPage> {
               onPressed: _login,
               child: Text('Login'),
             ),
-            SizedBox(height: 20),
-            Text(_message, style: TextStyle(fontSize: 16, color: Colors.red)),
+            if (_errorMessage.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: Text(
+                  _errorMessage,
+                  style: TextStyle(fontSize: 16, color: Colors.red),
+                ),
+              ),
+            SizedBox(height: 20), // Add spacing before the Sign Up link
+            TextButton(
+              onPressed: () {
+                // Navigate to the SignUpPage when the link is tapped
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SignUpPage()),
+                );
+              },
+              child: Text(
+                "Don't have an account? Sign Up",
+                style: TextStyle(
+                  color: Colors.blue, // Link color
+                  decoration: TextDecoration.underline, // Underline for link appearance
+                ),
+              ),
+            ),
           ],
         ),
       ),
