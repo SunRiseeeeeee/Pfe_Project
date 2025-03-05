@@ -15,8 +15,8 @@ app.use(express.json());
 
 // Connexion à MongoDB
 connectDB()
-  .then(() => console.log("✅ MongoDB connecté avec succès"))
-  .catch((err) => console.error("❌ Erreur de connexion MongoDB :", err));
+  
+  .catch((err) => console.error(" Erreur de connexion MongoDB :", err));
 
 // Routes API
 app.use("/api/auth", authRoutes);
@@ -24,10 +24,10 @@ app.use("/api/users", crudRoutes); // Ajout des routes utilisateur
 
 // Middleware de gestion des erreurs globales
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error("💥 Erreur détectée :", err.message);
+  console.error(" Erreur détectée :", err.message);
   res.status(err.status || 500).json({ message: err.message || "Erreur interne du serveur" });
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Serveur démarré sur http://localhost:${port}`);
+  console.log(` Serveur démarré sur http://localhost:${port}`);
 });

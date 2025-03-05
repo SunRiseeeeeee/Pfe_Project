@@ -7,7 +7,7 @@ export const SignupClient = async (req: Request, res: Response): Promise<void> =
   const { firstName, lastName, username, email, password, phoneNumber, profilePicture, location } = req.body;
   try {
     const user = await UserService.createUser(firstName, lastName, username, email, password, phoneNumber, UserRole.CLIENT, { profilePicture, location });
-    res.status(201).json({ message: "Client inscrit avec succès", user });
+    res.status(201).json({ message: "Client inscrit avec succès"});
   } catch (error: unknown) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Erreur d'inscription" });
   }
@@ -40,7 +40,7 @@ export const SignupVeterinaire = async (req: Request, res: Response): Promise<vo
       }
     );
 
-    res.status(201).json({ message: "Vétérinaire inscrit avec succès", user });
+    res.status(201).json({ message: "Vétérinaire inscrit avec succès"});
   } catch (error: unknown) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Erreur d'inscription" });
   }
@@ -56,7 +56,7 @@ export const SignupSecretaire = async (req: Request, res: Response): Promise<voi
       details: { workingHours },
     });
 
-    res.status(201).json({ message: "Secrétaire inscrite avec succès", user });
+    res.status(201).json({ message: "Secrétaire inscrite avec succès"});
   } catch (error: unknown) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Erreur d'inscription" });
   }
@@ -67,7 +67,7 @@ export const SignupAdmin = async (req: Request, res: Response): Promise<void> =>
   const { firstName, lastName, username, email, password, phoneNumber } = req.body;
   try {
     const user = await UserService.createUser(firstName, lastName, username, email, password, phoneNumber, UserRole.ADMIN);
-    res.status(201).json({ message: "Admin inscrit avec succès", user });
+    res.status(201).json({ message: "Admin inscrit avec succès"});
   } catch (error: unknown) {
     res.status(400).json({ message: error instanceof Error ? error.message : "Erreur d'inscription" });
   }
