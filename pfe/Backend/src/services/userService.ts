@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User, { IUser, UserRole } from "../models/User";
+import mongoose from "mongoose";
 
 // Définir un type précis pour les détails supplémentaires
 interface ExtraDetails {
@@ -10,7 +11,7 @@ interface ExtraDetails {
     specialty?: string;
     workingHours?: string;
   };
-  reviews?: any[]; // Ajout de la propriété reviews
+  reviews?: any[];
 }
 
 export class UserService {
@@ -23,19 +24,15 @@ export class UserService {
     password: string,
     phoneNumber: string,
     role: UserRole,
-    extraDetails: ExtraDetails = {} // Valeur par défaut pour éviter "undefined"
+    extraDetails: ExtraDetails = {}
   ): Promise<IUser> {
-    
-    // Vérification si l'email ou le numéro de téléphone existent déjà
     const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
     if (existingUser) {
       throw new Error("L'email ou le numéro de téléphone est déjà utilisé");
     }
 
-    // Hachage du mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Création de l'utilisateur avec les champs supplémentaires
     const newUser = new User({
       firstName,
       lastName,
@@ -46,57 +43,101 @@ export class UserService {
       role,
       profilePicture: extraDetails.profilePicture || null,
       location: extraDetails.location || null,
-      details: extraDetails.details || {}, // S'assurer que `details` est un objet vide par défaut
-      reviews: extraDetails.reviews || [] // Initialisation de reviews avec un tableau vide
+      details: extraDetails.details || {},
+      reviews: extraDetails.reviews || [],
+      refreshToken: null,
     });
 
     await newUser.save();
     return newUser;
   }
 
-  // 🔑 Authentification de l'utilisateur
-  static async authenticateUser(username: string, password: string): Promise<string> {
-    
-    // Recherche d'un utilisateur par son nom d'utilisateur
+  // 🔑 Authentification de l'utilisateur avec refresh token
+  static async authenticateUser(username: string, password: string) {
     const user = await User.findOne({ username });
-
     if (!user) throw new Error("Utilisateur non trouvé");
 
-    // Vérification du mot de passe
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new Error("Identifiants invalides");
 
-    // Génération du token JWT
+    const accessToken = UserService.generateAccessToken(user.id, user.role);
+    const refreshToken = UserService.generateRefreshToken(user.id);
+
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    return { accessToken, refreshToken };
+  }
+
+  // 🔄 Rafraîchir le token
+  static async refreshAccessToken(refreshToken: string) {
+    if (!refreshToken) throw new Error("Refresh token requis");
+
+    const user = await User.findOne({ refreshToken });
+    if (!user) throw new Error("Token invalide ou expiré");
+
+    try {
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || "refresh_secret") as { id: string };
+      const newAccessToken = UserService.generateAccessToken(decoded.id, user.role);
+      return { accessToken: newAccessToken };
+    } catch (error) {
+      throw new Error("Refresh token invalide");
+    }
+  }
+
+  // ❌ Déconnexion (suppression du refresh token)
+  static async logoutUser(userId: string) {
+    await User.findByIdAndUpdate(userId, { refreshToken: null });
+  }
+
+  // 🔑 Génération d'un access token
+  static generateAccessToken(userId: string, role: UserRole) {
     return jwt.sign(
-      { id: user.id, role: user.role },
-      process.env.JWT_SECRET || "secret", // Utiliser un secret sécurisé en production
+      { id: userId, role },
+      process.env.JWT_SECRET || "secret",
       { expiresIn: "1h" }
     );
   }
 
-  // 📝 Modifier les coordonnées d'un utilisateur
-  static async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
-    return await User.findByIdAndUpdate(userId, updateData, { new: true, runValidators: true });
+  // 🔄 Génération d'un refresh token
+  static generateRefreshToken(userId: string) {
+    return jwt.sign(
+      { id: userId },
+      process.env.JWT_REFRESH_SECRET || "refresh_secret",
+      { expiresIn: "7d" }
+    );
   }
 
-  // ❌ Supprimer un compte utilisateur
-  static async deleteUser(userId: string): Promise<IUser | null> {
-    return await User.findByIdAndDelete(userId);
-  }
-
-  // 📋 Obtenir tous les utilisateurs d'un rôle spécifique
-  static async getUsersByRole(role: UserRole): Promise<IUser[]> {
-    return await User.find({ role });
-  }
-
-  // 🔍 Récupérer un utilisateur par son ID
+  // 🟢 Récupérer un utilisateur par son ID
   static async getUserById(userId: string): Promise<IUser | null> {
-    try {
-      // Utilisation de Mongoose pour trouver l'utilisateur par son ID
-      const user = await User.findById(userId);
-      return user;
-    } catch (error) {
-      throw new Error("Erreur lors de la récupération de l'utilisateur");
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error("ID utilisateur invalide");
     }
+    const user = await User.findById(userId);
+    return user;
+  }
+
+  // 🟢 Mettre à jour un utilisateur
+  static async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error("ID utilisateur invalide");
+    }
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true });
+    return updatedUser;
+  }
+
+  // 🟢 Supprimer un utilisateur
+  static async deleteUser(userId: string): Promise<IUser | null> {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error("ID utilisateur invalide");
+    }
+    const deletedUser = await User.findByIdAndDelete(userId);
+    return deletedUser;
+  }
+
+  // 🟢 Récupérer les utilisateurs par rôle
+  static async getUsersByRole(role: UserRole): Promise<IUser[]> {
+    const users = await User.find({ role });
+    return users;
   }
 }

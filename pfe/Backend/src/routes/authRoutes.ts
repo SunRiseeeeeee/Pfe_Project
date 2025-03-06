@@ -4,10 +4,9 @@ import {
   SignupSecretaire,
   SignupVeterinaire,
   SignupAdmin,
-  LoginClient,
-  LoginVeterinaire,
-  LoginAdmin,
-  LoginSecretaire,
+  Login,
+  RefreshAccessToken,
+  Logout,
 } from "../controllers/authController";
 
 const router = Router();
@@ -18,10 +17,13 @@ router.post("/signup/secretaire", SignupSecretaire);
 router.post("/signup/veterinaire", SignupVeterinaire);
 router.post("/signup/admin", SignupAdmin);
 
-// Routes de login
-router.post("/login/client", LoginClient);
-router.post("/login/veterinaire", LoginVeterinaire);
-router.post("/login/admin", LoginAdmin);
-router.post("/login/secretaire", LoginSecretaire);
+// Route de login
+router.post("/login", Login);
+
+// Route pour rafraîchir le token d'accès
+router.post("/refresh-token", RefreshAccessToken);
+
+// Route pour la déconnexion
+router.post("/logout", Logout);
 
 export default router;
