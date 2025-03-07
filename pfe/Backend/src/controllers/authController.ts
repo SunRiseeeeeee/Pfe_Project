@@ -58,22 +58,25 @@ export const RefreshAccessToken = async (req: Request, res: Response): Promise<v
   }
 };
 
-// Déconnexion
 export const Logout = async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
+
+  // Vérifier si le refreshToken est fourni
   if (!refreshToken) {
     res.status(400).json({ message: "Refresh token requis" });
     return;
   }
 
   try {
+    // Appeler la méthode logoutUser de UserService
     await UserService.logoutUser(refreshToken);
     res.json({ message: "Déconnexion réussie" });
   } catch (error: unknown) {
-    res.status(400).json({ message: error instanceof Error ? error.message : "Échec de la déconnexion" });
+    // Gérer les erreurs de manière propre
+    const errorMessage = error instanceof Error ? error.message : "Échec de la déconnexion";
+    res.status(400).json({ message: errorMessage });
   }
 };
-
 
 
 // Récupérer les utilisateurs par rôle

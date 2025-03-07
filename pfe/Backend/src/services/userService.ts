@@ -86,10 +86,19 @@ export class UserService {
   }
 
   // ❌ Déconnexion (suppression du refresh token)
-  static async logoutUser(userId: string) {
-    await User.findByIdAndUpdate(userId, { refreshToken: null });
+  static async logoutUser(refreshToken: string): Promise<void> {
+    // Rechercher l'utilisateur par refreshToken
+    const user = await User.findOne({ refreshToken });
+  
+    // Si l'utilisateur n'est pas trouvé, lever une erreur
+    if (!user) {
+      throw new Error("Utilisateur non trouvé");
+    }
+  
+    // Invalider le refreshToken en le supprimant
+    user.refreshToken = null;
+    await user.save();
   }
-
   // 🔑 Génération d'un access token
   static generateAccessToken(userId: string, role: UserRole) {
     return jwt.sign(
