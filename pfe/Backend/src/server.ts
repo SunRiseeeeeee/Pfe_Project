@@ -4,6 +4,7 @@ import cors from "cors";
 import connectDB from "./config/db";
 import authRoutes from "./routes/authRoutes";
 import crudRoutes from "./routes/crudRoutes"; // Ajout des routes utilisateur
+import { setupSwagger } from "./swaggerConfig";
 
 dotenv.config();
 const app = express();
@@ -21,6 +22,10 @@ connectDB()
 // Routes API
 app.use("/api/auth", authRoutes);
 app.use("/api/users", crudRoutes); // Ajout des routes utilisateur
+
+setupSwagger(app); // 🔥 Add Swagger
+
+
 
 // Middleware de gestion des erreurs globales
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
