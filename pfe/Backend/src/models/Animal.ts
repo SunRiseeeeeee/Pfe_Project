@@ -1,42 +1,32 @@
 import mongoose, { Schema, Document } from "mongoose";
 
-
-
-// Interface TypeScript pour un utilisateur
+// Interface TypeScript pour un Animal
 export interface IAnimal extends Document {
-  Name: string;
-  Picture?: string;
-  Breed?: string;
-  Gender?: string;
-  BirthDate?: string;
-  details?: {
-    Weight?: string;
-    Vaccinations?: string;
-    MedicalHistory?: string;
-    OngoingTreatments?: string;
-    ChronicProblems?: string;
-    SurgicalHistory?: string;   
-    LastAppointmentDate?: string;
-  };
+  name: string; // Nom de l'animal
+  picture?: string; // Photo de l'animal (optionnelle)
+  breed?: string; // Race de l'animal (optionnelle)
+  gender?: "Male" | "Female"; // Genre de l'animal (optionnel)
+  birthDate?: Date; // Date de naissance de l'animal (optionnelle)
+  owner: mongoose.Schema.Types.ObjectId; // Référence à l'utilisateur propriétaire
 }
 
 // Définition du schéma Mongoose
 const AnimalSchema: Schema = new Schema({
-  firstName: { type: String, required: true },
-  Picture: { type: String, default: null },
-  Breed: { type: String },
-  Gender: { type: String },
-  BirthDate: { type: String },
-  
-  details: {
-    Weight: { type: String, default: null },
-    Vaccinations: { type: String, default: null },
-    MedicalHistory: { type: String, default: null },
-    OngoingTreatments: { type: String, default: null },
-    ChronicProblems: { type: String, default: null },
-    SurgicalHistory: { type: String, default: null },
-    LastAppointmentDate: { type: String, default: null },
-  },
+  name: { type: String, required: true }, // Nom de l'animal (obligatoire)
+  picture: { type: String, default: null }, // Photo de l'animal (optionnelle)
+  breed: { type: String }, // Race de l'animal (optionnelle)
+  gender: { 
+    type: String, 
+    enum: ["Male", "Female"], // Restreint les valeurs à "Male" ou "Female"
+    default: null, 
+  }, // Genre de l'animal (optionnel)
+  birthDate: { type: Date }, // Date de naissance de l'animal (optionnelle)
+  owner: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: "User", // Référence à un modèle "User"
+    required: true, 
+  }, // Référence à l'utilisateur propriétaire (obligatoire)
 });
 
-export default mongoose.model<IAnimal>("User", AnimalSchema);
+// Création du modèle Mongoose
+export default mongoose.model<IAnimal>("Animal", AnimalSchema);
