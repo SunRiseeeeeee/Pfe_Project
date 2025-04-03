@@ -36,11 +36,16 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
 
   try {
     const { accessToken, refreshToken } = await UserService.authenticateUser(username, password);
+    
+    // 🟢 Console log pour afficher les tokens dans le terminal
+    console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
+
     res.json({ message: "Connexion réussie", accessToken, refreshToken });
   } catch (error: unknown) {
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec de l'authentification" });
   }
 };
+
 
 // Rafraîchir le token d'accès
 export const RefreshAccessToken = async (req: Request, res: Response): Promise<void> => {

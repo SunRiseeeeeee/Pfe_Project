@@ -54,20 +54,23 @@ export class UserService {
 
   // 🔑 Authentification de l'utilisateur avec refresh token
   static async authenticateUser(username: string, password: string) {
-    const user = await User.findOne({ username });
+    const user = await User.findOne({ username }).select("+password"); // 🔹 Ajout du select pour récupérer le password
     if (!user) throw new Error("Utilisateur non trouvé");
-
+  
+    console.log("🛠️ Debug - Utilisateur trouvé :", user); // Vérifier si l'utilisateur a bien un password
+  
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new Error("Identifiants invalides");
-
+  
     const accessToken = UserService.generateAccessToken(user.id, user.role);
     const refreshToken = UserService.generateRefreshToken(user.id);
-
+  
     user.refreshToken = refreshToken;
     await user.save();
-
+  
     return { accessToken, refreshToken };
   }
+  
 
   // 🔄 Rafraîchir le token
   static async refreshAccessToken(refreshToken: string) {
@@ -104,10 +107,14 @@ export class UserService {
     return jwt.sign(
       { id: userId, role },
       process.env.JWT_SECRET || "secret",
-      { expiresIn: "1h" }
+      {
+        expiresIn: "1h",
+        audience: "myapp.com", // Ajout de l'audience
+        subject: userId, // Ajout du sujet
+      }
     );
   }
-
+  
   // 🔄 Génération d'un refresh token
   static generateRefreshToken(userId: string) {
     return jwt.sign(
