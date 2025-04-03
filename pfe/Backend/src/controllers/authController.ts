@@ -78,3 +78,14 @@ export const Logout = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+
+// Récupérer les utilisateurs par rôle
+export const getUsersByRole = async (req: Request, res: Response): Promise<void> => {
+  const { role } = req.params;
+  try {
+    const users = await UserService.getUsersByRole(role as UserRole);
+    res.json(users);
+  } catch (error: unknown) {
+    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur lors de la récupération des utilisateurs" });
+  }
+};

@@ -1,5 +1,12 @@
 import Animal, { IAnimal } from "../models/Animal";
 
+
+
+
+// Vérifie si un utilisateur possède déjà un animal avec un certain nom
+export const getAnimalByName = async (userId: string, name: string) => {
+  return await Animal.findOne({ owner: userId, name });
+};
 /**
  * 📌 Ajouter un animal pour un utilisateur
  */

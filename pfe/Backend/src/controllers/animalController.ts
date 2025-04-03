@@ -1,12 +1,21 @@
 import { Request, Response } from "express";
 import * as animalService from "../services/animalService";
 
-// 📌 Ajouter un animal
 export const createAnimal = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    const { name } = req.body;
+
+    // Vérifier si l'utilisateur possède déjà un animal avec ce nom
+    const existingAnimal = await animalService.getAnimalByName(userId, name);
+    if (existingAnimal) {
+      res.status(400).json({ message: `Un animal nommé "${name}" existe déjà pour cet utilisateur.` });
+      return;
+    }
+
+    // Créer l'animal si le nom est unique pour cet utilisateur
     const newAnimal = await animalService.createAnimal(userId, req.body);
-    res.status(201).json(newAnimal); // Send response here
+    res.status(201).json(newAnimal);
   } catch (error) {
     res.status(500).json({ message: "Erreur lors de l'ajout de l'animal", error });
   }

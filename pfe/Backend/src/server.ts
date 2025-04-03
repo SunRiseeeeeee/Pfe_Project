@@ -6,6 +6,7 @@ import authRoutes from "./routes/authRoutes";
 import crudRoutes from "./routes/crudRoutes"; // Ajout des routes utilisateur
 import { setupSwagger } from "./swaggerConfig";
 import animalRoutes from "./routes/animalRoutes";
+import appointmentRoutes from "./routes/appointmentRoutes";
 
 dotenv.config();
 const app = express();
@@ -23,7 +24,8 @@ connectDB()
 // Routes API
 app.use("/api/auth", authRoutes);
 app.use("/api/users", crudRoutes); // Ajout des routes utilisateur
-app.use("/api", animalRoutes);
+app.use("/api/users", animalRoutes);
+app.use("/api/appointments", appointmentRoutes); // Ajout des routes rendez-vous
 
 setupSwagger(app); // 🔥 Add Swagger
 

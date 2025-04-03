@@ -23,26 +23,33 @@ export interface IUser extends Document {
     workingHours?: string;
   };
   reviews?: any[];
-  refreshToken?: string | null; // ✅ Ajout de refreshToken
+  refreshToken?: string | null; // Token de rafraîchissement pour JWT
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // Définition du schéma Mongoose
-const UserSchema: Schema = new Schema({
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  username: { type: String, required: true, unique: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  phoneNumber: { type: String, required: true, unique: true },
-  role: { type: String, enum: Object.values(UserRole), required: true },
-  profilePicture: { type: String, default: null },
-  location: { type: String, default: null },
-  details: {
-    specialty: { type: String, default: null },
-    workingHours: { type: String, default: null },
+const UserSchema: Schema = new Schema(
+  {
+    firstName: { type: String, required: true },
+    lastName: { type: String, required: true },
+    username: { type: String, required: true, unique: true, trim: true },
+    email: { type: String, required: true, unique: true, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
+    password: { type: String, required: true, select: false }, // `select: false` empêche l'affichage du mot de passe par défaut
+    phoneNumber: { type: String, required: true, unique: true, trim: true },
+    role: { type: String, enum: Object.values(UserRole), required: true },
+    profilePicture: { type: String, default: null },
+    location: { type: String, default: null },
+    details: {
+      specialty: { type: String, default: null },
+      workingHours: { type: String, default: null },
+    },
+    reviews: { type: Array, default: [] },
+    refreshToken: { type: String, default: null, select: false }, // `select: false` pour ne pas exposer le refreshToken
   },
-  reviews: { type: Array, default: [] },
-  refreshToken: { type: String, default: null }, // ✅ Ajout du refreshToken dans Mongoose
-});
+  {
+    timestamps: true, // Ajoute automatiquement createdAt et updatedAt
+  }
+);
 
 export default mongoose.model<IUser>("User", UserSchema);

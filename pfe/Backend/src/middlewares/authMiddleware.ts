@@ -1,18 +1,29 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import express from "express";
 
-export const verifyToken = (req: Request, res: Response, next: NextFunction) => {
-    const token = req.header("Authorization")?.split(" ")[1]; // Extract token from "Bearer <token>"
+export interface AuthRequest extends Request {
+  user?: any;
+}
 
-    if (!token) {
-        return res.status(401).json({ message: "Accès refusé, token manquant" });
-    }
+export const authenticateToken: express.RequestHandler = (
+  req: AuthRequest, 
+  res: Response, 
+  next: NextFunction
+) => {
+  const token = req.header("Authorization")?.replace("Bearer ", "");
 
-    try {
-        const verified = jwt.verify(token, process.env.JWT_SECRET || "secret");
-        (req as any).user = verified; // Store user info in request
-        next();
-    } catch (error) {
-        res.status(403).json({ message: "Token invalide ou expiré" });
-    }
+  if (!token) {
+    res.status(401).json({ message: "Accès interdit, token manquant" });
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(403).json({ message: "Accès interdit, token invalide" });
+    return;
+  }
 };
