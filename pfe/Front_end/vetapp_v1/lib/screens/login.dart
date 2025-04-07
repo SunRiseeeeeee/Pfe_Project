@@ -1,25 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:vetapp_v1/screens/home_screen.dart';
-import 'package:vetapp_v1/screens/signup.dart';
-
-import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService class
-
-void main() {
-  runApp(LoginScreen());
-}
-
-class LoginScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Login Demo',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: LoginPage(),
-    );
-  }
-}
+import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService
+import 'home_screen.dart'; // Import your HomeScreen
+import 'signup.dart'; // Import your SignupPage if needed
 
 class LoginPage extends StatefulWidget {
   @override
@@ -27,30 +9,51 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  // Controllers for input fields
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+
+  // Authentication service instance
   final AuthService _authService = AuthService();
 
-  String _errorMessage = ''; // To display error messages
+  // Error message to display
+  String _errorMessage = '';
 
-  // Updated login function
+  // Function to handle login
   Future<void> _login() async {
-    String username = _usernameController.text;
-    String password = _passwordController.text;
+    String username = _usernameController.text.trim();
+    String password = _passwordController.text.trim();
 
-    // Call the login function with username and password only
-    Map<String, dynamic> response = await _authService.login(username, password);
-
-    if (response["success"]) {
-      // Navigate to the HomePage on successful login
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
-      );
-    } else {
-      // Show an error message if login fails
+    // Validate input
+    if (username.isEmpty || password.isEmpty) {
       setState(() {
-        _errorMessage = response["message"] ?? "Login failed";
+        _errorMessage = "Username and password are required";
+      });
+      return;
+    }
+
+    try {
+      // Call the login function with username and password
+      Map<String, dynamic> response = await _authService.login(username, password);
+
+      if (response["success"]) {
+        // Navigate to the HomePage without passing userName
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => HomeScreen(), // No parameters passed here
+          ),
+        );
+      } else {
+        // Show an error message if login fails
+        setState(() {
+          _errorMessage = response["message"];
+        });
+      }
+    } catch (error) {
+      // Handle unexpected errors
+      setState(() {
+        _errorMessage = "An error occurred. Please try again.";
       });
     }
   }
@@ -58,39 +61,106 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Login')),
+      backgroundColor: Colors.purple,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            TextField(
-              controller: _usernameController,
-              decoration: InputDecoration(labelText: 'Username'),
+            // App Title
+            Text(
+              'VetApp',
+              style: TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
             SizedBox(height: 10),
-            TextField(
-              controller: _passwordController,
-              decoration: InputDecoration(labelText: 'Password'),
-              obscureText: true,
+            Text(
+              'Login',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
             SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _login,
-              child: Text('Login'),
+
+            // Username Field
+            TextField(
+              controller: _usernameController,
+              style: TextStyle(color: Colors.black),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'Username',
+                hintStyle: TextStyle(color: Colors.grey),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.purple),
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+              ),
             ),
+            SizedBox(height: 10),
+
+            // Password Field
+            TextField(
+              controller: _passwordController,
+              obscureText: true,
+              style: TextStyle(color: Colors.black),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                hintText: 'Password',
+                hintStyle: TextStyle(color: Colors.grey),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.purple),
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+              ),
+            ),
+            SizedBox(height: 20),
+
+            // Login Button
+            Container(
+              width: 200,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _login,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[600],
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                ),
+                child: Text('Login', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+
+            // Error Message
             if (_errorMessage.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 20),
                 child: Text(
                   _errorMessage,
-                  style: TextStyle(fontSize: 16, color: Colors.red),
+                  style: TextStyle(fontSize: 16, color: Colors.red[200]),
                 ),
               ),
-            SizedBox(height: 20), // Add spacing before the Sign Up link
+
+            SizedBox(height: 20),
+
+            // Sign Up Link
             TextButton(
               onPressed: () {
-                // Navigate to the SignUpPage when the link is tapped
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => SignUpPage()),
@@ -99,8 +169,8 @@ class _LoginPageState extends State<LoginPage> {
               child: Text(
                 "Don't have an account? Sign Up",
                 style: TextStyle(
-                  color: Colors.blue, // Link color
-                  decoration: TextDecoration.underline, // Underline for link appearance
+                  color: Colors.white,
+                  decoration: TextDecoration.underline,
                 ),
               ),
             ),
