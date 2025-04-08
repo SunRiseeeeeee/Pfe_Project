@@ -60,7 +60,7 @@ class _SignUpPageState extends State<SignUpPage> {
         password: password,
         phoneNumber: phoneNumber,
         profilePicture: "", // Optional field
-        location: location,
+        location: location.isNotEmpty ? location : null,
         specialty: specialty.isNotEmpty ? specialty : null,
         workingHours: workingHours.isNotEmpty ? workingHours : null,
         role: "CLIENT", // Default role, or you can make this dynamic
@@ -78,13 +78,14 @@ class _SignUpPageState extends State<SignUpPage> {
       } else {
         // Show an error message if registration fails
         setState(() {
-          _errorMessage = response["message"];
+          _errorMessage = response["message"] ?? "Registration failed";
         });
       }
     } catch (error) {
-      // Handle unexpected errors
+      // Log the actual error and display it to the user
+      print("Error during sign-up: $error");
       setState(() {
-        _errorMessage = "An error occurred. Please try again.";
+        _errorMessage = error.toString(); // Show the actual error message
       });
     }
   }
@@ -334,7 +335,6 @@ class _SignUpPageState extends State<SignUpPage> {
                     style: TextStyle(fontSize: 16, color: Colors.red[200]),
                   ),
                 ),
-
               SizedBox(height: 20),
 
               // Login Link

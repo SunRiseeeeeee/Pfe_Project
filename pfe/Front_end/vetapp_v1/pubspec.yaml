@@ -66,6 +66,15 @@ flutter:
    - assets/images/manage_health.png
    - assets/images/facebook1.png
    - assets/images/google2.png
+   - assets/images/discover.jpg
+   - assets/images/discover2.jpg
+   - assets/images/discover3.jpg
+   - assets/images/grooming.jpg
+   - assets/images/training.jpg
+   - assets/images/vac.jpg
+   - assets/images/vaccination.webp
+   - assets/images/walking.jpg
+   - assets/images/vet2.jpg
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see
