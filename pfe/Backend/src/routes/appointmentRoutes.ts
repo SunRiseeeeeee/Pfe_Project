@@ -1,8 +1,8 @@
 import express, { Request, Response, NextFunction } from "express";
 import asyncHandler from "express-async-handler"; // Ajout de asyncHandler pour gérer les erreurs asynchrones
+import { authenticateToken } from "../middlewares/authMiddleware";
 import {
   createAppointment,
-  getAppointments,
   getAppointmentById,
   getAppointmentsByClient,
   getAppointmentsByVeterinaire,
@@ -11,7 +11,6 @@ import {
   acceptAppointment,
   rejectAppointment,
 } from "../controllers/appointmentController";
-import { authenticateToken } from "../middlewares/authMiddleware";
 
 const router = express.Router();
 
@@ -44,18 +43,7 @@ const router = express.Router();
  *       201:
  *         description: Rendez-vous créé avec succès
  */
-router.post("/", authenticateToken, asyncHandler(createAppointment)); // Mise à jour de la route ici
-
-/**
- * @swagger
- * /appointments:
- *   get:
- *     summary: Obtenir tous les rendez-vous
- *     responses:
- *       200:
- *         description: Liste des rendez-vous récupérée avec succès
- */
-router.get("/", asyncHandler(getAppointments));
+router.post("/", authenticateToken, asyncHandler(createAppointment)); // Création d'un rendez-vous
 
 /**
  * @swagger
@@ -73,7 +61,7 @@ router.get("/", asyncHandler(getAppointments));
  *       200:
  *         description: Détails du rendez-vous récupérés avec succès
  */
-router.get("/:id", asyncHandler(getAppointmentById));
+router.get("/:id", asyncHandler(getAppointmentById)); // Obtenir un rendez-vous par ID
 
 /**
  * @swagger
@@ -91,7 +79,8 @@ router.get("/:id", asyncHandler(getAppointmentById));
  *       200:
  *         description: Liste des rendez-vous du client récupérée avec succès
  */
-router.get("/client/:clientId", asyncHandler(getAppointmentsByClient));
+router.get("/client/:clientId", asyncHandler(getAppointmentsByClient)); // Utilisation de asyncHandler
+
 
 /**
  * @swagger
@@ -109,7 +98,7 @@ router.get("/client/:clientId", asyncHandler(getAppointmentsByClient));
  *       200:
  *         description: Liste des rendez-vous récupérée avec succès
  */
-router.get("/veterinarian/:veterinaire", asyncHandler(getAppointmentsByVeterinaire));
+router.get("/veterinarian/:veterinaire", asyncHandler(getAppointmentsByVeterinaire)); // Obtenir les rendez-vous pour un vétérinaire
 
 /**
  * @swagger
@@ -142,7 +131,7 @@ router.get("/veterinarian/:veterinaire", asyncHandler(getAppointmentsByVeterinai
  *       200:
  *         description: Rendez-vous mis à jour avec succès
  */
-router.put("/:id", asyncHandler(updateAppointment));
+router.put("/:id", asyncHandler(updateAppointment)); // Mise à jour du rendez-vous
 
 /**
  * @swagger
@@ -160,7 +149,7 @@ router.put("/:id", asyncHandler(updateAppointment));
  *       200:
  *         description: Rendez-vous supprimé avec succès
  */
-router.delete("/:id", asyncHandler(deleteAppointment));
+router.delete("/:id", asyncHandler(deleteAppointment)); // Suppression d'un rendez-vous
 
 /**
  * @swagger
@@ -178,7 +167,7 @@ router.delete("/:id", asyncHandler(deleteAppointment));
  *       200:
  *         description: Rendez-vous accepté avec succès
  */
-router.put("/:id/accept", asyncHandler(acceptAppointment));
+router.put("/:id/accept", authenticateToken, asyncHandler(acceptAppointment)); // Accepter un rendez-vous
 
 /**
  * @swagger
@@ -196,6 +185,6 @@ router.put("/:id/accept", asyncHandler(acceptAppointment));
  *       200:
  *         description: Rendez-vous refusé avec succès
  */
-router.put("/:id/reject", asyncHandler(rejectAppointment));
+router.put("/:id/reject", authenticateToken, asyncHandler(rejectAppointment)); // Refuser un rendez-vous
 
 export default router;

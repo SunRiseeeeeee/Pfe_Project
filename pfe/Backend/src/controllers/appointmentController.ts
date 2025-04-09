@@ -60,15 +60,6 @@ export const createAppointment = async (req: Request, res: Response, next: NextF
   };
   
   
-// Récupérer tous les rendez-vous
-export const getAppointments = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const appointments = await Appointment.find();
-    res.status(200).json(appointments);
-  } catch (error) {
-    res.status(500).json({ error: "Erreur lors de la récupération des rendez-vous" });
-  }
-};
 
 // Récupérer un rendez-vous par ID
 export const getAppointmentById = async (req: Request, res: Response): Promise<void> => {
@@ -121,18 +112,24 @@ export const rejectAppointment = async (req: Request, res: Response): Promise<vo
 };
 
 // Récupérer les rendez-vous d'un client spécifique
-export const getAppointmentsByClient = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { clientId } = req.params;
-    const appointments = await Appointment.find({ clientId });
+export const getAppointmentsByClient = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const { clientId } = req.params;  // Récupère l'id du client dans les paramètres de l'URL
 
-    if (!appointments.length) {
-      res.status(404).json({ message: "Aucun rendez-vous trouvé pour ce client." });
-      return;
+  try {
+    // Recherche les rendez-vous associés à ce client
+    const appointments = await Appointment.find({ client: clientId }); // Utilisation de 'client' comme référence
+
+    // Si aucun rendez-vous n'est trouvé
+    if (!appointments || appointments.length === 0) {
+      res.status(404).json({ message: "Aucun rendez-vous trouvé pour ce client" });
+      return; // Arrête l'exécution après avoir renvoyé une réponse
     }
+
+    // Renvoie la liste des rendez-vous
     res.status(200).json(appointments);
   } catch (error) {
-    res.status(500).json({ error: "Erreur serveur", details: error });
+    // Passe l'erreur au middleware de gestion des erreurs
+    next(error);
   }
 };
 

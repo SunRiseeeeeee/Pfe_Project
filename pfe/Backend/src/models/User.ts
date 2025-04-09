@@ -7,6 +7,12 @@ export enum UserRole {
   ADMIN = "admin",
 }
 
+// Interface pour les détails supplémentaires
+export interface IUserDetails {
+  specialty?: string;
+  workingHours?: string;
+}
+
 // Interface TypeScript pour un utilisateur
 export interface IUser extends Document {
   firstName: string;
@@ -18,12 +24,11 @@ export interface IUser extends Document {
   role: UserRole;
   profilePicture?: string;
   location?: string;
-  details?: {
-    specialty?: string;
-    workingHours?: string;
-  };
+  description?: string;
+  details?: IUserDetails;
   reviews?: any[];
-  refreshToken?: string | null; // Token de rafraîchissement pour JWT
+  rating?: number;
+  refreshToken?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,20 +40,28 @@ const UserSchema: Schema = new Schema(
     lastName: { type: String, required: true },
     username: { type: String, required: true, unique: true, trim: true },
     email: { type: String, required: true, unique: true, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
-    password: { type: String, required: true, select: false }, // `select: false` empêche l'affichage du mot de passe par défaut
+    password: { type: String, required: true, select: false },
     phoneNumber: { type: String, required: true, unique: true, trim: true },
     role: { type: String, enum: Object.values(UserRole), required: true },
     profilePicture: { type: String, default: null },
     location: { type: String, default: null },
+    description: { type: String, default: null, trim: true },
     details: {
       specialty: { type: String, default: null },
       workingHours: { type: String, default: null },
     },
     reviews: { type: Array, default: [] },
-    refreshToken: { type: String, default: null, select: false }, // `select: false` pour ne pas exposer le refreshToken
+    rating: { 
+      type: Number, 
+      default: 0, 
+      min: 0, 
+      max: 5,
+      set: (value: number) => parseFloat(value.toFixed(2))
+    },
+    refreshToken: { type: String, default: null, select: false },
   },
   {
-    timestamps: true, // Ajoute automatiquement createdAt et updatedAt
+    timestamps: true,
   }
 );
 

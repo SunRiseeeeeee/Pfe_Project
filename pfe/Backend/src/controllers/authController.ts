@@ -2,21 +2,70 @@ import { Request, Response } from "express";
 import { UserService } from "../services/userService";
 import { UserRole } from "../models/User";
 
+// Inscription d'un utilisateur (générique pour tous les rôles)
 // Inscription d'un utilisateur
 const Signup = async (req: Request, res: Response, role: UserRole): Promise<void> => {
-  const { firstName, lastName, username, email, password, phoneNumber, profilePicture, location, specialty, workingHours } = req.body;
+  const { 
+    firstName, 
+    lastName, 
+    username, 
+    email, 
+    password, 
+    phoneNumber, 
+    profilePicture = null, 
+    location = null, 
+    description = null,
+    specialty = null, 
+    workingHours = null 
+  } = req.body;
+
   try {
-    const extraDetails: any = { profilePicture, location };
+    // Validation des données requises
+    if (!firstName || !lastName || !username || !email || !password || !phoneNumber) {
+      throw new Error('Tous les champs obligatoires doivent être remplis');
+    }
+
+    const extraDetails: Record<string, any> = { 
+      profilePicture,
+      location,
+      description,
+      details: {},
+      reviews: []
+    };
+
+    // Configuration spécifique au rôle
     if (role === UserRole.VETERINAIRE) {
       extraDetails.details = { specialty, workingHours };
-      extraDetails.reviews = [];
+      extraDetails.rating = 0;
     } else if (role === UserRole.SECRETAIRE) {
       extraDetails.details = { workingHours };
     }
-    await UserService.createUser(firstName, lastName, username, email, password, phoneNumber, role, extraDetails);
-    res.status(201).json({ message: `${role} inscrit avec succès` });
+
+    const userData = {
+      firstName, 
+      lastName, 
+      username, 
+      email, 
+      password, 
+      phoneNumber, 
+      role
+    };
+
+    // Créer l'utilisateur
+    const user = await UserService.createUser(userData, extraDetails);
+    
+    res.status(201).json({ 
+      success: true,
+      message: `${role} inscrit avec succès`,
+      userId: user._id // Retourne l'ID du nouvel utilisateur
+    });
   } catch (error: unknown) {
-    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur d'inscription" });
+    const errorMessage = error instanceof Error ? error.message : "Erreur inconnue lors de l'inscription";
+    console.error(`Erreur d'inscription (${role}):`, error);
+    res.status(400).json({ 
+      success: false,
+      message: errorMessage 
+    });
   }
 };
 
@@ -37,7 +86,6 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { accessToken, refreshToken } = await UserService.authenticateUser(username, password);
     
-    // 🟢 Console log pour afficher les tokens dans le terminal
     console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
 
     res.json({ message: "Connexion réussie", accessToken, refreshToken });
@@ -45,7 +93,6 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec de l'authentification" });
   }
 };
-
 
 // Rafraîchir le token d'accès
 export const RefreshAccessToken = async (req: Request, res: Response): Promise<void> => {
@@ -63,34 +110,20 @@ export const RefreshAccessToken = async (req: Request, res: Response): Promise<v
   }
 };
 
+// Déconnexion utilisateur
 export const Logout = async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
 
-  // Vérifier si le refreshToken est fourni
   if (!refreshToken) {
     res.status(400).json({ message: "Refresh token requis" });
     return;
   }
 
   try {
-    // Appeler la méthode logoutUser de UserService
     await UserService.logoutUser(refreshToken);
     res.json({ message: "Déconnexion réussie" });
   } catch (error: unknown) {
-    // Gérer les erreurs de manière propre
     const errorMessage = error instanceof Error ? error.message : "Échec de la déconnexion";
     res.status(400).json({ message: errorMessage });
-  }
-};
-
-
-// Récupérer les utilisateurs par rôle
-export const getUsersByRole = async (req: Request, res: Response): Promise<void> => {
-  const { role } = req.params;
-  try {
-    const users = await UserService.getUsersByRole(role as UserRole);
-    res.json(users);
-  } catch (error: unknown) {
-    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur lors de la récupération des utilisateurs" });
   }
 };

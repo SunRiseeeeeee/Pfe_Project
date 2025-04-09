@@ -3,48 +3,52 @@ import jwt from "jsonwebtoken";
 import User, { IUser, UserRole } from "../models/User";
 import mongoose from "mongoose";
 
-// Définir un type précis pour les détails supplémentaires
+interface UserDetails {
+  specialty?: string;
+  workingHours?: string;
+}
+
 interface ExtraDetails {
   profilePicture?: string;
   location?: string;
-  details?: {
-    specialty?: string;
-    workingHours?: string;
-  };
+  description?: string;
+  details?: UserDetails;
   reviews?: any[];
+  rating?: number;
 }
 
 export class UserService {
   // 🟢 Création d'un utilisateur
   static async createUser(
-    firstName: string,
-    lastName: string,
-    username: string,
-    email: string,
-    password: string,
-    phoneNumber: string,
-    role: UserRole,
+    userData: {
+      firstName: string;
+      lastName: string;
+      username: string;
+      email: string;
+      password: string;
+      phoneNumber: string;
+      role: UserRole;
+    },
     extraDetails: ExtraDetails = {}
   ): Promise<IUser> {
+    const { email, phoneNumber } = userData;
+
     const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
     if (existingUser) {
       throw new Error("L'email ou le numéro de téléphone est déjà utilisé");
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(userData.password, 10);
 
     const newUser = new User({
-      firstName,
-      lastName,
-      username,
-      email,
+      ...userData,
       password: hashedPassword,
-      phoneNumber,
-      role,
-      profilePicture: extraDetails.profilePicture || null,
-      location: extraDetails.location || null,
+      profilePicture: extraDetails.profilePicture || '',
+      location: extraDetails.location || '',
+      description: extraDetails.description || '',
       details: extraDetails.details || {},
       reviews: extraDetails.reviews || [],
+      rating: extraDetails.rating || 0,
       refreshToken: null,
     });
 
@@ -52,27 +56,32 @@ export class UserService {
     return newUser;
   }
 
-  // 🔑 Authentification de l'utilisateur avec refresh token
   static async authenticateUser(username: string, password: string) {
-    const user = await User.findOne({ username }).select("+password"); // 🔹 Ajout du select pour récupérer le password
+    const user = await User.findOne({ username }).select("+password");
     if (!user) throw new Error("Utilisateur non trouvé");
-  
-    console.log("🛠️ Debug - Utilisateur trouvé :", user); // Vérifier si l'utilisateur a bien un password
-  
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new Error("Identifiants invalides");
-  
-    const accessToken = UserService.generateAccessToken(user.id, user.role);
-    const refreshToken = UserService.generateRefreshToken(user.id);
-  
+
+    const accessToken = this.generateAccessToken(user.id, user.role);
+    const refreshToken = this.generateRefreshToken(user.id);
+
     user.refreshToken = refreshToken;
     await user.save();
-  
-    return { accessToken, refreshToken };
-  }
-  
 
-  // 🔄 Rafraîchir le token
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email
+      }
+    };
+  }
+
   static async refreshAccessToken(refreshToken: string) {
     if (!refreshToken) throw new Error("Refresh token requis");
 
@@ -81,42 +90,30 @@ export class UserService {
 
     try {
       const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || "refresh_secret") as { id: string };
-      const newAccessToken = UserService.generateAccessToken(decoded.id, user.role);
+      const newAccessToken = this.generateAccessToken(decoded.id, user.role);
       return { accessToken: newAccessToken };
     } catch (error) {
       throw new Error("Refresh token invalide");
     }
   }
 
-  // ❌ Déconnexion (suppression du refresh token)
-  static async logoutUser(refreshToken: string): Promise<void> {
-    // Rechercher l'utilisateur par refreshToken
-    const user = await User.findOne({ refreshToken });
-  
-    // Si l'utilisateur n'est pas trouvé, lever une erreur
-    if (!user) {
-      throw new Error("Utilisateur non trouvé");
-    }
-  
-    // Invalider le refreshToken en le supprimant
+  static async logoutUser(userId: string): Promise<void> {
+    const user = await User.findById(userId);
+    if (!user) throw new Error("Utilisateur non trouvé");
+
     user.refreshToken = null;
     await user.save();
   }
-  // 🔑 Génération d'un access token
-  static generateAccessToken(userId: string, role: UserRole) {
+
+  private static generateAccessToken(userId: string, role: UserRole): string {
     return jwt.sign(
       { id: userId, role },
       process.env.JWT_SECRET || "secret",
-      {
-        expiresIn: "1h",
-        audience: "myapp.com", // Ajout de l'audience
-        subject: userId, // Ajout du sujet
-      }
+      { expiresIn: "1h" }
     );
   }
-  
-  // 🔄 Génération d'un refresh token
-  static generateRefreshToken(userId: string) {
+
+  private static generateRefreshToken(userId: string): string {
     return jwt.sign(
       { id: userId },
       process.env.JWT_REFRESH_SECRET || "refresh_secret",
@@ -124,36 +121,68 @@ export class UserService {
     );
   }
 
-  // 🟢 Récupérer un utilisateur par son ID
   static async getUserById(userId: string): Promise<IUser | null> {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error("ID utilisateur invalide");
     }
-    const user = await User.findById(userId);
-    return user;
+    return await User.findById(userId);
   }
 
-  // 🟢 Mettre à jour un utilisateur
-  static async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+  static async updateUser(
+    userId: string,
+    updateData: Partial<IUser>
+  ): Promise<IUser | null> {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error("ID utilisateur invalide");
     }
-    const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true });
-    return updatedUser;
+
+    if (updateData.password) {
+      updateData.password = await bcrypt.hash(updateData.password, 10);
+    }
+
+    return await User.findByIdAndUpdate(userId, updateData, {
+      new: true,
+      runValidators: true
+    });
   }
 
-  // 🟢 Supprimer un utilisateur
   static async deleteUser(userId: string): Promise<IUser | null> {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error("ID utilisateur invalide");
     }
-    const deletedUser = await User.findByIdAndDelete(userId);
-    return deletedUser;
+    return await User.findByIdAndDelete(userId);
   }
 
-  // 🟢 Récupérer les utilisateurs par rôle
   static async getUsersByRole(role: UserRole): Promise<IUser[]> {
-    const users = await User.find({ role });
-    return users;
+    return await User.find({ role });
+  }
+
+  static async getVeterinarians(): Promise<IUser[]> {
+    return await User.find({
+      role: UserRole.VETERINAIRE
+    }).select('-password -refreshToken');
+  }
+
+  static async searchVeterinarians(
+    searchTerm?: string,
+    specialty?: string
+  ): Promise<IUser[]> {
+    const query: any = { role: UserRole.VETERINAIRE };
+
+    if (searchTerm) {
+      query.$or = [
+        { firstName: new RegExp(searchTerm, 'i') },
+        { lastName: new RegExp(searchTerm, 'i') },
+        { 'details.specialty': new RegExp(searchTerm, 'i') }
+      ];
+    }
+
+    if (specialty) {
+      query['details.specialty'] = specialty;
+    }
+
+    return await User.find(query)
+      .select('-password -refreshToken')
+      .sort({ rating: -1, lastName: 1 });
   }
 }

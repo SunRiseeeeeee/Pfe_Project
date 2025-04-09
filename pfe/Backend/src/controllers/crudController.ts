@@ -1,36 +1,43 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/userService";
 import { UserRole } from "../models/User";
+import mongoose from "mongoose";
 
 // 🔍 Récupérer un utilisateur par son ID
 export const getUserById = async (req: Request, res: Response): Promise<void> => {
-  const { userId } = req.params; // Récupère l'ID de l'utilisateur à partir des paramètres de l'URL
+  const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    res.status(400).json({ message: "ID utilisateur invalide" });
+    return;
+  }
 
   try {
-    // Appelle la méthode de UserService pour récupérer l'utilisateur par son ID
     const user = await UserService.getUserById(userId);
 
-    // Si l'utilisateur n'est pas trouvé
     if (!user) {
       res.status(404).json({ message: "Utilisateur non trouvé" });
       return;
     }
 
-    // Si l'utilisateur est trouvé, on renvoie ses informations
     res.status(200).json(user);
   } catch (error) {
-    // En cas d'erreur (par exemple, si l'ID n'est pas valide)
-    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur lors de la récupération de l'utilisateur" });
+    res.status(500).json({ message: "Erreur lors de la récupération de l'utilisateur" });
   }
 };
 
 // 🟢 Modifier les coordonnées d'un utilisateur
 export const updateUser = async (req: Request, res: Response): Promise<void> => {
-  const { userId } = req.params; // ID de l'utilisateur à modifier
-  const { firstName, lastName, username, email, phoneNumber, location, profilePicture } = req.body;
+  const { userId } = req.params;
+  const updateFields = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    res.status(400).json({ message: "ID utilisateur invalide" });
+    return;
+  }
 
   try {
-    const updatedUser = await UserService.updateUser(userId, { firstName, lastName, username, email, phoneNumber, location, profilePicture });
+    const updatedUser = await UserService.updateUser(userId, updateFields);
 
     if (!updatedUser) {
       res.status(404).json({ message: "Utilisateur non trouvé" });
@@ -39,13 +46,18 @@ export const updateUser = async (req: Request, res: Response): Promise<void> => 
 
     res.status(200).json({ message: "Coordonnées mises à jour avec succès", user: updatedUser });
   } catch (error) {
-    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur lors de la mise à jour des coordonnées" });
+    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur lors de la mise à jour" });
   }
 };
 
 // 🔴 Supprimer un compte utilisateur
 export const deleteUser = async (req: Request, res: Response): Promise<void> => {
   const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    res.status(400).json({ message: "ID utilisateur invalide" });
+    return;
+  }
 
   try {
     const deletedUser = await UserService.deleteUser(userId);
@@ -57,24 +69,22 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 
     res.status(200).json({ message: "Compte supprimé avec succès" });
   } catch (error) {
-    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur lors de la suppression du compte" });
+    res.status(500).json({ message: "Erreur lors de la suppression du compte" });
   }
 };
 
-// 🔍 Récupérer tous les utilisateurs selon leur rôle
-export const getUsersByRole = async (req: Request, res: Response): Promise<void> => {
-  const { role } = req.params;
-
-  // Vérification si le rôle est valide
-  if (!Object.values(UserRole).includes(role as UserRole)) {
-    res.status(400).json({ message: "Rôle invalide" });
-    return;
-  }
-
+// 🟢 Récupérer tous les vétérinaires
+export const getVeterinarians = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const users = await UserService.getUsersByRole(role as UserRole);
-    res.status(200).json(users);
+    const veterinarians = await UserService.getVeterinarians();
+
+    if (!veterinarians.length) {
+      res.status(404).json({ message: "Aucun vétérinaire trouvé" });
+      return;
+    }
+
+    res.status(200).json(veterinarians);
   } catch (error) {
-    res.status(400).json({ message: error instanceof Error ? error.message : "Erreur lors de la récupération des utilisateurs" });
+    res.status(500).json({ message: "Erreur lors de la récupération des vétérinaires" });
   }
 };
