@@ -18,7 +18,6 @@ interface ExtraDetails {
 }
 
 export class UserService {
-  // 🟢 Création d'un utilisateur
   static async createUser(
     userData: {
       firstName: string;
@@ -128,12 +127,22 @@ export class UserService {
     return await User.findById(userId);
   }
 
-  static async updateUser(
-    userId: string,
-    updateData: Partial<IUser>
-  ): Promise<IUser | null> {
+  static async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       throw new Error("ID utilisateur invalide");
+    }
+
+    if (updateData.email || updateData.phoneNumber) {
+      const existingUser = await User.findOne({
+        $or: [
+          { email: updateData.email },
+          { phoneNumber: updateData.phoneNumber }
+        ],
+        _id: { $ne: userId }
+      });
+      if (existingUser) {
+        throw new Error("L'email ou le numéro de téléphone est déjà utilisé par un autre utilisateur");
+      }
     }
 
     if (updateData.password) {
@@ -157,16 +166,34 @@ export class UserService {
     return await User.find({ role });
   }
 
-  static async getVeterinarians(): Promise<IUser[]> {
-    return await User.find({
-      role: UserRole.VETERINAIRE
-    }).select('-password -refreshToken');
+  static async getVeterinarians(filters: {
+    rating?: number;
+    location?: string;
+    page?: number;
+    limit?: number;
+    sort?: 'asc' | 'desc';
+  } = {}): Promise<IUser[]> {
+    const { rating, location, page = 1, limit = 10, sort = 'desc' } = filters;
+    const filter: any = { role: UserRole.VETERINAIRE };
+
+    if (rating) {
+      filter.rating = { $gte: rating };
+    }
+
+    if (location) {
+      filter.location = { $regex: new RegExp(location, 'i') };
+    }
+
+    const sortOrder = sort === 'asc' ? 1 : -1;
+
+    return await User.find(filter)
+      .select('-password -refreshToken')
+      .sort({ rating: sortOrder })
+      .skip((page - 1) * limit)
+      .limit(limit);
   }
 
-  static async searchVeterinarians(
-    searchTerm?: string,
-    specialty?: string
-  ): Promise<IUser[]> {
+  static async searchVeterinarians(searchTerm?: string, specialty?: string): Promise<IUser[]> {
     const query: any = { role: UserRole.VETERINAIRE };
 
     if (searchTerm) {
