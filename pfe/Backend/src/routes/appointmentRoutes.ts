@@ -79,8 +79,12 @@ router.get("/:id", asyncHandler(getAppointmentById)); // Obtenir un rendez-vous 
  *       200:
  *         description: Liste des rendez-vous du client récupérée avec succès
  */
-router.get("/client/:clientId", asyncHandler(getAppointmentsByClient)); // Utilisation de asyncHandler
 
+router.get(
+  "/client/:clientId", 
+  authenticateToken,
+  asyncHandler(getAppointmentsByClient)
+);
 
 /**
  * @swagger

@@ -13,13 +13,6 @@ export const createAppointment = async (appointmentData: Partial<IAppointment>) 
   return await appointment.save();
 };
 
-/**
- * Récupérer tous les rendez-vous
- * @returns Liste des rendez-vous
- */
-export const getAppointments = async () => {
-  return await Appointment.find();
-};
 
 /**
  * Récupérer un rendez-vous par ID
