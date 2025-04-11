@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import Appointment, { AppointmentStatus } from "../models/Appointment";
 import User from "../models/User";
 import Animal from "../models/Animal";
-
+import mongoose from "mongoose";
 // Créer un rendez-vous pour un vétérinaire spécifique
 export const createAppointment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -111,24 +111,63 @@ export const rejectAppointment = async (req: Request, res: Response): Promise<vo
   }
 };
 
-// Récupérer les rendez-vous d'un client spécifique
-export const getAppointmentsByClient = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  const { clientId } = req.params;  // Récupère l'id du client dans les paramètres de l'URL
+declare module 'express' {
+  interface Request {
+    user?: {
+      id: string;
+      role: string;
+    };
+  }
+}
+
+export const getAppointmentsByClient = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const { clientId } = req.params;
 
   try {
-    // Recherche les rendez-vous associés à ce client
-    const appointments = await Appointment.find({ client: clientId }); // Utilisation de 'client' comme référence
+    // Debug
+    console.log('Comparing IDs:', {
+      paramId: clientId,
+      tokenId: req.user?.id,
+      equal: String(req.user?.id) === String(clientId)
+    });
 
-    // Si aucun rendez-vous n'est trouvé
-    if (!appointments || appointments.length === 0) {
-      res.status(404).json({ message: "Aucun rendez-vous trouvé pour ce client" });
-      return; // Arrête l'exécution après avoir renvoyé une réponse
+    // Vérification d'authentification
+    if (!req.user) {
+      res.status(401).json({ message: "Non authentifié" });
+      return;
     }
 
-    // Renvoie la liste des rendez-vous
+    // Vérification d'autorisation
+    if (String(req.user.id) !== String(clientId)) {
+      res.status(403).json({
+        message: "Non autorisé à accéder à ces rendez-vous",
+        debug: {
+          tokenId: req.user.id,
+          requestedId: clientId
+        }
+      });
+      return;
+    }
+
+    // Recherche des rendez-vous avec le bon champ
+    const appointments = await Appointment.find({ clientId });
+
+    if (!appointments.length) {
+      res.status(404).json({
+        message: "Aucun rendez-vous trouvé pour ce client"
+      });
+      return;
+    }
+
+    // Renvoi des rendez-vous
     res.status(200).json(appointments);
+
   } catch (error) {
-    // Passe l'erreur au middleware de gestion des erreurs
+    console.error('Error in getAppointmentsByClient:', error);
     next(error);
   }
 };
