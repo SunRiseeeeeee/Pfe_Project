@@ -4,13 +4,13 @@ import User, { IUser, UserRole } from "../models/User";
 import mongoose from "mongoose";
 
 interface UserDetails {
-  specialty?: string;
+  services?: string;
   workingHours?: string;
 }
 
 interface ExtraDetails {
   profilePicture?: string;
-  location?: string;
+  MapsLocation?: string;
   description?: string;
   details?: UserDetails;
   reviews?: any[];
@@ -31,30 +31,58 @@ export class UserService {
     extraDetails: ExtraDetails = {}
   ): Promise<IUser> {
     const { email, phoneNumber } = userData;
-
+  
     const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
     if (existingUser) {
       throw new Error("L'email ou le numéro de téléphone est déjà utilisé");
     }
-
+  
     const hashedPassword = await bcrypt.hash(userData.password, 10);
-
+  
+    const details = extraDetails.details || {};
+    
+    // Vérification de services
+    if (details.services && (!Array.isArray(details.services) || !details.services.every(s => typeof s === 'string'))) {
+      throw new Error("Le champ 'services' doit être un tableau de chaînes");
+    }
+  
+    // Vérification de workingHours
+    if (details.workingHours && !Array.isArray(details.workingHours)) {
+      throw new Error("Le champ 'workingHours' doit être un tableau");
+    }
+  
+    if (Array.isArray(details.workingHours)) {
+      const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+      const isValidTime = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+  
+      for (const slot of details.workingHours) {
+        if (!slot.day || !slot.start || !slot.end) {
+          throw new Error("Chaque horaire doit avoir 'day', 'start' et 'end'");
+        }
+        if (!validDays.includes(slot.day)) {
+          throw new Error(`Jour invalide: ${slot.day}`);
+        }
+        if (!isValidTime(slot.start) || !isValidTime(slot.end)) {
+          throw new Error(`Heure invalide pour ${slot.day}. Format attendu: HH:MM`);
+        }
+      }
+    }
+  
     const newUser = new User({
       ...userData,
       password: hashedPassword,
       profilePicture: extraDetails.profilePicture || '',
-      location: extraDetails.location || '',
+      MapsLocation: extraDetails.MapsLocation || '',
       description: extraDetails.description || '',
-      details: extraDetails.details || {},
+      details,
       reviews: extraDetails.reviews || [],
-      rating: extraDetails.rating || 0,
+      rating: extraDetails.rating ?? 0,
       refreshToken: null,
     });
-
+  
     await newUser.save();
     return newUser;
   }
-
   static async authenticateUser(username: string, password: string) {
     const user = await User.findOne({ username }).select("+password");
     if (!user) throw new Error("Utilisateur non trouvé");
@@ -168,20 +196,20 @@ export class UserService {
 
   static async getVeterinarians(filters: {
     rating?: number;
-    location?: string;
+    MapsLocation?: string;
     page?: number;
     limit?: number;
     sort?: 'asc' | 'desc';
   } = {}): Promise<IUser[]> {
-    const { rating, location, page = 1, limit = 10, sort = 'desc' } = filters;
+    const { rating, MapsLocation, page = 1, limit = 10, sort = 'desc' } = filters;
     const filter: any = { role: UserRole.VETERINAIRE };
 
     if (rating) {
       filter.rating = { $gte: rating };
     }
 
-    if (location) {
-      filter.location = { $regex: new RegExp(location, 'i') };
+    if (MapsLocation) {
+      filter.MapsLocation = { $regex: new RegExp(MapsLocation, 'i') };
     }
 
     const sortOrder = sort === 'asc' ? 1 : -1;
@@ -193,19 +221,19 @@ export class UserService {
       .limit(limit);
   }
 
-  static async searchVeterinarians(searchTerm?: string, specialty?: string): Promise<IUser[]> {
+  static async searchVeterinarians(searchTerm?: string, services?: string): Promise<IUser[]> {
     const query: any = { role: UserRole.VETERINAIRE };
 
     if (searchTerm) {
       query.$or = [
         { firstName: new RegExp(searchTerm, 'i') },
         { lastName: new RegExp(searchTerm, 'i') },
-        { 'details.specialty': new RegExp(searchTerm, 'i') }
+        { 'details.services': new RegExp(searchTerm, 'i') }
       ];
     }
 
-    if (specialty) {
-      query['details.specialty'] = specialty;
+    if (services) {
+      query['details.services'] = services;
     }
 
     return await User.find(query)

@@ -15,8 +15,8 @@ class _SignUpPageState extends State<SignUpPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _phoneNumberController = TextEditingController();
-  final TextEditingController _locationController = TextEditingController();
-  final TextEditingController _specialtyController = TextEditingController();
+  final TextEditingController _MapsLocationController = TextEditingController();
+  final TextEditingController _servicesController = TextEditingController();
   final TextEditingController _workingHoursController = TextEditingController();
 
   // Authentication service instance
@@ -33,8 +33,8 @@ class _SignUpPageState extends State<SignUpPage> {
     String email = _emailController.text.trim();
     String password = _passwordController.text.trim();
     String phoneNumber = _phoneNumberController.text.trim();
-    String location = _locationController.text.trim();
-    String specialty = _specialtyController.text.trim();
+    String MapsLocation = _MapsLocationController.text.trim();
+    String services = _servicesController.text.trim();
     String workingHours = _workingHoursController.text.trim();
 
     // Validate input
@@ -60,8 +60,8 @@ class _SignUpPageState extends State<SignUpPage> {
         password: password,
         phoneNumber: phoneNumber,
         profilePicture: "", // Optional field
-        location: location.isNotEmpty ? location : null,
-        specialty: specialty.isNotEmpty ? specialty : null,
+        MapsLocation: MapsLocation.isNotEmpty ? MapsLocation : null,
+        services: services.isNotEmpty ? services : null,
         workingHours: workingHours.isNotEmpty ? workingHours : null,
         role: "CLIENT", // Default role, or you can make this dynamic
       );
@@ -247,14 +247,14 @@ class _SignUpPageState extends State<SignUpPage> {
               ),
               SizedBox(height: 10),
 
-              // Location Field
+              // MapsLocation Field
               TextField(
-                controller: _locationController,
+                controller: _MapsLocationController,
                 style: TextStyle(color: Colors.black),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.white,
-                  hintText: 'Location',
+                  hintText: 'MapsLocation',
                   hintStyle: TextStyle(color: Colors.grey),
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.grey[300]!),
@@ -268,14 +268,14 @@ class _SignUpPageState extends State<SignUpPage> {
               ),
               SizedBox(height: 10),
 
-              // Specialty Field (Optional)
+              // services Field (Optional)
               TextField(
-                controller: _specialtyController,
+                controller: _servicesController,
                 style: TextStyle(color: Colors.black),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.white,
-                  hintText: 'Specialty (Optional)',
+                  hintText: 'services (Optional)',
                   hintStyle: TextStyle(color: Colors.grey),
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.grey[300]!),

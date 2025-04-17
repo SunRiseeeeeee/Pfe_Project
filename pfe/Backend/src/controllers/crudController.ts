@@ -92,7 +92,7 @@ export const getVeterinarians: ExpressController = async (req, res) => {
     const rating = typeof req.query.rating === 'string' ? req.query.rating : undefined;
     const location = typeof req.query.location === 'string' ? req.query.location : undefined;
     const page = typeof req.query.page === 'string' ? req.query.page : "1";
-    const limit = typeof req.query.limit === 'string' ? req.query.limit : "10";
+    const limit = typeof req.query.limit === 'string' ? req.query.limit : "2";
     const sort = typeof req.query.sort === 'string' ? req.query.sort : "desc";
 
     const filter: Record<string, any> = { role: UserRole.VETERINAIRE };

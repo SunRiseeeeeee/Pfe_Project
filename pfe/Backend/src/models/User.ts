@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+// Rôles possibles
 export enum UserRole {
   CLIENT = "client",
   VETERINAIRE = "veterinaire",
@@ -7,10 +8,17 @@ export enum UserRole {
   ADMIN = "admin",
 }
 
+// Interface pour les horaires de travail
+interface IWorkingHour {
+  day: string;
+  start: string; // format: "08:00"
+  end: string;   // format: "17:00"
+}
+
 // Interface pour les détails supplémentaires
 export interface IUserDetails {
-  specialty?: string;
-  workingHours?: string;
+  services?: string[];  // Liste de services
+  workingHours?: IWorkingHour[];
 }
 
 // Interface TypeScript pour un utilisateur
@@ -23,7 +31,7 @@ export interface IUser extends Document {
   phoneNumber: string;
   role: UserRole;
   profilePicture?: string;
-  location?: string;
+  MapsLocation?: string;
   description?: string;
   details?: IUserDetails;
   reviews?: any[];
@@ -44,17 +52,23 @@ const UserSchema: Schema = new Schema(
     phoneNumber: { type: String, required: true, unique: true, trim: true },
     role: { type: String, enum: Object.values(UserRole), required: true },
     profilePicture: { type: String, default: null },
-    location: { type: String, default: null },
+    MapsLocation: { type: String, default: null },
     description: { type: String, default: null, trim: true },
     details: {
-      specialty: { type: String, default: null },
-      workingHours: { type: String, default: null },
+      services: { type: [String], default: [] },
+      workingHours: [
+        {
+          day: { type: String, required: true },
+          start: { type: String, required: true },
+          end: { type: String, required: true }
+        }
+      ]
     },
     reviews: { type: Array, default: [] },
-    rating: { 
-      type: Number, 
-      default: 0, 
-      min: 0, 
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
       max: 5,
       set: (value: number) => parseFloat(value.toFixed(2))
     },

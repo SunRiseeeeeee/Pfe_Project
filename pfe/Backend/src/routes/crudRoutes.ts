@@ -31,7 +31,7 @@ const router = express.Router();
  *       500:
  *         description: Erreur serveur
  */
-router.get("/users/:userId", getUserById);
+router.get("/:userId", getUserById);
 
 /**
  * @swagger
@@ -65,12 +65,12 @@ router.get("/users/:userId", getUserById);
  *                 type: string
  *               profilePicture:
  *                 type: string
- *               location:
+ *               MapsLocation:
  *                 type: string
  *               details:
  *                 type: object
  *                 properties:
- *                   specialty:
+ *                   services:
  *                     type: string
  *                   workingHours:
  *                     type: string
@@ -84,7 +84,7 @@ router.get("/users/:userId", getUserById);
  *       500:
  *         description: Erreur serveur
  */
-router.put("/users/:userId", updateUser);
+router.put("/:userId", updateUser);
 
 /**
  * @swagger
@@ -109,7 +109,7 @@ router.put("/users/:userId", updateUser);
  *       500:
  *         description: Erreur serveur
  */
-router.delete("/users/:userId", deleteUser);
+router.delete("/:userId", deleteUser);
 
 /**
  * @swagger

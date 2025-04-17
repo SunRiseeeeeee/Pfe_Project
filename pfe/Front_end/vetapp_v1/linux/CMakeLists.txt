@@ -61,9 +61,9 @@ add_subdirectory("runner")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
 # Only the install-generated bundle's copy of the executable will launch
-# correctly, since the resources must in the right relative locations. To avoid
+# correctly, since the resources must in the right relative MapsLocations. To avoid
 # people trying to run the unbundled copy, put it in a subdirectory instead of
-# the default top-level location.
+# the default top-level MapsLocation.
 set_target_properties(${BINARY_NAME}
   PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/intermediates_do_not_run"

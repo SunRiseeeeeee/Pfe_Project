@@ -2,8 +2,14 @@ import { Request, Response } from "express";
 import { UserService } from "../services/userService";
 import { UserRole } from "../models/User";
 
+
+
+// Liste des jours valides
+const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+// Vérifie le format HH:MM (24h)
+const isValidTime = (time: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
 // Inscription d'un utilisateur (générique pour tous les rôles)
-// Inscription d'un utilisateur
 const Signup = async (req: Request, res: Response, role: UserRole): Promise<void> => {
   const { 
     firstName, 
@@ -13,61 +19,86 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
     password, 
     phoneNumber, 
     profilePicture = null, 
-    location = null, 
+    MapsLocation = null, 
     description = null,
-    specialty = null, 
-    workingHours = null 
+    services = [],  // tableau vide par défaut
+    workingHours = [] // tableau vide par défaut
   } = req.body;
 
   try {
-    // Validation des données requises
+    // Validation des champs obligatoires
     if (!firstName || !lastName || !username || !email || !password || !phoneNumber) {
       throw new Error('Tous les champs obligatoires doivent être remplis');
     }
 
-    const extraDetails: Record<string, any> = { 
+    const extraDetails: Record<string, any> = {
       profilePicture,
-      location,
+      MapsLocation,
       description,
       details: {},
       reviews: []
     };
 
-    // Configuration spécifique au rôle
+    // Traitement spécifique selon le rôle
     if (role === UserRole.VETERINAIRE) {
-      extraDetails.details = { specialty, workingHours };
+      // Validation des services
+      if (!Array.isArray(services) || !services.every(s => typeof s === "string")) {
+        throw new Error("Les services doivent être un tableau de chaînes");
+      }
+
+      // Validation des horaires
+      if (!Array.isArray(workingHours)) {
+        throw new Error("Les horaires de travail doivent être un tableau");
+      }
+
+      for (const slot of workingHours) {
+        if (!slot.day || !slot.start || !slot.end) {
+          throw new Error("Chaque horaire doit contenir les champs 'day', 'start' et 'end'");
+        }
+        if (!validDays.includes(slot.day)) {
+          throw new Error(`Jour invalide: ${slot.day}`);
+        }
+        if (!isValidTime(slot.start) || !isValidTime(slot.end)) {
+          throw new Error(`Heure invalide pour ${slot.day}. Format attendu: HH:MM`);
+        }
+      }
+
+      extraDetails.details = { services, workingHours };
       extraDetails.rating = 0;
+
     } else if (role === UserRole.SECRETAIRE) {
       extraDetails.details = { workingHours };
     }
 
     const userData = {
-      firstName, 
-      lastName, 
-      username, 
-      email, 
-      password, 
-      phoneNumber, 
+      firstName,
+      lastName,
+      username,
+      email,
+      password,
+      phoneNumber,
       role
     };
 
-    // Créer l'utilisateur
+    // Création de l'utilisateur
     const user = await UserService.createUser(userData, extraDetails);
-    
-    res.status(201).json({ 
+
+    res.status(201).json({
       success: true,
       message: `${role} inscrit avec succès`,
-      userId: user._id // Retourne l'ID du nouvel utilisateur
+      userId: user._id
     });
+
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Erreur inconnue lors de l'inscription";
     console.error(`Erreur d'inscription (${role}):`, error);
-    res.status(400).json({ 
+    res.status(400).json({
       success: false,
-      message: errorMessage 
+      message: errorMessage
     });
   }
 };
+
 
 // Inscription pour chaque rôle
 export const SignupClient = (req: Request, res: Response) => Signup(req, res, UserRole.CLIENT);

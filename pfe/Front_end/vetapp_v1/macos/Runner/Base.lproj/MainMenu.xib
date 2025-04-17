@@ -328,7 +328,7 @@
                     <menu key="submenu" title="Help" systemMenu="help" id="rJ0-wn-3NY"/>
                 </menuItem>
             </items>
-            <point key="canvasLocation" x="142" y="-258"/>
+            <point key="canvasMapsLocation" x="142" y="-258"/>
         </menu>
         <window title="APP_NAME" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" animationBehavior="default" id="QvC-M9-y7g" customClass="MainFlutterWindow" customModule="Runner" customModuleProvider="target">
             <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
