@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:vetapp_v1/models/veterinarian.dart';
+import 'package:vetapp_v1/services/vet_service.dart';
+import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
 
 class HomeScreen extends StatelessWidget {
   @override
@@ -17,21 +20,34 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text("Welcome,", style: TextStyle(fontSize: 14, color: Colors.grey)),
-                      Text("Wade Warren", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    children: [
+                      Text(
+                        "Welcome,",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                          fontFamily: 'Poppins', // Apply Poppins font
+                        ),
+                      ),
+                      Text(
+                        "Wade Warren",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Poppins', // Apply Poppins font
+                        ),
+                      ),
                     ],
                   ),
                   Row(
                     children: [
-                      IconButton(icon: Icon(Icons.search), onPressed: () {}),
-                      IconButton(icon: Icon(Icons.notifications_none), onPressed: () {}),
+                      IconButton(icon: const Icon(Icons.search), onPressed: () {}),
+                      IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
                     ],
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-
               // Discover Section with background image
               Container(
                 height: 150,
@@ -67,11 +83,12 @@ class HomeScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text(
+                          Text(
                             'Discover Top Vets\nin Your Area!',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
+                              fontFamily: 'Montserrat', // Apply Montserrat font
                               color: Colors.white,
                             ),
                           ),
@@ -82,7 +99,12 @@ class HomeScreen extends StatelessWidget {
                               backgroundColor: Colors.white,
                               foregroundColor: Colors.deepPurple,
                             ),
-                            child: const Text('Discover'),
+                            child: Text(
+                              'Discover',
+                              style: TextStyle(
+                                fontFamily: 'Poppins', // Apply Poppins font
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -90,19 +112,29 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
-
               const SizedBox(height: 20),
-
               // Services Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Services', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text('See All', style: TextStyle(color: Colors.blue)),
+                children: [
+                  Text(
+                    'Services',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Poppins', // Apply Poppins font
+                    ),
+                  ),
+                  Text(
+                    'See All',
+                    style: TextStyle(
+                      color: Colors.deepPurpleAccent,
+                      fontFamily: 'Poppins', // Apply Poppins font
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
-
               // Custom Layout for Services Section
               Column(
                 children: [
@@ -118,13 +150,17 @@ class HomeScreen extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           flex: 4,
-                          child: _buildServiceCardWithFixedDimensions('Grooming', 'assets/images/grooming.jpg', height: 150, width: 100),
+                          child: _buildServiceCardWithFixedDimensions(
+                            'Grooming',
+                            'assets/images/grooming.jpg',
+                            height: 150,
+                            width: 100,
+                          ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 10),
-
                   // Second Row: 40% - 60%
                   SizedBox(
                     height: 150, // Fixed height for the row
@@ -132,7 +168,12 @@ class HomeScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           flex: 4,
-                          child: _buildServiceCardWithFixedDimensions('Walking', 'assets/images/walking.jpg', height: 150, width: 100),
+                          child: _buildServiceCardWithFixedDimensions(
+                            'Walking',
+                            'assets/images/walking.jpg',
+                            height: 150,
+                            width: 100,
+                          ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -144,67 +185,168 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ],
               ),
-
               const SizedBox(height: 20),
-
-              // Best Veterinarian
+              // Best Veterinarian Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Our best veterinarian', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text('See All', style: TextStyle(color: Colors.blue)),
+                children: [
+                  Text(
+                    'Our best veterinarians',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Poppins', // Apply Poppins font
+                    ),
+                  ),
+                  Text(
+                    'See All',
+                    style: TextStyle(
+                      color: Colors.deepPurpleAccent,
+                      fontFamily: 'Poppins', // Apply Poppins font
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  radius: 30,
-                  backgroundImage: AssetImage('assets/images/manage_health.png'),
-                ),
-                title: const Text('Cameron Williamson', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Veterinary Behavioral'),
-              ),
-              Row(
-                children: const [
-                  Icon(Icons.star, color: Colors.amber, size: 20),
-                  SizedBox(width: 4),
-                  Text('4.5'),
-                  SizedBox(width: 16),
-                  Icon(Icons.calendar_today, size: 18),
-                  SizedBox(width: 4),
-                  Text('3 Years'),
-                ],
+              // Fetch and display the list of veterinarians
+              FutureBuilder<List<Veterinarian>>(
+                future: VetService.fetchVeterinarians(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  } else if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    return const Center(child: Text('No veterinarians found.'));
+                  } else {
+                    final veterinarians = snapshot.data!;
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: veterinarians.length,
+                      itemBuilder: (context, index) {
+                        final vet = veterinarians[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Hero(
+                            tag: vet.id,
+                            child: CircleAvatar(
+                              radius: 30,
+                              backgroundImage: vet.profilePicture != null
+                                  ? NetworkImage(vet.profilePicture!)
+                                  : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
+                              child: vet.profilePicture == null
+                                  ? const Icon(Icons.person)
+                                  : null,
+                            ),
+                          ),
+                          title: Text(
+                            '${vet.firstName} ${vet.lastName}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Poppins', // Apply Poppins font
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.star, color: Colors.amber, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${vet.rating}/5',
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins', // Apply Poppins font
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  const Icon(Icons.calendar_today, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    vet.workingHours ?? 'N/A',
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins', // Apply Poppins font
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => VetDetailsScreen(vet: vet),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  }
+                },
               ),
               const SizedBox(height: 24),
             ],
           ),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        selectedItemColor: Colors.deepPurple,
-        unselectedItemColor: Colors.grey,
-        currentIndex: 0,
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.3),
+              spreadRadius: 2,
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: 'Appointment',
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.message),
-            label: 'Message',
+          child: BottomNavigationBar(
+            backgroundColor: Colors.white,
+            selectedItemColor: Colors.deepPurple,
+            unselectedItemColor: Colors.grey,
+            currentIndex: 0,
+            type: BottomNavigationBarType.fixed,
+            showUnselectedLabels: true,
+            selectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
+            unselectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home_rounded),
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.calendar_month_rounded),
+                label: 'Appointments',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.chat_bubble_outline_rounded),
+                label: 'Messages',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline_rounded),
+                label: 'Profile',
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
+        ),
       ),
+
     );
   }
 
@@ -214,10 +356,9 @@ class HomeScreen extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          SizedBox(
-            width: double.infinity, // Ensure the image takes up the available width
-            height: 150, // Set a fixed height for the image
-            child: Image.asset(imageUrl, fit: BoxFit.cover),
+          Image.asset(
+            imageUrl,
+            fit: BoxFit.cover,
           ),
           Container(
             alignment: Alignment.bottomLeft,
@@ -231,7 +372,11 @@ class HomeScreen extends StatelessWidget {
             ),
             child: Text(
               title,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins', // Apply Poppins font
+              ),
             ),
           ),
         ],
@@ -239,16 +384,20 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  static Widget _buildServiceCardWithFixedDimensions(String title, String imageUrl, {double height = 150, double width = 100}) {
+  static Widget _buildServiceCardWithFixedDimensions(String title, String imageUrl,
+      {double height = 150, double width = 100}) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
         fit: StackFit.expand,
         children: [
           SizedBox(
-            width: width, // Explicit width
-            height: height, // Explicit height
-            child: Image.asset(imageUrl, fit: BoxFit.cover),
+            width: width,
+            height: height,
+            child: Image.asset(
+              imageUrl,
+              fit: BoxFit.cover,
+            ),
           ),
           Container(
             alignment: Alignment.bottomLeft,
@@ -262,7 +411,11 @@ class HomeScreen extends StatelessWidget {
             ),
             child: Text(
               title,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins', // Apply Poppins font
+              ),
             ),
           ),
         ],
