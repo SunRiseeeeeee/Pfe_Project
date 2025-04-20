@@ -9,28 +9,31 @@ const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satu
 
 // Vérifie le format HH:MM (24h)
 const isValidTime = (time: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+
 // Inscription d'un utilisateur (générique pour tous les rôles)
 const Signup = async (req: Request, res: Response, role: UserRole): Promise<void> => {
-  const { 
-    firstName, 
-    lastName, 
-    username, 
-    email, 
-    password, 
-    phoneNumber, 
-    profilePicture = null, 
-    MapsLocation = null, 
+  const {
+    firstName,
+    lastName,
+    username,
+    email,
+    password,
+    phoneNumber,
+    profilePicture = null,
+    MapsLocation = null,
     description = null,
-    services = [],  // tableau vide par défaut
-    workingHours = [] // tableau vide par défaut
+    services = [],
+    workingHours = [],
+    address = {}
   } = req.body;
 
   try {
-    // Validation des champs obligatoires
+    // Validation de base
     if (!firstName || !lastName || !username || !email || !password || !phoneNumber) {
-      throw new Error('Tous les champs obligatoires doivent être remplis');
+      throw new Error("Tous les champs obligatoires doivent être remplis");
     }
 
+    // Construire l'objet extraDetails
     const extraDetails: Record<string, any> = {
       profilePicture,
       MapsLocation,
@@ -39,37 +42,63 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
       reviews: []
     };
 
-    // Traitement spécifique selon le rôle
-    if (role === UserRole.VETERINAIRE) {
-      // Validation des services
-      if (!Array.isArray(services) || !services.every(s => typeof s === "string")) {
-        throw new Error("Les services doivent être un tableau de chaînes");
-      }
+    // Validation et ajout de l'adresse
+    if (address && typeof address === "object") {
+      const { street, city, state, country } = address;
 
-      // Validation des horaires
-      if (!Array.isArray(workingHours)) {
-        throw new Error("Les horaires de travail doivent être un tableau");
-      }
-
-      for (const slot of workingHours) {
-        if (!slot.day || !slot.start || !slot.end) {
-          throw new Error("Chaque horaire doit contenir les champs 'day', 'start' et 'end'");
-        }
-        if (!validDays.includes(slot.day)) {
-          throw new Error(`Jour invalide: ${slot.day}`);
-        }
-        if (!isValidTime(slot.start) || !isValidTime(slot.end)) {
-          throw new Error(`Heure invalide pour ${slot.day}. Format attendu: HH:MM`);
+      // Vérifie les types si les champs sont définis
+      const addressFields = { street, city, state, country };
+      for (const [key, value] of Object.entries(addressFields)) {
+        if (value !== undefined && typeof value !== "string") {
+          throw new Error(`Le champ ${key} de l'adresse doit être une chaîne de caractères`);
         }
       }
 
-      extraDetails.details = { services, workingHours };
-      extraDetails.rating = 0;
-
-    } else if (role === UserRole.SECRETAIRE) {
-      extraDetails.details = { workingHours };
+      extraDetails.address = addressFields;
     }
 
+    // Traitement spécifique selon le rôle
+    switch (role) {
+      case UserRole.VETERINAIRE:
+        if (!Array.isArray(services) || !services.every(s => typeof s === "string")) {
+          throw new Error("Les services doivent être un tableau de chaînes");
+        }
+
+        if (!Array.isArray(workingHours)) {
+          throw new Error("Les horaires de travail doivent être un tableau");
+        }
+
+        for (const slot of workingHours) {
+          if (!slot.day || !slot.start || !slot.end) {
+            throw new Error("Chaque horaire doit contenir les champs 'day', 'start' et 'end'");
+          }
+
+          if (!validDays.includes(slot.day)) {
+            throw new Error(`Jour invalide: ${slot.day}`);
+          }
+
+          if (!isValidTime(slot.start) || !isValidTime(slot.end)) {
+            throw new Error(`Heure invalide pour ${slot.day}. Format attendu: HH:MM`);
+          }
+        }
+
+        extraDetails.details = { services, workingHours };
+        extraDetails.rating = 0;
+        break;
+
+      case UserRole.SECRETAIRE:
+        extraDetails.details = { workingHours };
+        break;
+
+      case UserRole.CLIENT:
+        // Aucun champ additionnel spécifique requis
+        break;
+
+      default:
+        throw new Error("Rôle non valide");
+    }
+
+    // Préparation des données utilisateur
     const userData = {
       firstName,
       lastName,
@@ -91,7 +120,7 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Erreur inconnue lors de l'inscription";
-    console.error(`Erreur d'inscription (${role}):`, error);
+    console.error(`Erreur d'inscription (${role}):`, errorMessage);
     res.status(400).json({
       success: false,
       message: errorMessage

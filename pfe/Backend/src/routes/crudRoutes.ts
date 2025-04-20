@@ -10,6 +10,22 @@ const router = express.Router();
 
 /**
  * @swagger
+ * /veterinarians:
+ *   get:
+ *     summary: Récupérer tous les vétérinaires
+ *     tags: [User]
+ *     responses:
+ *       200:
+ *         description: Liste des vétérinaires récupérée avec succès
+ *       404:
+ *         description: Aucun vétérinaire trouvé
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get("/veterinarians", getVeterinarians);
+
+/**
+ * @swagger
  * /users/{userId}:
  *   get:
  *     summary: Récupérer un utilisateur par son ID
@@ -110,21 +126,5 @@ router.put("/:userId", updateUser);
  *         description: Erreur serveur
  */
 router.delete("/:userId", deleteUser);
-
-/**
- * @swagger
- * /veterinarians:
- *   get:
- *     summary: Récupérer tous les vétérinaires
- *     tags: [User]
- *     responses:
- *       200:
- *         description: Liste des vétérinaires récupérée avec succès
- *       404:
- *         description: Aucun vétérinaire trouvé
- *       500:
- *         description: Erreur serveur
- */
-router.get("/veterinarians", getVeterinarians);
 
 export default router;
