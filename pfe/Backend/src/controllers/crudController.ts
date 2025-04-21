@@ -162,3 +162,26 @@ export const getVeterinarians = async (req: Request, res: Response): Promise<voi
     });
   }
 };
+export const getVeterinaireById: ExpressController = async (req, res) => {
+  const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    res.status(400).json({ message: "ID utilisateur invalide" });
+    return;
+  }
+
+  try {
+    const user = await UserService.getVeterinaireById(userId);
+
+    if (!user) {
+      res.status(404).json({ message: "Vétérinaire non trouvé" });
+      return;
+    }
+
+    res.status(200).json(user);
+  } catch (error) {
+    res.status(500).json({
+      message: error instanceof Error ? error.message : "Erreur serveur",
+    });
+  }
+};

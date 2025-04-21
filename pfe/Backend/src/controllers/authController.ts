@@ -137,7 +137,8 @@ export const SignupAdmin = (req: Request, res: Response) => Signup(req, res, Use
 
 // Connexion et gestion des tokens
 export const Login = async (req: Request, res: Response): Promise<void> => {
-  const { username, password } = req.body;
+  const { username, password } = req.body; // Utilisation de 'username' et 'password'
+  
   if (!username || !password) {
     res.status(400).json({ message: "Nom d'utilisateur et mot de passe requis" });
     return;
@@ -145,14 +146,16 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
 
   try {
     const { accessToken, refreshToken } = await UserService.authenticateUser(username, password);
-    
+
     console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
 
     res.json({ message: "Connexion réussie", accessToken, refreshToken });
   } catch (error: unknown) {
+    console.error("Erreur lors de la connexion :", error); // Ajout d'un log pour l'erreur
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec de l'authentification" });
   }
 };
+
 
 // Rafraîchir le token d'accès
 export const RefreshAccessToken = async (req: Request, res: Response): Promise<void> => {

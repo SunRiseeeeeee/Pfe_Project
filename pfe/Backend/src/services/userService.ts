@@ -183,36 +183,51 @@ export class UserService {
     if (!username || !password) {
       throw new Error("Username and password are required");
     }
-
-    const user = await User.findOne({ username }).select("+password");
-    if (!user) {
-      throw new Error("Invalid credentials");
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      throw new Error("Invalid credentials");
-    }
-
-    const accessToken = this.generateAccessToken(user.id, user.role);
-    const refreshToken = this.generateRefreshToken(user.id);
-
-    user.refreshToken = refreshToken;
-    await user.save();
-
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        username: user.username
+  
+    try {
+      // Recherche de l'utilisateur par 'username', incluant le mot de passe pour la vérification
+      const user = await User.findOne({ username }).select("+password");
+      
+      // Vérification de l'existence de l'utilisateur
+      if (!user) {
+        throw new Error("Invalid credentials");  // Utilisateur non trouvé
       }
-    };
+  
+      // Comparaison du mot de passe hashé
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        throw new Error("Invalid credentials");  // Le mot de passe est incorrect
+      }
+  
+      // Génération des tokens JWT
+      const accessToken = this.generateAccessToken(user.id, user.role);
+      const refreshToken = this.generateRefreshToken(user.id);
+  
+      // Sauvegarder le refreshToken dans l'utilisateur (optionnel, si nécessaire)
+      user.refreshToken = refreshToken;
+      await user.save();
+  
+      // Retourner les tokens et les informations de l'utilisateur, incluant l'email
+      return {
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          role: user.role,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,  // Ajout de l'email
+          username: user.username
+        }
+      };
+    } catch (error) {
+      // Gestion des erreurs
+      console.error("Erreur d'authentification :", error);  // Log d'erreur pour faciliter le débogage
+      throw new Error("Authentication failed");  // Message générique d'erreur
+    }
   }
+  
+  
 
   static async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string }> {
     if (!refreshToken) {
@@ -431,4 +446,14 @@ export class UserService {
       totalPages: Math.ceil(totalCount / limitNumber),
     };
   }
+  static async getVeterinaireById(userId: string): Promise<IUser | null> {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      throw new Error("Invalid user ID");
+    }
+  
+    const user = await User.findOne({ _id: userId, role: UserRole.VETERINAIRE }).select("-password -refreshToken");
+  
+    return user;
+  }
+  
 }

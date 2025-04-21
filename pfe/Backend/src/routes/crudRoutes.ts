@@ -3,6 +3,7 @@ import {
   updateUser,
   deleteUser,
   getVeterinarians,
+  getVeterinaireById,
   getUserById
 } from "../controllers/crudController";
 
@@ -126,5 +127,8 @@ router.put("/:userId", updateUser);
  *         description: Erreur serveur
  */
 router.delete("/:userId", deleteUser);
+
+router.get("/veterinarians/:userId", getVeterinaireById);
+
 
 export default router;
