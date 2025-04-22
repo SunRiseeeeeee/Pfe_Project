@@ -3,15 +3,7 @@ import { UserService } from "../services/userService";
 import User, { UserRole } from "../models/User";
 import mongoose from "mongoose";
 
-interface IVeterinarianQuery {
-  rating?: string;
-  location?: string;
-  page?: string;
-  limit?: string;
-  sort?: string;
-}
-
-// Type pour les contrôleurs Express
+// Type local pour les contrôleurs Express
 type ExpressController = (req: Request, res: Response, next?: NextFunction) => Promise<void>;
 
 export const getUserById: ExpressController = async (req, res) => {
@@ -30,7 +22,7 @@ export const getUserById: ExpressController = async (req, res) => {
     }
     res.status(200).json(user);
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Erreur lors de la récupération de l'utilisateur",
       error: error instanceof Error ? error.message : "Erreur inconnue"
     });
@@ -39,10 +31,21 @@ export const getUserById: ExpressController = async (req, res) => {
 
 export const updateUser: ExpressController = async (req, res) => {
   const { userId } = req.params;
-  const updateFields = req.body;
+  const updateFields = { ...req.body };
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     res.status(400).json({ message: "ID utilisateur invalide" });
+    return;
+  }
+
+  // ❌ Bloquer la modification de l'email ou du rôle uniquement si une valeur est fournie
+  if (
+    Object.prototype.hasOwnProperty.call(updateFields, 'email') ||
+    Object.prototype.hasOwnProperty.call(updateFields, 'role')
+  ) {
+    res.status(403).json({
+      message: "La modification de l'email ou du rôle n'est pas autorisée"
+    });
     return;
   }
 
@@ -52,16 +55,19 @@ export const updateUser: ExpressController = async (req, res) => {
       res.status(404).json({ message: "Utilisateur non trouvé" });
       return;
     }
-    res.status(200).json({ 
-      message: "Coordonnées mises à jour avec succès", 
-      user: updatedUser 
+    res.status(200).json({
+      message: "Coordonnées mises à jour avec succès",
+      user: updatedUser
     });
   } catch (error) {
-    res.status(400).json({ 
-      message: error instanceof Error ? error.message : "Erreur lors de la mise à jour" 
+    res.status(400).json({
+      message: error instanceof Error ? error.message : "Erreur lors de la mise à jour"
     });
   }
 };
+
+
+
 
 export const deleteUser: ExpressController = async (req, res) => {
   const { userId } = req.params;
@@ -79,48 +85,58 @@ export const deleteUser: ExpressController = async (req, res) => {
     }
     res.status(200).json({ message: "Compte supprimé avec succès" });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Erreur lors de la suppression du compte",
       error: error instanceof Error ? error.message : "Erreur inconnue"
     });
   }
 };
 
-export const getVeterinarians: ExpressController = async (req, res) => {
+export const getVeterinarians = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Extraction et typage explicite des query params
-    const rating = typeof req.query.rating === 'string' ? req.query.rating : undefined;
-    const location = typeof req.query.location === 'string' ? req.query.location : undefined;
-    const page = typeof req.query.page === 'string' ? req.query.page : "1";
-    const limit = typeof req.query.limit === 'string' ? req.query.limit : "2";
-    const sort = typeof req.query.sort === 'string' ? req.query.sort : "desc";
+    // Extraction et parsing sécurisé des query params
+    const rating = parseFloat(req.query.rating as string);
+    const location = req.query.location as string | undefined;
+    const services = (req.query.services as string | undefined)?.split(",");
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const sort = req.query.sort === "asc" ? "asc" : "desc";
 
-    const filter: Record<string, any> = { role: UserRole.VETERINAIRE };
+    const filter: Record<string, any> = {
+      role: UserRole?.VETERINAIRE || "VETERINAIRE"
+    };
 
-    // Filtrage par rating
-    if (rating) {
-      const ratingNumber = parseFloat(rating);
-      if (!isNaN(ratingNumber)) {
-        filter.rating = { $gte: ratingNumber };
-      }
+    // Filtrage par rating minimum
+    if (!isNaN(rating)) {
+      filter.rating = { $gte: rating };
     }
 
-    // Filtrage par location (regex insensible à la casse)
+    // Filtrage par location (street, city, state, country)
     if (location) {
-      filter.location = { $regex: new RegExp(location, "i") };
+      const regex = new RegExp(location, "i");
+      filter.$or = [
+        { "address.street": regex },
+        { "address.city": regex },
+        { "address.state": regex },
+        { "address.country": regex }
+      ];
     }
 
-    // Pagination avec validation
-    const pageNumber = Math.max(1, parseInt(page) || 1);
-    const limitNumber = Math.min(100, Math.max(1, parseInt(limit) || 10));
-    const skip = (pageNumber - 1) * limitNumber;
+    // Filtrage par services proposés
+    if (services && services.length > 0) {
+      filter["details.services"] = { $in: services };
+    }
 
-    // Tri (par défaut : rating décroissant)
+    // Pagination et tri
+    const pageNumber = Math.max(1, page);
+    const limitNumber = Math.min(100, Math.max(1, limit));
+    const skip = (pageNumber - 1) * limitNumber;
     const sortOrder = sort === "asc" ? 1 : -1;
 
+    // Requête principale et comptage total
     const [veterinarians, totalCount] = await Promise.all([
-      User.find(filter)
-        .sort({ rating: sortOrder })
+      User.find(filter, "-password -refreshToken")
+        .sort({ rating: sortOrder, lastName: 1 }) // tri combiné
         .skip(skip)
         .limit(limitNumber),
       User.countDocuments(filter)
@@ -140,9 +156,32 @@ export const getVeterinarians: ExpressController = async (req, res) => {
 
   } catch (error) {
     console.error("Erreur lors de la récupération des vétérinaires:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Erreur serveur",
       error: error instanceof Error ? error.message : "Erreur inconnue"
+    });
+  }
+};
+export const getVeterinaireById: ExpressController = async (req, res) => {
+  const { userId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    res.status(400).json({ message: "ID utilisateur invalide" });
+    return;
+  }
+
+  try {
+    const user = await UserService.getVeterinaireById(userId);
+
+    if (!user) {
+      res.status(404).json({ message: "Vétérinaire non trouvé" });
+      return;
+    }
+
+    res.status(200).json(user);
+  } catch (error) {
+    res.status(500).json({
+      message: error instanceof Error ? error.message : "Erreur serveur",
     });
   }
 };

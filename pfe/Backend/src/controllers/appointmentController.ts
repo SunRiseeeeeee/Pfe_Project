@@ -1,68 +1,57 @@
 import { Request, Response, NextFunction } from "express";
 import Appointment, { AppointmentStatus } from "../models/Appointment";
 import User from "../models/User";
-import Animal from "../models/Animal";
 import mongoose from "mongoose";
-// Créer un rendez-vous pour un vétérinaire spécifique
-export const createAppointment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const { date, animalName, type } = req.body;
-      const user = (req as any).user; // L'utilisateur authentifié à partir du token
-  
-      // Vérification du rôle de l'utilisateur
-      if (!user || user.role !== "client") {
-        res.status(403).json({ message: "Accès interdit" });
-        return;
-      }
-  
-      // Vérifier si le client existe
-      const client = await User.findById(user.id);
-      if (!client) {
-        res.status(404).json({ error: "Client non trouvé" });
-        return;
-      }
-  
-      // Vérifier si l'utilisateur possède un animal avec ce nom
-      const animal = await Animal.findOne({ owner: user.id, name: animalName });
-      if (!animal) {
-        res.status(400).json({ error: `Aucun animal nommé "${animalName}" trouvé pour cet utilisateur` });
-        return;
-      }
-  
-      // Trouver un vétérinaire disponible
-      const veterinaire = await User.findOne({ role: "veterinaire" });
-      if (!veterinaire) {
-        res.status(404).json({ error: "Vétérinaire non trouvé" });
-        return;
-      }
-  
-      // Créer un rendez-vous
-      const appointment = new Appointment({
-        clientId: user.id,
-        clientFirstName: client.firstName,
-        clientLastName: client.lastName,
-        veterinaire: veterinaire._id,
-        veterinaireFirstName: veterinaire.firstName,
-        veterinaireLastName: veterinaire.lastName,
-        date,
-        animalName,
-        type,
-        status: AppointmentStatus.PENDING,
-      });
-  
-      // Sauvegarder le rendez-vous
-      await appointment.save();
-  
-      res.status(201).json({ message: "Rendez-vous créé avec succès", appointment });
-    } catch (error) {
-      next(error);
+
+// Créer un rendez-vous
+export const createAppointment = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { date, animalType, type } = req.body;
+    const user = req.user;
+
+    if (!user || user.role !== "client") {
+      res.status(403).json({ message: "Accès interdit" });
+      return;
     }
-  };
-  
-  
+
+    const client = await User.findById(user.id);
+    if (!client) {
+      res.status(404).json({ error: "Client non trouvé" });
+      return;
+    }
+
+    const veterinaire = await User.findOne({ role: "veterinaire" });
+    if (!veterinaire) {
+      res.status(404).json({ error: "Vétérinaire non trouvé" });
+      return;
+    }
+
+    const appointment = new Appointment({
+      clientId: user.id,
+      veterinaireId: veterinaire._id,
+      date,
+      animalType,
+      type,
+      status: AppointmentStatus.PENDING,
+    });
+
+    await appointment.save();
+
+    res.status(201).json({ message: "Rendez-vous créé avec succès", appointment });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // Récupérer un rendez-vous par ID
-export const getAppointmentById = async (req: Request, res: Response): Promise<void> => {
+export const getAppointmentById = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const appointment = await Appointment.findById(req.params.id);
     if (!appointment) {
@@ -76,7 +65,10 @@ export const getAppointmentById = async (req: Request, res: Response): Promise<v
 };
 
 // Accepter un rendez-vous
-export const acceptAppointment = async (req: Request, res: Response): Promise<void> => {
+export const acceptAppointment = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const appointment = await Appointment.findByIdAndUpdate(
       req.params.id,
@@ -94,7 +86,10 @@ export const acceptAppointment = async (req: Request, res: Response): Promise<vo
 };
 
 // Refuser un rendez-vous
-export const rejectAppointment = async (req: Request, res: Response): Promise<void> => {
+export const rejectAppointment = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const appointment = await Appointment.findByIdAndUpdate(
       req.params.id,
@@ -111,15 +106,7 @@ export const rejectAppointment = async (req: Request, res: Response): Promise<vo
   }
 };
 
-declare module 'express' {
-  interface Request {
-    user?: {
-      id: string;
-      role: string;
-    };
-  }
-}
-
+// Récupérer les rendez-vous d'un client
 export const getAppointmentsByClient = async (
   req: Request,
   res: Response,
@@ -128,32 +115,18 @@ export const getAppointmentsByClient = async (
   const { clientId } = req.params;
 
   try {
-    // Debug
-    console.log('Comparing IDs:', {
-      paramId: clientId,
-      tokenId: req.user?.id,
-      equal: String(req.user?.id) === String(clientId)
-    });
-
-    // Vérification d'authentification
     if (!req.user) {
       res.status(401).json({ message: "Non authentifié" });
       return;
     }
 
-    // Vérification d'autorisation
     if (String(req.user.id) !== String(clientId)) {
       res.status(403).json({
-        message: "Non autorisé à accéder à ces rendez-vous",
-        debug: {
-          tokenId: req.user.id,
-          requestedId: clientId
-        }
+        message: "Non autorisé à accéder à ces rendez-vous"
       });
       return;
     }
 
-    // Recherche des rendez-vous avec le bon champ
     const appointments = await Appointment.find({ clientId });
 
     if (!appointments.length) {
@@ -163,17 +136,18 @@ export const getAppointmentsByClient = async (
       return;
     }
 
-    // Renvoi des rendez-vous
     res.status(200).json(appointments);
-
   } catch (error) {
-    console.error('Error in getAppointmentsByClient:', error);
+    console.error("Error in getAppointmentsByClient:", error);
     next(error);
   }
 };
 
-// Récupérer les rendez-vous d'un vétérinaire spécifique
-export const getAppointmentsByVeterinaire = async (req: Request, res: Response): Promise<void> => {
+// Récupérer les rendez-vous d’un vétérinaire
+export const getAppointmentsByVeterinaire = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const { veterinaireId } = req.params;
     const appointments = await Appointment.find({ veterinaireId });
@@ -189,7 +163,10 @@ export const getAppointmentsByVeterinaire = async (req: Request, res: Response):
 };
 
 // Supprimer un rendez-vous
-export const deleteAppointment = async (req: Request, res: Response): Promise<void> => {
+export const deleteAppointment = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const appointment = await Appointment.findByIdAndDelete(req.params.id);
     if (!appointment) {
@@ -203,13 +180,19 @@ export const deleteAppointment = async (req: Request, res: Response): Promise<vo
 };
 
 // Mettre à jour un rendez-vous
-export const updateAppointment = async (req: Request, res: Response): Promise<void> => {
+export const updateAppointment = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
   try {
     const appointmentId = req.params.id;
     const updatedData = req.body;
 
-    // Mettre à jour le rendez-vous en utilisant l'ID
-    const updatedAppointment = await Appointment.findByIdAndUpdate(appointmentId, updatedData, { new: true });
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      appointmentId,
+      updatedData,
+      { new: true }
+    );
 
     if (!updatedAppointment) {
       res.status(404).json({ error: "Rendez-vous non trouvé" });
@@ -221,3 +204,13 @@ export const updateAppointment = async (req: Request, res: Response): Promise<vo
     res.status(500).json({ error: "Erreur lors de la mise à jour du rendez-vous" });
   }
 };
+
+// Extension du type Request pour inclure l’utilisateur
+declare module "express" {
+  interface Request {
+    user?: {
+      id: string;
+      role: string;
+    };
+  }
+}

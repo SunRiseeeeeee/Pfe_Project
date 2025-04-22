@@ -15,6 +15,14 @@ interface IWorkingHour {
   end: string;   // format: "17:00"
 }
 
+// Interface pour l'adresse
+interface IAddress {
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 // Interface pour les détails supplémentaires
 export interface IUserDetails {
   services?: string[];  // Liste de services
@@ -33,6 +41,7 @@ export interface IUser extends Document {
   profilePicture?: string;
   MapsLocation?: string;
   description?: string;
+  address?: IAddress;
   details?: IUserDetails;
   reviews?: any[];
   rating?: number;
@@ -47,22 +56,35 @@ const UserSchema: Schema = new Schema(
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     username: { type: String, required: true, unique: true, trim: true },
-    email: { type: String, required: true, unique: true, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+      match: /^\S+@\S+\.\S+$/,
+    },
     password: { type: String, required: true, select: false },
     phoneNumber: { type: String, required: true, unique: true, trim: true },
     role: { type: String, enum: Object.values(UserRole), required: true },
     profilePicture: { type: String, default: null },
     MapsLocation: { type: String, default: null },
     description: { type: String, default: null, trim: true },
+    address: {
+      street: { type: String, default: null },
+      city: { type: String, default: null },
+      state: { type: String, default: null },
+      country: { type: String, default: null },
+    },
     details: {
       services: { type: [String], default: [] },
       workingHours: [
         {
           day: { type: String, required: true },
           start: { type: String, required: true },
-          end: { type: String, required: true }
-        }
-      ]
+          end: { type: String, required: true },
+        },
+      ],
     },
     reviews: { type: Array, default: [] },
     rating: {
@@ -70,7 +92,7 @@ const UserSchema: Schema = new Schema(
       default: 0,
       min: 0,
       max: 5,
-      set: (value: number) => parseFloat(value.toFixed(2))
+      set: (value: number) => parseFloat(value.toFixed(2)),
     },
     refreshToken: { type: String, default: null, select: false },
   },
