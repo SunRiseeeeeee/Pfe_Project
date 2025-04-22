@@ -1,16 +1,11 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/userService";
 import { UserRole } from "../models/User";
+import User from "../models/User"; // 🔧 Ajout de l'import manquant
 
-
-
-// Liste des jours valides
 const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-// Vérifie le format HH:MM (24h)
 const isValidTime = (time: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
 
-// Inscription d'un utilisateur (générique pour tous les rôles)
 const Signup = async (req: Request, res: Response, role: UserRole): Promise<void> => {
   const {
     firstName,
@@ -28,12 +23,10 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
   } = req.body;
 
   try {
-    // Validation de base
     if (!firstName || !lastName || !username || !email || !password || !phoneNumber) {
       throw new Error("Tous les champs obligatoires doivent être remplis");
     }
 
-    // Construire l'objet extraDetails
     const extraDetails: Record<string, any> = {
       profilePicture,
       MapsLocation,
@@ -42,12 +35,10 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
       reviews: []
     };
 
-    // Validation et ajout de l'adresse
     if (address && typeof address === "object") {
       const { street, city, state, country } = address;
-
-      // Vérifie les types si les champs sont définis
       const addressFields = { street, city, state, country };
+
       for (const [key, value] of Object.entries(addressFields)) {
         if (value !== undefined && typeof value !== "string") {
           throw new Error(`Le champ ${key} de l'adresse doit être une chaîne de caractères`);
@@ -57,7 +48,6 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
       extraDetails.address = addressFields;
     }
 
-    // Traitement spécifique selon le rôle
     switch (role) {
       case UserRole.VETERINAIRE:
         if (!Array.isArray(services) || !services.every(s => typeof s === "string")) {
@@ -91,14 +81,12 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
         break;
 
       case UserRole.CLIENT:
-        // Aucun champ additionnel spécifique requis
         break;
 
       default:
         throw new Error("Rôle non valide");
     }
 
-    // Préparation des données utilisateur
     const userData = {
       firstName,
       lastName,
@@ -109,7 +97,6 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
       role
     };
 
-    // Création de l'utilisateur
     const user = await UserService.createUser(userData, extraDetails);
 
     res.status(201).json({
@@ -117,7 +104,6 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
       message: `${role} inscrit avec succès`,
       userId: user._id
     });
-
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Erreur inconnue lors de l'inscription";
     console.error(`Erreur d'inscription (${role}):`, errorMessage);
@@ -128,17 +114,14 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
   }
 };
 
-
-// Inscription pour chaque rôle
 export const SignupClient = (req: Request, res: Response) => Signup(req, res, UserRole.CLIENT);
 export const SignupVeterinaire = (req: Request, res: Response) => Signup(req, res, UserRole.VETERINAIRE);
 export const SignupSecretaire = (req: Request, res: Response) => Signup(req, res, UserRole.SECRETAIRE);
 export const SignupAdmin = (req: Request, res: Response) => Signup(req, res, UserRole.ADMIN);
 
-// Connexion et gestion des tokens
 export const Login = async (req: Request, res: Response): Promise<void> => {
-  const { username, password } = req.body; // Utilisation de 'username' et 'password'
-  
+  const { username, password } = req.body;
+
   if (!username || !password) {
     res.status(400).json({ message: "Nom d'utilisateur et mot de passe requis" });
     return;
@@ -146,18 +129,14 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
 
   try {
     const { accessToken, refreshToken } = await UserService.authenticateUser(username, password);
-
     console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
-
     res.json({ message: "Connexion réussie", accessToken, refreshToken });
   } catch (error: unknown) {
-    console.error("Erreur lors de la connexion :", error); // Ajout d'un log pour l'erreur
+    console.error("Erreur lors de la connexion :", error);
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec de l'authentification" });
   }
 };
 
-
-// Rafraîchir le token d'accès
 export const RefreshAccessToken = async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
@@ -173,20 +152,25 @@ export const RefreshAccessToken = async (req: Request, res: Response): Promise<v
   }
 };
 
-// Déconnexion utilisateur
 export const Logout = async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
-
   if (!refreshToken) {
     res.status(400).json({ message: "Refresh token requis" });
     return;
   }
 
   try {
-    await UserService.logoutUser(refreshToken);
+    const user = await User.findOne({ refreshToken });
+    if (!user) {
+      res.status(403).json({ message: "Utilisateur non trouvé" });
+      return;
+    }
+
+    user.refreshToken = null;
+    await user.save();
+
     res.json({ message: "Déconnexion réussie" });
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Échec de la déconnexion";
-    res.status(400).json({ message: errorMessage });
+  } catch (error) {
+    res.status(500).json({ message: "Erreur serveur lors de la déconnexion" });
   }
 };

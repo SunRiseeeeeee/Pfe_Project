@@ -250,14 +250,18 @@ export class UserService {
 
   static async logoutUser(userId: string): Promise<void> {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      throw new Error("Invalid user ID");
+      throw new Error("ID utilisateur invalide");
     }
-
-    const user = await User.findByIdAndUpdate(userId, { refreshToken: null }, { new: true });
+  
+    const user = await User.findById(userId);
     if (!user) {
-      throw new Error("User not found");
+      throw new Error("Utilisateur non trouvé");
     }
+  
+    user.refreshToken = null;
+    await user.save();
   }
+  
 
   private static generateAccessToken(userId: string, role: UserRole): string {
     if (!process.env.JWT_SECRET) {
