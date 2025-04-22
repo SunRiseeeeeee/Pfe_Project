@@ -122,32 +122,60 @@ export const SignupAdmin = (req: Request, res: Response) => Signup(req, res, Use
 export const Login = async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
 
+<<<<<<< HEAD
+=======
+  // Validate input
+>>>>>>> 0293d7c721f3dafaac814f15896fb21529867aca
   if (!username || !password) {
     res.status(400).json({ message: "Nom d'utilisateur et mot de passe requis" });
     return;
   }
 
   try {
+<<<<<<< HEAD
     const { accessToken, refreshToken } = await UserService.authenticateUser(username, password);
     console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
     res.json({ message: "Connexion réussie", accessToken, refreshToken });
   } catch (error: unknown) {
     console.error("Erreur lors de la connexion :", error);
+=======
+    // Authenticate the user
+    const { accessToken, refreshToken, user } = await UserService.authenticateUser(username, password);
+
+    console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
+
+    // Return the access token, refresh token, and user details
+    res.json({
+      message: "Connexion réussie",
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id, // Include the user ID
+        email: user.email,
+      },
+    });
+  } catch (error: unknown) {
+    // Handle authentication errors
+>>>>>>> 0293d7c721f3dafaac814f15896fb21529867aca
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec de l'authentification" });
   }
 };
 
 export const RefreshAccessToken = async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
+
+  // Validate input
   if (!refreshToken) {
     res.status(400).json({ message: "Refresh token requis" });
     return;
   }
 
   try {
+    // Refresh the access token
     const { accessToken } = await UserService.refreshAccessToken(refreshToken);
     res.json({ accessToken });
   } catch (error: unknown) {
+    // Handle token refresh errors
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec du rafraîchissement du token" });
   }
 };

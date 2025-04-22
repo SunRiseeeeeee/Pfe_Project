@@ -1,43 +1,48 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
 
-
-/// VetService Class
 class VetService {
   static const String baseUrl = "http://192.168.1.18:3000/api/users/veterinarians";
-
-  // Create a Dio instance
   static final Dio _dio = Dio();
 
-  /// Fetch all veterinarians
-  static Future<List<Veterinarian>> fetchVeterinarians() async {
+  static Future<Map<String, dynamic>> fetchVeterinarians({
+    String? rating,
+    String? location,
+    int page = 1,
+    int limit = 10,
+    String sort = "desc",
+  }) async {
     try {
-      // Make a GET request to the API
-      final response = await _dio.get(baseUrl);
+      final queryParams = {
+        if (rating != null && rating.trim().isNotEmpty) 'rating': rating.trim(),
+        if (location != null && location.trim().isNotEmpty) 'location': location.trim(),
+        'page': page.toString(),
+        'limit': limit.toString(),
+        'sort': sort,
+      };
 
-      // Check if the response status code is 200 (OK)
+      final response = await _dio.get(baseUrl, queryParameters: queryParams);
+
       if (response.statusCode == 200) {
-        // Parse the JSON response
-        final Map<String, dynamic> jsonData = response.data;
+        final jsonData = response.data;
+        final veterinariansData = jsonData['veterinarians'];
+        final int currentPage = jsonData['currentPage'] ?? 1;
+        final int totalPages = jsonData['totalPages'] ?? 1;
+        final int totalCount = jsonData['totalCount'] ?? 0;
 
-        // Extract the list of veterinarians from the "veterinarians" key
-        final List<dynamic>? veterinariansData = jsonData['veterinarians'];
+        final List<Veterinarian> veterinarians =
+        veterinariansData.map<Veterinarian>((json) => Veterinarian.fromJson(json)).toList();
 
-        // If the "veterinarians" key is null or not a list, return an empty list
-        if (veterinariansData == null || veterinariansData.isEmpty) {
-          print('No veterinarians found in the API response.');
-          return [];
-        }
-
-        // Convert the list into a list of Veterinarian objects
-        return veterinariansData.map((json) => Veterinarian.fromJson(json)).toList();
+        return {
+          'currentPage': currentPage,
+          'totalPages': totalPages,
+          'totalCount': totalCount,
+          'veterinarians': veterinarians,
+        };
       } else {
-        // Throw an exception if the response status code is not 200
         throw Exception('Failed to load veterinarians. Status Code: ${response.statusCode}');
       }
     } catch (e) {
-      // Handle any errors that occur during the request
       print('Error fetching veterinarians: $e');
       throw Exception('Error: $e');
     }
