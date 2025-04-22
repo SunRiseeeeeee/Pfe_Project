@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vetapp_v1/screens/signup.dart';
 import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService
 import 'home_screen.dart'; // Import your HomeScreen
-import 'signup.dart'; // Import your SignupPage if needed
 
 class LoginPage extends StatefulWidget {
   @override
@@ -37,7 +38,16 @@ class _LoginPageState extends State<LoginPage> {
       Map<String, dynamic> response = await _authService.login(username, password);
 
       if (response["success"]) {
-        // Navigate to the HomePage without passing userName
+        // Extract user details from the response
+        final userId = response["data"]["userId"];
+        final email = response["data"]["email"];
+        final accessToken = response["data"]["accessToken"];
+        final refreshToken = response["data"]["refreshToken"];
+
+        // Save user data locally
+        await _saveUserData(userId, email, accessToken, refreshToken);
+
+        // Navigate to the HomePage
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -56,6 +66,15 @@ class _LoginPageState extends State<LoginPage> {
         _errorMessage = "An error occurred. Please try again.";
       });
     }
+  }
+
+  // Save user data locally using SharedPreferences
+  Future<void> _saveUserData(String userId, String email, String accessToken, String refreshToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('userId', userId);
+    await prefs.setString('email', email);
+    await prefs.setString('accessToken', accessToken);
+    await prefs.setString('refreshToken', refreshToken);
   }
 
   @override

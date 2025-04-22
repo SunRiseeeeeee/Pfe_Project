@@ -37,9 +37,28 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        return {"success": true, "data": response.data};
+        // Extract the user details from the response
+        final userId = response.data["user"]["id"];
+        final email = response.data["user"]["email"];
+        final accessToken = response.data["accessToken"];
+        final refreshToken = response.data["refreshToken"];
+
+        // Return the extracted details
+        return {
+          "success": true,
+          "message": "Login successful",
+          "data": {
+            "userId": userId,
+            "email": email,
+            "accessToken": accessToken,
+            "refreshToken": refreshToken,
+          },
+        };
       } else {
-        return {"success": false, "message": response.data["message"] ?? "Login failed"};
+        return {
+          "success": false,
+          "message": response.data["message"] ?? "Login failed"
+        };
       }
     } on DioException catch (e) {
       return {

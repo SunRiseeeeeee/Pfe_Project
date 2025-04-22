@@ -1,231 +1,188 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
-import 'package:vetapp_v1/services/vet_service.dart';
+import 'package:vetapp_v1/screens/appointment_screen.dart';
+import 'package:vetapp_v1/screens/message_screen.dart';
+import 'package:vetapp_v1/screens/profile_screen.dart';
 import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
+import 'package:vetapp_v1/services/vet_service.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+
+  final List<Widget> _screens = const [
+    HomeContent(), // The content of the home screen
+    AppointmentScreen(),
+    MessageScreen(),
+    ProfileScreen(),
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Welcome,",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                          fontFamily: 'Poppins', // Apply Poppins font
-                        ),
-                      ),
-                      Text(
-                        "Wade Warren",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Poppins', // Apply Poppins font
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      IconButton(icon: const Icon(Icons.search), onPressed: () {}),
-                      IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Discover Section with background image
-              Container(
-                height: 150,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    // Background image
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.asset(
-                        'assets/images/vet2.jpg',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    // Overlay with content
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        gradient: LinearGradient(
-                          colors: [Colors.black.withOpacity(0.4), Colors.transparent],
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                        ),
-                      ),
-                    ),
-                    // Text and Button
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Discover Top Vets\nin Your Area!',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Montserrat', // Apply Montserrat font
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            onPressed: () {},
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.deepPurple,
-                            ),
-                            child: Text(
-                              'Discover',
-                              style: TextStyle(
-                                fontFamily: 'Poppins', // Apply Poppins font
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+      body: _screens[_selectedIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: Colors.deepPurple,
+        unselectedItemColor: Colors.grey,
+        currentIndex: _selectedIndex,
+        type: BottomNavigationBarType.fixed,
+        onTap: _onItemTapped,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: 'Appointment'),
+          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Message'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        ],
+      ),
+    );
+  }
+}
+
+class HomeContent extends StatefulWidget {
+  const HomeContent({super.key});
+
+  @override
+  _HomeContentState createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<HomeContent> {
+  // Variables to manage pagination
+  int currentPage = 1;
+  String? ratingFilter;
+  String? locationFilter;
+  int limit = 10;
+  String sort = "desc";
+
+  late Future<Map<String, dynamic>> veterinariansFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize the future with default values
+    veterinariansFuture = VetService.fetchVeterinarians(
+      rating: ratingFilter,
+      location: locationFilter,
+      page: currentPage,
+      limit: limit,
+      sort: sort,
+    );
+  }
+
+  // Method to refresh the future when navigating pages
+  void _refreshVeterinarians(int newPage) {
+    setState(() {
+      currentPage = newPage;
+      veterinariansFuture = VetService.fetchVeterinarians(
+        rating: ratingFilter,
+        location: locationFilter,
+        page: currentPage,
+        limit: limit,
+        sort: sort,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text("Welcome,", style: TextStyle(fontSize: 14, color: Colors.grey, fontFamily: 'Poppins')),
+                    Text("Wade Warren", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Poppins')),
                   ],
                 ),
-              ),
-              const SizedBox(height: 20),
-              // Services Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Services',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Poppins', // Apply Poppins font
+                Row(
+                  children: [
+                    IconButton(icon: const Icon(Icons.search), onPressed: () {}),
+                    IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const AutoSlidingPageView(),
+            const SizedBox(height: 20),
+            _buildSectionHeader('Services'),
+            const SizedBox(height: 12),
+            _buildServicesSection(),
+            const SizedBox(height: 20),
+            _buildSectionHeader('Our best veterinarians'),
+            const SizedBox(height: 12),
+            FutureBuilder<Map<String, dynamic>>(
+              future: veterinariansFuture,
+              builder: (context, snapshot) {
+                // Check if the data is still loading
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                // Handle errors during the API call
+                if (snapshot.hasError) {
+                  print('API Error: ${snapshot.error}'); // Log the error for debugging
+                  return Center(
+                    child: Text(
+                      'Error: ${snapshot.error}',
+                      style: const TextStyle(color: Colors.red),
                     ),
-                  ),
-                  Text(
-                    'See All',
-                    style: TextStyle(
-                      color: Colors.deepPurpleAccent,
-                      fontFamily: 'Poppins', // Apply Poppins font
+                  );
+                }
+
+                // Extract the data from the snapshot
+                final Map<String, dynamic>? responseData = snapshot.data;
+
+                // Handle empty or null data
+                if (responseData == null ||
+                    responseData['veterinarians'] == null ||
+                    responseData['veterinarians'].isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No veterinarians found.',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Custom Layout for Services Section
-              Column(
-                children: [
-                  // First Row: 60% - 40%
-                  SizedBox(
-                    height: 150, // Fixed height for the row
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 6,
-                          child: _buildServiceCard('Vaccinations', 'assets/images/vac.jpg'),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 4,
-                          child: _buildServiceCardWithFixedDimensions(
-                            'Grooming',
-                            'assets/images/grooming.jpg',
-                            height: 150,
-                            width: 100,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  // Second Row: 40% - 60%
-                  SizedBox(
-                    height: 150, // Fixed height for the row
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 4,
-                          child: _buildServiceCardWithFixedDimensions(
-                            'Walking',
-                            'assets/images/walking.jpg',
-                            height: 150,
-                            width: 100,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 6,
-                          child: _buildServiceCard('Training', 'assets/images/training.jpg'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              // Best Veterinarian Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Our best veterinarians',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Poppins', // Apply Poppins font
-                    ),
-                  ),
-                  Text(
-                    'See All',
-                    style: TextStyle(
-                      color: Colors.deepPurpleAccent,
-                      fontFamily: 'Poppins', // Apply Poppins font
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Fetch and display the list of veterinarians
-              FutureBuilder<List<Veterinarian>>(
-                future: VetService.fetchVeterinarians(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  } else if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
-                  } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return const Center(child: Text('No veterinarians found.'));
-                  } else {
-                    final veterinarians = snapshot.data!;
-                    return ListView.builder(
+                  );
+                }
+
+                // Extract the list of veterinarians and pagination details
+                final List<dynamic> veterinariansData = responseData['veterinarians'];
+                final int totalPages = responseData['totalPages'] ?? 1;
+
+                // Convert the list into a list of Veterinarian objects
+                final List<Veterinarian> veterinarians =
+                veterinariansData.map((json) => Veterinarian.fromJson(json)).toList();
+
+                // Display the list of veterinarians
+                return Column(
+                  children: [
+                    ListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: veterinarians.length,
                       itemBuilder: (context, index) {
                         final vet = veterinarians[index];
+
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: Hero(
@@ -235,17 +192,12 @@ class HomeScreen extends StatelessWidget {
                               backgroundImage: vet.profilePicture != null
                                   ? NetworkImage(vet.profilePicture!)
                                   : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
-                              child: vet.profilePicture == null
-                                  ? const Icon(Icons.person)
-                                  : null,
+                              child: vet.profilePicture == null ? const Icon(Icons.person) : null,
                             ),
                           ),
                           title: Text(
                             '${vet.firstName} ${vet.lastName}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w500,
-                              fontFamily: 'Poppins', // Apply Poppins font
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,9 +208,7 @@ class HomeScreen extends StatelessWidget {
                                   const SizedBox(width: 4),
                                   Text(
                                     '${vet.rating}/5',
-                                    style: TextStyle(
-                                      fontFamily: 'Poppins', // Apply Poppins font
-                                    ),
+                                    style: const TextStyle(fontFamily: 'Poppins'),
                                   ),
                                 ],
                               ),
@@ -268,9 +218,7 @@ class HomeScreen extends StatelessWidget {
                                   const SizedBox(width: 4),
                                   Text(
                                     vet.workingHours ?? 'N/A',
-                                    style: TextStyle(
-                                      fontFamily: 'Poppins', // Apply Poppins font
-                                    ),
+                                    style: const TextStyle(fontFamily: 'Poppins'),
                                   ),
                                 ],
                               ),
@@ -286,80 +234,93 @@ class HomeScreen extends StatelessWidget {
                           },
                         );
                       },
-                    );
-                  }
-                },
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              spreadRadius: 2,
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(24),
-            topRight: Radius.circular(24),
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(24),
-            topRight: Radius.circular(24),
-          ),
-          child: BottomNavigationBar(
-            backgroundColor: Colors.white,
-            selectedItemColor: Colors.deepPurple,
-            unselectedItemColor: Colors.grey,
-            currentIndex: 0,
-            type: BottomNavigationBarType.fixed,
-            showUnselectedLabels: true,
-            selectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
-            unselectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_rounded),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.calendar_month_rounded),
-                label: 'Appointments',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.chat_bubble_outline_rounded),
-                label: 'Messages',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline_rounded),
-                label: 'Profile',
-              ),
-            ],
-          ),
-        ),
-      ),
+                    ),
 
+                    // Pagination Controls
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back),
+                            onPressed: currentPage > 1
+                                ? () {
+                              _refreshVeterinarians(currentPage - 1);
+                            }
+                                : null,
+                          ),
+                          Text(
+                            'Page $currentPage of $totalPages',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.arrow_forward),
+                            onPressed: currentPage < totalPages
+                                ? () {
+                              _refreshVeterinarians(currentPage + 1);
+                            }
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
     );
   }
 
-  static Widget _buildServiceCard(String title, String imageUrl) {
+  Widget _buildSectionHeader(String title) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Poppins')),
+        const Text('See All', style: TextStyle(color: Colors.blue, fontFamily: 'Poppins')),
+      ],
+    );
+  }
+
+  Widget _buildServicesSection() {
+    return Column(
+      children: [
+        SizedBox(
+          height: 150,
+          child: Row(
+            children: [
+              Expanded(flex: 6, child: _buildServiceCard('Vaccinations', 'assets/images/vac.jpg')),
+              const SizedBox(width: 10),
+              Expanded(flex: 4, child: _buildServiceCard('Grooming', 'assets/images/grooming.jpg')),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 150,
+          child: Row(
+            children: [
+              Expanded(flex: 4, child: _buildServiceCard('Walking', 'assets/images/walking.jpg')),
+              const SizedBox(width: 10),
+              Expanded(flex: 6, child: _buildServiceCard('Training', 'assets/images/training.jpg')),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildServiceCard(String title, String imageUrl) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset(
-            imageUrl,
-            fit: BoxFit.cover,
-          ),
+          Image.asset(imageUrl, fit: BoxFit.cover),
           Container(
             alignment: Alignment.bottomLeft,
             padding: const EdgeInsets.all(8),
@@ -370,51 +331,114 @@ class HomeScreen extends StatelessWidget {
                 end: Alignment.topCenter,
               ),
             ),
-            child: Text(
-              title,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Poppins', // Apply Poppins font
-              ),
-            ),
+            child: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Poppins')),
           ),
         ],
       ),
     );
   }
+}
 
-  static Widget _buildServiceCardWithFixedDimensions(String title, String imageUrl,
-      {double height = 150, double width = 100}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+class AutoSlidingPageView extends StatefulWidget {
+  const AutoSlidingPageView({super.key});
+
+  @override
+  State<AutoSlidingPageView> createState() => _AutoSlidingPageViewState();
+}
+
+class _AutoSlidingPageViewState extends State<AutoSlidingPageView> {
+  final List<Map<String, String>> _carouselItems = [
+    {'image': 'assets/images/discover.jpg', 'title': 'Discover Top Vets', 'subtitle': 'Find the best vets.'},
+    {'image': 'assets/images/vet2.jpg', 'title': 'Explore Our Services', 'subtitle': 'We offer vaccinations.'},
+    {'image': 'assets/images/discover2.jpg', 'title': 'Book Appointments', 'subtitle': 'Schedule visits with ease.'},
+  ];
+
+  late PageController _pageController;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: _carouselItems.length * 100);
+    Timer.periodic(const Duration(seconds: 5), (timer) {
+      _pageController.nextPage(duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 180,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          SizedBox(
-            width: width,
-            height: height,
-            child: Image.asset(
-              imageUrl,
-              fit: BoxFit.cover,
-            ),
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              setState(() {
+                _currentPage = index % _carouselItems.length;
+              });
+            },
+            itemCount: _carouselItems.length * 1000,
+            itemBuilder: (context, index) {
+              final itemIndex = index % _carouselItems.length;
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.asset(_carouselItems[itemIndex]['image']!, fit: BoxFit.cover),
+              );
+            },
           ),
-          Container(
-            alignment: Alignment.bottomLeft,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.black.withOpacity(0.6), Colors.transparent],
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                gradient: LinearGradient(
+                  colors: [Colors.black.withOpacity(0.4), Colors.transparent],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                ),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_carouselItems[_currentPage]['title']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Montserrat', color: Colors.white)),
+                  const SizedBox(height: 4),
+                  Text(_carouselItems[_currentPage]['subtitle']!, style: const TextStyle(fontSize: 14, fontFamily: 'Poppins', color: Colors.white)),
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: () {},
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.deepPurple),
+                    child: const Text('Discover', style: TextStyle(fontFamily: 'Poppins')),
+                  ),
+                ],
               ),
             ),
-            child: Text(
-              title,
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Poppins', // Apply Poppins font
+          ),
+          Positioned(
+            bottom: 10,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _carouselItems.length,
+                    (index) => Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _currentPage == index ? Colors.white : Colors.grey.withOpacity(0.5),
+                  ),
+                ),
               ),
             ),
           ),
