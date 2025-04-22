@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/userService";
 import { UserRole } from "../models/User";
-import User from "../models/User"; // 🔧 Ajout de l'import manquant
+import User from "../models/User";
 
 const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const isValidTime = (time: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
 
+// 🔐 Inscription générique
 const Signup = async (req: Request, res: Response, role: UserRole): Promise<void> => {
   const {
     firstName,
@@ -114,74 +115,61 @@ const Signup = async (req: Request, res: Response, role: UserRole): Promise<void
   }
 };
 
+// Routes d'inscription par rôle
 export const SignupClient = (req: Request, res: Response) => Signup(req, res, UserRole.CLIENT);
 export const SignupVeterinaire = (req: Request, res: Response) => Signup(req, res, UserRole.VETERINAIRE);
 export const SignupSecretaire = (req: Request, res: Response) => Signup(req, res, UserRole.SECRETAIRE);
 export const SignupAdmin = (req: Request, res: Response) => Signup(req, res, UserRole.ADMIN);
 
+// 🔑 Connexion
 export const Login = async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
 
-<<<<<<< HEAD
-=======
-  // Validate input
->>>>>>> 0293d7c721f3dafaac814f15896fb21529867aca
   if (!username || !password) {
     res.status(400).json({ message: "Nom d'utilisateur et mot de passe requis" });
     return;
   }
 
   try {
-<<<<<<< HEAD
-    const { accessToken, refreshToken } = await UserService.authenticateUser(username, password);
-    console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
-    res.json({ message: "Connexion réussie", accessToken, refreshToken });
-  } catch (error: unknown) {
-    console.error("Erreur lors de la connexion :", error);
-=======
-    // Authenticate the user
     const { accessToken, refreshToken, user } = await UserService.authenticateUser(username, password);
 
     console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
 
-    // Return the access token, refresh token, and user details
     res.json({
       message: "Connexion réussie",
       accessToken,
       refreshToken,
       user: {
-        id: user.id, // Include the user ID
-        email: user.email,
-      },
+        id: user.id,
+        email: user.email
+      }
     });
   } catch (error: unknown) {
-    // Handle authentication errors
->>>>>>> 0293d7c721f3dafaac814f15896fb21529867aca
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec de l'authentification" });
   }
 };
 
+// 🔄 Rafraîchir le token d'accès
 export const RefreshAccessToken = async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
 
-  // Validate input
   if (!refreshToken) {
     res.status(400).json({ message: "Refresh token requis" });
     return;
   }
 
   try {
-    // Refresh the access token
     const { accessToken } = await UserService.refreshAccessToken(refreshToken);
     res.json({ accessToken });
   } catch (error: unknown) {
-    // Handle token refresh errors
     res.status(401).json({ message: error instanceof Error ? error.message : "Échec du rafraîchissement du token" });
   }
 };
 
+// 🚪 Déconnexion
 export const Logout = async (req: Request, res: Response): Promise<void> => {
   const { refreshToken } = req.body;
+
   if (!refreshToken) {
     res.status(400).json({ message: "Refresh token requis" });
     return;
