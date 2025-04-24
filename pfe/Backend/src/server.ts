@@ -1,42 +1,52 @@
+// src/server.ts
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./config/db";
 import authRoutes from "./routes/authRoutes";
-import crudRoutes from "./routes/crudRoutes"; // Ajout des routes utilisateur
-import { setupSwagger } from "./swaggerConfig";
-import animalRoutes from "./routes/animalRoutes";
+import crudRoutes from "./routes/crudRoutes";         // routes utilisateurs (CRUD)
+import animalRoutes from "./routes/animalRoutes";     // routes animaux
 import appointmentRoutes from "./routes/appointmentRoutes";
+import { setupSwagger } from "./swaggerConfig";
 
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
+// Middlewares globaux
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Connexion à MongoDB
 connectDB()
-  
-  .catch((err) => console.error(" Erreur de connexion MongoDB :", err));
+  .then(() => console.log("Connecté à MongoDB"))
+  .catch(err => console.error("❌ Erreur de connexion MongoDB :", err));
 
-// Routes API
+// Montée des routes
 app.use("/api/auth", authRoutes);
-app.use("/api/users", crudRoutes); // Ajout des routes utilisateur
-app.use("/api/users", animalRoutes);
-app.use("/api/appointments", appointmentRoutes); // Ajout des routes rendez-vous
+app.use("/api/users", crudRoutes);
+app.use("/api/animals", animalRoutes);          // <— ici, on corrige le chemin
+app.use("/api/appointments", appointmentRoutes);
 
-setupSwagger(app); // 🔥 Add Swagger
+// Documentation Swagger
+setupSwagger(app);
 
-
-
-// Middleware de gestion des erreurs globales
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(" Erreur détectée :", err.message);
-  res.status(err.status || 500).json({ message: err.message || "Erreur interne du serveur" });
-});
+// Gestion globale des erreurs
+app.use(
+  (
+    err: any,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    console.error("💥 Erreur détectée :", err.message);
+    res
+      .status(err.status || 500)
+      .json({ message: err.message || "Erreur interne du serveur" });
+  }
+);
 
 app.listen(port, () => {
-  console.log(`Serveur démarré sur http://localhost:${port}`);
+  console.log(`🚀 Serveur démarré sur http://localhost:${port}`);
 });

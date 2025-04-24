@@ -1,19 +1,26 @@
 import { Router } from "express";
 import {
-  SignupClient,
-  SignupSecretaire,
-  SignupVeterinaire,
-  SignupAdmin,
-  Login,
-  RefreshAccessToken,
-  Logout,
+  signupClient,
+  signupSecretaire,
+  signupVeterinaire,
+  signupAdmin,
+  login,
+  refreshAccessToken,
+  logout,
 } from "../controllers/authController";
 
 const router = Router();
 
 /**
  * @swagger
- * /signup/client:
+ * tags:
+ *   name: Auth
+ *   description: Gestion de l'authentification
+ */
+
+/**
+ * @swagger
+ * /auth/signup/client:
  *   post:
  *     summary: Inscription d'un client
  *     tags: [Auth]
@@ -22,143 +29,102 @@ const router = Router();
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               username:
- *                 type: string
- *               email:
- *                 type: string
- *               password:
- *                 type: string
- *               phoneNumber:
- *                 type: string
- *               profilePicture:
- *                 type: string
- *                 format: binary
+ *             $ref: '#/components/schemas/ClientSignup'
  *     responses:
  *       201:
- *         description: Utilisateur inscrit avec succès
+ *         description: Client inscrit avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
  *       400:
- *         description: Erreur d'inscription
+ *         description: Erreur de validation ou données manquantes
+ *       500:
+ *         description: Erreur serveur
  */
-router.post("/signup/client", SignupClient);
+router.post("/signup/client", signupClient);
 
 /**
  * @swagger
- * /signup/secretaire:
+ * /auth/signup/secretaire:
  *   post:
  *     summary: Inscription d'un secrétaire
  *     tags: [Auth]
-
  *     requestBody:
  *       required: true
  *       content:
- *        application/json:
+ *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               username:
- *                 type: string
- *               email:
- *                 type: string
- *               password:
- *                 type: string
- *               phoneNumber:
- *                 type: string
- *               workingHours:
- *                 type: string
+ *             $ref: '#/components/schemas/SecretaireSignup'
  *     responses:
  *       201:
- *         description: Utilisateur inscrit avec succès
+ *         description: Secrétaire inscrit avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
  *       400:
- *         description: Erreur d'inscription
+ *         description: Erreur de validation ou données manquantes
+ *       500:
+ *         description: Erreur serveur
  */
-router.post("/signup/secretaire", SignupSecretaire);
+router.post("/signup/secretaire", signupSecretaire);
 
 /**
  * @swagger
- * /signup/veterinaire:
+ * /auth/signup/veterinaire:
  *   post:
  *     summary: Inscription d'un vétérinaire
-  *     tags: [Auth]
-
+ *     tags: [Auth]
  *     requestBody:
  *       required: true
  *       content:
- *        application/json:
+ *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               username:
- *                 type: string
- *               email:
- *                 type: string
- *               password:
- *                 type: string
- *               phoneNumber:
- *                 type: string
- *               workingHours:
- *                 type: string
- *               profilePicture:
- *                 type: string
- *                 format: binary
+ *             $ref: '#/components/schemas/VeterinaireSignup'
  *     responses:
  *       201:
- *         description: Utilisateur inscrit avec succès
+ *         description: Vétérinaire inscrit avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
  *       400:
- *         description: Erreur d'inscription
+ *         description: Erreur de validation ou données manquantes
+ *       500:
+ *         description: Erreur serveur
  */
-router.post("/signup/veterinaire", SignupVeterinaire);
+router.post("/signup/veterinaire", signupVeterinaire);
 
 /**
  * @swagger
- * /signup/admin:
+ * /auth/signup/admin:
  *   post:
  *     summary: Inscription d'un administrateur
-  *     tags: [Auth]
-
+ *     tags: [Auth]
  *     requestBody:
  *       required: true
  *       content:
- *        application/json:
+ *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               username:
- *                 type: string
- *               email:
- *                 type: string
- *               password:
- *                 type: string
- *               phoneNumber:
- *                 type: string
+ *             $ref: '#/components/schemas/AdminSignup'
  *     responses:
  *       201:
- *         description: Utilisateur inscrit avec succès
+ *         description: Administrateur inscrit avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
  *       400:
- *         description: Erreur d'inscription
+ *         description: Erreur de validation ou données manquantes
+ *       500:
+ *         description: Erreur serveur
  */
-router.post("/signup/admin", SignupAdmin);
+router.post("/signup/admin", signupAdmin);
 
 /**
  * @swagger
- * /login:
+ * /auth/login:
  *   post:
  *     summary: Connexion utilisateur
  *     tags: [Auth]
@@ -167,41 +133,26 @@ router.post("/signup/admin", SignupAdmin);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               username:
- *                 type: string
- *                 description: Nom d'utilisateur ou email
- *                 example: "john_doe"
- *               password:
- *                 type: string
- *                 format: password
- *                 description: Mot de passe de l'utilisateur
- *                 example: "P@ssw0rd!"
+ *             $ref: '#/components/schemas/Login'
  *     responses:
  *       200:
  *         description: Connexion réussie
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 accessToken:
- *                   type: string
- *                   description: Token d'accès JWT
- *                 refreshToken:
- *                   type: string
- *                   description: Token de rafraîchissement JWT
+ *               $ref: '#/components/schemas/LoginResponse'
  *       400:
- *         description: Requête invalide (données manquantes ou incorrectes)
+ *         description: Données manquantes ou invalides
  *       401:
- *         description: Échec d'authentification (identifiants invalides)
+ *         description: Identifiants incorrects
+ *       500:
+ *         description: Erreur serveur
  */
-router.post("/login", Login);
+router.post("/login", login);
 
 /**
  * @swagger
- * /refresh-token:
+ * /auth/refresh-token:
  *   post:
  *     summary: Rafraîchir le token d'accès
  *     tags: [Auth]
@@ -210,58 +161,47 @@ router.post("/login", Login);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               refreshToken:
- *                 type: string
- *                 description: Token de rafraîchissement valide
- *                 example: "eyJhbGciOiJIUzI1NiIsIn..."
+ *             $ref: '#/components/schemas/RefreshToken'
  *     responses:
  *       200:
- *         description: Nouveau token d'accès généré avec succès
+ *         description: Token rafraîchi avec succès
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 accessToken:
- *                   type: string
- *                   description: Nouveau token d'accès JWT
- *                   example: "eyJhbGciOiJIUzI1NiIsIn..."
+ *               $ref: '#/components/schemas/TokenResponse'
  *       400:
- *         description: Requête invalide (token manquant ou incorrect)
+ *         description: Token manquant ou invalide
  *       401:
- *         description: Token de rafraîchissement invalide ou expiré
+ *         description: Token expiré ou non autorisé
+ *       500:
+ *         description: Erreur serveur
  */
-router.post("/refresh-token", RefreshAccessToken);
-
+router.post("/refresh-token", refreshAccessToken);
 
 /**
  * @swagger
- * /logout:
+ * /auth/logout:
  *   post:
  *     summary: Déconnexion utilisateur
  *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               userId:
- *                 type: string
- *                 description: ID de l'utilisateur à déconnecter
- *                 example: "65e9c0f4b3a3b15f48d7f2a1"
+ *             $ref: '#/components/schemas/Logout'
  *     responses:
  *       200:
  *         description: Déconnexion réussie
  *       400:
- *         description: Requête invalide (ID utilisateur manquant ou incorrect)
+ *         description: Token manquant ou invalide
  *       401:
- *         description: L'utilisateur n'est pas authentifié
+ *         description: Non autorisé
+ *       500:
+ *         description: Erreur serveur
  */
-router.post("/logout", Logout);
-
+router.post("/logout", logout);
 
 export default router;

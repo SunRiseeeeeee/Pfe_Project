@@ -1,192 +1,247 @@
-import { Request, Response } from "express";
+// src/controllers/authController.ts
+
+import { Request, Response, RequestHandler } from "express";
+import { Types } from "mongoose";
+
 import { UserService } from "../services/userService";
-import { UserRole } from "../models/User";
-import User from "../models/User";
+import { UserRole, AuthResponse } from "../types";
 
-const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const isValidTime = (time: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+// ── Validation constants ──────────────────────────────────────────────────────
 
-// 🔐 Inscription générique
-const Signup = async (req: Request, res: Response, role: UserRole): Promise<void> => {
-  const {
-    firstName,
-    lastName,
-    username,
-    email,
-    password,
-    phoneNumber,
-    profilePicture = null,
-    MapsLocation = null,
-    description = null,
-    services = [],
-    workingHours = [],
-    address = {}
-  } = req.body;
+const VALID_DAYS = [
+  "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+] as const;
 
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/;
+const EMAIL_REGEX    = /^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/;
+
+const ERROR_MESSAGES = {
+  MISSING_FIELD:         (f: string) => `Le champ ${f} est obligatoire`,
+  INVALID_EMAIL:         "Adresse email invalide",
+  INVALID_USERNAME:      "Nom d'utilisateur invalide (lettres, chiffres, _)",
+  INVALID_SERVICES:      "Les services doivent être un tableau non vide",
+  INVALID_WORKING_HOURS: "Les horaires doivent être un tableau non vide",
+  MISSING_CREDENTIALS:   "Nom d'utilisateur et mot de passe requis",
+  INVALID_CREDENTIALS:   "Invalid credentials",
+  MISSING_TOKEN:         "Refresh token requis",
+  SIGNUP_ERROR:          "Erreur lors de l'inscription",
+  LOGIN_ERROR:           "Erreur lors de la connexion",
+  TOKEN_REFRESH_FAILED:  "Échec du rafraîchissement du token",
+  LOGOUT_ERROR:          "Échec de la déconnexion"
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function validateRequired(val: unknown, name: string): string {
+  if (typeof val !== "string" || !val.trim()) {
+    throw new Error(ERROR_MESSAGES.MISSING_FIELD(name));
+  }
+  return val.trim();
+}
+
+function validateEmail(email: string): void {
+  if (!EMAIL_REGEX.test(email)) {
+    throw new Error(ERROR_MESSAGES.INVALID_EMAIL);
+  }
+}
+
+function validateUsername(u: string): void {
+  if (!USERNAME_REGEX.test(u)) {
+    throw new Error(ERROR_MESSAGES.INVALID_USERNAME);
+  }
+}
+
+function validateWorkingHours(slots: any[]): void {
+  if (!Array.isArray(slots) || slots.length === 0) {
+    throw new Error(ERROR_MESSAGES.INVALID_WORKING_HOURS);
+  }
+  for (const { day, start, end } of slots) {
+    if (!day || !start || !end) {
+      throw new Error("Chaque plage horaire nécessite day, start et end");
+    }
+    if (!(VALID_DAYS as readonly string[]).includes(day)) {
+      throw new Error(`Jour invalide: ${day}`);
+    }
+    if (!TIME_REGEX.test(start) || !TIME_REGEX.test(end)) {
+      throw new Error("Format d'heure invalide (HH:MM)");
+    }
+  }
+}
+
+function sanitize(str?: string): string | undefined {
+  return str?.trim();
+}
+
+// ── Signup handler ────────────────────────────────────────────────────────────
+
+async function handleSignup(
+  req: Request,
+  res: Response<AuthResponse>,
+  role: UserRole
+): Promise<void> {
   try {
-    if (!firstName || !lastName || !username || !email || !password || !phoneNumber) {
-      throw new Error("Tous les champs obligatoires doivent être remplis");
-    }
-
-    const extraDetails: Record<string, any> = {
-      profilePicture,
-      MapsLocation,
-      description,
-      details: {},
-      reviews: []
-    };
-
-    if (address && typeof address === "object") {
-      const { street, city, state, country } = address;
-      const addressFields = { street, city, state, country };
-
-      for (const [key, value] of Object.entries(addressFields)) {
-        if (value !== undefined && typeof value !== "string") {
-          throw new Error(`Le champ ${key} de l'adresse doit être une chaîne de caractères`);
-        }
-      }
-
-      extraDetails.address = addressFields;
-    }
-
-    switch (role) {
-      case UserRole.VETERINAIRE:
-        if (!Array.isArray(services) || !services.every(s => typeof s === "string")) {
-          throw new Error("Les services doivent être un tableau de chaînes");
-        }
-
-        if (!Array.isArray(workingHours)) {
-          throw new Error("Les horaires de travail doivent être un tableau");
-        }
-
-        for (const slot of workingHours) {
-          if (!slot.day || !slot.start || !slot.end) {
-            throw new Error("Chaque horaire doit contenir les champs 'day', 'start' et 'end'");
-          }
-
-          if (!validDays.includes(slot.day)) {
-            throw new Error(`Jour invalide: ${slot.day}`);
-          }
-
-          if (!isValidTime(slot.start) || !isValidTime(slot.end)) {
-            throw new Error(`Heure invalide pour ${slot.day}. Format attendu: HH:MM`);
-          }
-        }
-
-        extraDetails.details = { services, workingHours };
-        extraDetails.rating = 0;
-        break;
-
-      case UserRole.SECRETAIRE:
-        extraDetails.details = { workingHours };
-        break;
-
-      case UserRole.CLIENT:
-        break;
-
-      default:
-        throw new Error("Rôle non valide");
-    }
-
-    const userData = {
-      firstName,
-      lastName,
+    const {
+      firstName: fn,
+      lastName: ln,
       username,
       email,
       password,
       phoneNumber,
-      role
+      services,
+      workingHours,
+      profilePicture,
+      mapsLocation,
+      description
+    } = req.body;
+
+    const firstName = validateRequired(fn, "firstName");
+    const lastName  = validateRequired(ln, "lastName");
+    const usr       = validateRequired(username, "username");
+    const mail      = validateRequired(email, "email");
+    const pwd       = validateRequired(password, "password");
+    const phone     = validateRequired(phoneNumber, "phoneNumber");
+
+    validateUsername(usr);
+    validateEmail(mail);
+
+    const extra: any = {
+      profilePicture: sanitize(profilePicture),
+      mapsLocation:   sanitize(mapsLocation),
+      description:    sanitize(description),
+      details:        {},
+      reviews:        []
     };
 
-    const user = await UserService.createUser(userData, extraDetails);
+    if (role === UserRole.VETERINAIRE) {
+      validateRequired(services, "services");
+      validateRequired(workingHours, "workingHours");
+      validateWorkingHours(workingHours);
+      extra.details = { services, workingHours };
+      extra.rating  = 0;
+    }
+
+    const user = await UserService.createUser(
+      {
+        firstName,
+        lastName,
+        username:    usr.toLowerCase(),
+        email:       mail.toLowerCase(),
+        password:    pwd,
+        phoneNumber: phone,
+        role
+      },
+      extra
+    );
 
     res.status(201).json({
       success: true,
       message: `${role} inscrit avec succès`,
-      userId: user._id
+      userId:  user._id.toString()
     });
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Erreur inconnue lors de l'inscription";
-    console.error(`Erreur d'inscription (${role}):`, errorMessage);
+    return;
+  } catch (err: any) {
+    console.error("Signup error:", err);
     res.status(400).json({
       success: false,
-      message: errorMessage
+      message: err.message || ERROR_MESSAGES.SIGNUP_ERROR,
+      error:   "SIGNUP_ERROR"
     });
-  }
-};
-
-// Routes d'inscription par rôle
-export const SignupClient = (req: Request, res: Response) => Signup(req, res, UserRole.CLIENT);
-export const SignupVeterinaire = (req: Request, res: Response) => Signup(req, res, UserRole.VETERINAIRE);
-export const SignupSecretaire = (req: Request, res: Response) => Signup(req, res, UserRole.SECRETAIRE);
-export const SignupAdmin = (req: Request, res: Response) => Signup(req, res, UserRole.ADMIN);
-
-// 🔑 Connexion
-export const Login = async (req: Request, res: Response): Promise<void> => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    res.status(400).json({ message: "Nom d'utilisateur et mot de passe requis" });
     return;
   }
+}
 
+export const signupClient:      RequestHandler = (req, res) => handleSignup(req, res, UserRole.CLIENT);
+export const signupVeterinaire: RequestHandler = (req, res) => handleSignup(req, res, UserRole.VETERINAIRE);
+export const signupSecretaire:  RequestHandler = (req, res) => handleSignup(req, res, UserRole.SECRETAIRE);
+export const signupAdmin:       RequestHandler = (req, res) => handleSignup(req, res, UserRole.ADMIN);
+
+// ── Login handler ────────────────────────────────────────────────────────────
+
+export const login: RequestHandler = async (req, res) => {
+  console.log("[login] body:", req.body);
   try {
-    const { accessToken, refreshToken, user } = await UserService.authenticateUser(username, password);
-
-    console.log("🔑 Utilisateur connecté :", { username, accessToken, refreshToken });
-
-    res.json({
-      message: "Connexion réussie",
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        email: user.email
-      }
-    });
-  } catch (error: unknown) {
-    res.status(401).json({ message: error instanceof Error ? error.message : "Échec de l'authentification" });
-  }
-};
-
-// 🔄 Rafraîchir le token d'accès
-export const RefreshAccessToken = async (req: Request, res: Response): Promise<void> => {
-  const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    res.status(400).json({ message: "Refresh token requis" });
-    return;
-  }
-
-  try {
-    const { accessToken } = await UserService.refreshAccessToken(refreshToken);
-    res.json({ accessToken });
-  } catch (error: unknown) {
-    res.status(401).json({ message: error instanceof Error ? error.message : "Échec du rafraîchissement du token" });
-  }
-};
-
-// 🚪 Déconnexion
-export const Logout = async (req: Request, res: Response): Promise<void> => {
-  const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    res.status(400).json({ message: "Refresh token requis" });
-    return;
-  }
-
-  try {
-    const user = await User.findOne({ refreshToken });
-    if (!user) {
-      res.status(403).json({ message: "Utilisateur non trouvé" });
+    const { username, password } = req.body as { username?: string; password?: string };
+    if (!username || !password) {
+      res.status(400).json({ success: false, message: ERROR_MESSAGES.MISSING_CREDENTIALS });
       return;
     }
 
-    user.refreshToken = null;
-    await user.save();
+    const auth = await UserService.authenticateUser({
+      username: username.trim(),
+      password: password.trim()
+    });
 
-    res.json({ message: "Déconnexion réussie" });
-  } catch (error) {
-    res.status(500).json({ message: "Erreur serveur lors de la déconnexion" });
+    res.status(200).json({
+      success: true,
+      message: "Connexion réussie",
+      tokens: {
+        accessToken:  auth.accessToken,
+        refreshToken: auth.refreshToken
+      },
+      user: auth.user
+    });
+    return;
+  } catch (err: any) {
+    console.error("[login] Error:", err.stack);
+    const isBad = err.message === ERROR_MESSAGES.INVALID_CREDENTIALS;
+    res.status(isBad ? 401 : 500).json({
+      success: false,
+      message: err.message || ERROR_MESSAGES.LOGIN_ERROR,
+      error:   isBad ? "INVALID_CREDENTIALS" : "LOGIN_ERROR"
+    });
+    return;
+  }
+};
+
+// ── Refresh token handler ────────────────────────────────────────────────────
+
+export const refreshAccessToken: RequestHandler = async (req, res) => {
+  try {
+    const { refreshToken } = req.body as { refreshToken?: string };
+    if (!refreshToken) {
+      res.status(400).json({ success: false, message: ERROR_MESSAGES.MISSING_TOKEN });
+      return;
+    }
+
+    const { accessToken } = await UserService.refreshAccessToken(refreshToken.trim());
+    res.json({
+      success: true,
+      message: "Token rafraîchi avec succès",
+      tokens: { accessToken, refreshToken }
+    });
+    return;
+  } catch (err: any) {
+    console.error("[refresh] Error:", err.stack);
+    res.status(401).json({
+      success: false,
+      message: err.message || ERROR_MESSAGES.TOKEN_REFRESH_FAILED,
+      error:   "TOKEN_REFRESH_FAILED"
+    });
+    return;
+  }
+};
+
+// ── Logout handler ───────────────────────────────────────────────────────────
+
+export const logout: RequestHandler = async (req, res) => {
+  try {
+    const { userId } = req.body as { userId?: string };
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      res.status(400).json({ success: false, message: "userId invalide" });
+      return;
+    }
+
+    await UserService.logout(userId);
+    res.json({ success: true, message: "Déconnexion réussie" });
+    return;
+  } catch (err: any) {
+    console.error("[logout] Error:", err.stack);
+    res.status(500).json({
+      success: false,
+      message: err.message || ERROR_MESSAGES.LOGOUT_ERROR,
+      error:   "LOGOUT_ERROR"
+    });
+    return;
   }
 };

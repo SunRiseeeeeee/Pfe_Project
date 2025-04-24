@@ -94,24 +94,20 @@ export const deleteUser: ExpressController = async (req, res) => {
 
 export const getVeterinarians = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Extraction et parsing sécurisé des query params
     const rating = parseFloat(req.query.rating as string);
     const location = req.query.location as string | undefined;
     const services = (req.query.services as string | undefined)?.split(",");
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
     const sort = req.query.sort === "asc" ? "asc" : "desc";
 
     const filter: Record<string, any> = {
       role: UserRole?.VETERINAIRE || "VETERINAIRE"
     };
 
-    // Filtrage par rating minimum
     if (!isNaN(rating)) {
       filter.rating = { $gte: rating };
     }
 
-    // Filtrage par location (street, city, state, country)
     if (location) {
       const regex = new RegExp(location, "i");
       filter.$or = [
@@ -122,21 +118,18 @@ export const getVeterinarians = async (req: Request, res: Response): Promise<voi
       ];
     }
 
-    // Filtrage par services proposés
     if (services && services.length > 0) {
       filter["details.services"] = { $in: services };
     }
 
-    // Pagination et tri
     const pageNumber = Math.max(1, page);
-    const limitNumber = Math.min(100, Math.max(1, limit));
+    const limitNumber = 10; // 🔒 Limite fixée à 10
     const skip = (pageNumber - 1) * limitNumber;
     const sortOrder = sort === "asc" ? 1 : -1;
 
-    // Requête principale et comptage total
     const [veterinarians, totalCount] = await Promise.all([
       User.find(filter, "-password -refreshToken")
-        .sort({ rating: sortOrder, lastName: 1 }) // tri combiné
+        .sort({ rating: sortOrder, lastName: 1 })
         .skip(skip)
         .limit(limitNumber),
       User.countDocuments(filter)
@@ -162,6 +155,7 @@ export const getVeterinarians = async (req: Request, res: Response): Promise<voi
     });
   }
 };
+
 export const getVeterinaireById: ExpressController = async (req, res) => {
   const { userId } = req.params;
 
