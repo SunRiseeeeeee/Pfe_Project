@@ -113,7 +113,6 @@ export const getAppointmentsByClient = async (
   next: NextFunction
 ): Promise<void> => {
   const { clientId } = req.params;
-
   try {
     if (!req.user) {
       res.status(401).json({ message: "Non authentifié" });

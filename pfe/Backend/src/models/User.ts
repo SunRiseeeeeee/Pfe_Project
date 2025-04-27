@@ -164,7 +164,7 @@ const UserSchema: Schema = new Schema<IUser>(
     isActive: { 
       type: Boolean, 
       default: true, 
-      required: true  // 👈 important !
+      
     },
     
     loginAttempts: { 

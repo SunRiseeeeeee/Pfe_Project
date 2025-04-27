@@ -7,6 +7,7 @@ import authRoutes from "./routes/authRoutes";
 import crudRoutes from "./routes/crudRoutes";         // routes utilisateurs (CRUD)
 import animalRoutes from "./routes/animalRoutes";     // routes animaux
 import appointmentRoutes from "./routes/appointmentRoutes";
+import serviceRoutes from "./routes/serviceRoutes";   // routes services
 import { setupSwagger } from "./swaggerConfig";
 
 dotenv.config();
@@ -28,6 +29,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", crudRoutes);
 app.use("/api/animals", animalRoutes);          // <— ici, on corrige le chemin
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/services", serviceRoutes);        // <— nouvelle route services
 
 // Documentation Swagger
 setupSwagger(app);
