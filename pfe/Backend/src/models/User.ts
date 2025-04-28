@@ -8,11 +8,14 @@ export enum UserRole {
   ADMIN = "admin",
 }
 
-// Interface pour les horaires de travail
+
+// Interface pour les horaires de travail incluant une pause
 interface IWorkingHour {
   day: string;
-  start: string; // format: "08:00"
-  end: string;   // format: "17:00"
+  start: string;       // format: "08:00"
+  pauseStart?: string; // début de la pause HH:MM
+  pauseEnd?: string;   // fin de la pause   HH:MM
+  end: string;         // format: "17:00"
 }
 
 // Interface pour l'adresse
@@ -41,7 +44,7 @@ export interface IUser extends Document {
   email: string;
   password: string;
   phoneNumber: string;
-  role: UserRole;
+  role: UserRole; // Rôle de type UserRole
   profilePicture?: string;
   mapsLocation?: string;
   description?: string;
@@ -63,12 +66,12 @@ const UserSchema: Schema = new Schema<IUser>(
   {
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, required: true, trim: true },
-    username: { 
-      type: String, 
-      required: true, 
-      unique: true, 
+    username: {
+      type: String,
+      required: true,
+      unique: true,
       trim: true,
-      lowercase: true 
+      lowercase: true,
     },
     email: {
       type: String,
@@ -78,77 +81,88 @@ const UserSchema: Schema = new Schema<IUser>(
       lowercase: true,
       match: /^\S+@\S+\.\S+$/,
     },
-    password: { 
-      type: String, 
-      required: true, 
+    password: {
+      type: String,
+      required: true,
       select: false,
-      minlength: 8 
+      minlength: 8,
     },
-    phoneNumber: { 
-      type: String, 
-      required: true, 
-      unique: true, 
+    phoneNumber: {
+      type: String,
+      required: true,
+      unique: true,
       trim: true,
-      match: /^[0-9]{8,15}$/ 
+      match: /^[0-9]{8,15}$/,
     },
-    role: { 
-      type: String, 
-      enum: Object.values(UserRole), 
-      required: true 
+    role: {
+      type: String,
+      enum: Object.values(UserRole),
+      required: true,
+      validate: {
+        validator: function(value: string) {
+          return Object.values(UserRole).includes(value as UserRole);
+        },
+        message: 'Role invalide',
+      },
     },
-    profilePicture: { 
-      type: String, 
-      default: null 
-    },
-    mapsLocation: { 
-      type: String, 
-      default: null 
-    },
-    description: { 
-      type: String, 
-      default: null, 
-      trim: true 
-    },
+    profilePicture: { type: String, default: null },
+    mapsLocation: { type: String, default: null },
+    description: { type: String, default: null, trim: true },
     address: {
       street: { type: String, default: null, trim: true },
       city: { type: String, default: null, trim: true },
       state: { type: String, default: null, trim: true },
       country: { type: String, default: null, trim: true },
-      postalCode: { type: String, default: null, trim: true }
+      postalCode: { type: String, default: null, trim: true },
     },
     details: {
       services: { type: [String], default: [] },
       workingHours: [
         {
-          day: { 
-            type: String, 
+          day: {
+            type: String,
             required: true,
-            enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            enum: [
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday",
+              "Sunday",
+            ],
           },
-          start: { 
-            type: String, 
+          start: {
+            type: String,
             required: true,
-            match: /^([01]\d|2[0-3]):[0-5]\d$/ // HH:MM format
+            match: /^([01]\d|2[0-3]):[0-5]\d$/,
           },
-          end: { 
-            type: String, 
+          pauseStart: {
+            type: String,
+            default: null,
+            match: /^([01]\d|2[0-3]):[0-5]\d$/,
+          },
+          pauseEnd: {
+            type: String,
+            default: null,
+            match: /^([01]\d|2[0-3]):[0-5]\d$/,
+          },
+          end: {
+            type: String,
             required: true,
-            match: /^([01]\d|2[0-3]):[0-5]\d$/ // HH:MM format
+            match: /^([01]\d|2[0-3]):[0-5]\d$/,
           },
         },
       ],
       specialization: { type: String, default: null, trim: true },
-      experienceYears: { 
-        type: Number, 
-        default: 0,
-        min: 0,
-        max: 100 
-      }
+      experienceYears: { type: Number, default: 0, min: 0, max: 100 },
     },
-    reviews: [{ 
-      type: Schema.Types.ObjectId, 
-      ref: 'Review' 
-    }],
+    reviews: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Review",
+      },
+    ],
     rating: {
       type: Number,
       default: 0,
@@ -156,37 +170,17 @@ const UserSchema: Schema = new Schema<IUser>(
       max: 5,
       set: (value: number) => parseFloat(value.toFixed(2)),
     },
-    refreshToken: { 
-      type: String, 
-      default: null, 
-      select: false 
-    },
-    isActive: { 
-      type: Boolean, 
-      default: true, 
-      
-    },
-    
-    loginAttempts: { 
-      type: Number, 
-      default: 0, 
-      select: false 
-    },
-    lockUntil: { 
-      type: Date, 
-      default: null, 
-      select: false 
-    },
-    lastLogin: { 
-      type: Date, 
-      default: null 
-    }
+    refreshToken: { type: String, default: null, select: false },
+    isActive: { type: Boolean, default: true },
+    loginAttempts: { type: Number, default: 0, select: false },
+    lockUntil: { type: Date, default: null, select: false },
+    lastLogin: { type: Date, default: null },
   },
   {
     timestamps: true,
     toJSON: {
       virtuals: true,
-      transform: function(doc, ret) {
+      transform(doc, ret) {
         ret.id = ret._id;
         delete ret._id;
         delete ret.__v;
@@ -195,11 +189,11 @@ const UserSchema: Schema = new Schema<IUser>(
         delete ret.loginAttempts;
         delete ret.lockUntil;
         return ret;
-      }
+      },
     },
     toObject: {
       virtuals: true,
-      transform: function(doc, ret) {
+      transform(doc, ret) {
         ret.id = ret._id;
         delete ret._id;
         delete ret.__v;
@@ -208,14 +202,14 @@ const UserSchema: Schema = new Schema<IUser>(
         delete ret.loginAttempts;
         delete ret.lockUntil;
         return ret;
-      }
-    }
+      },
+    },
   }
 );
 
 // Index pour les recherches courantes
 UserSchema.index({ email: 1, username: 1, phoneNumber: 1 }, { unique: true });
-UserSchema.index({ 'address.city': 1, 'address.country': 1 });
+UserSchema.index({ "address.city": 1, "address.country": 1 });
 UserSchema.index({ role: 1, isActive: 1 });
 
 // Type pour les documents utilisateur avec mot de passe

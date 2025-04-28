@@ -11,6 +11,7 @@ import serviceRoutes from "./routes/serviceRoutes";   // routes services
 import { setupSwagger } from "./swaggerConfig";
 
 dotenv.config();
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -27,9 +28,9 @@ connectDB()
 // Montée des routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", crudRoutes);
-app.use("/api/animals", animalRoutes);          // <— ici, on corrige le chemin
+app.use("/api/animals", animalRoutes);          // Routes pour animaux corrigées
 app.use("/api/appointments", appointmentRoutes);
-app.use("/api/services", serviceRoutes);        // <— nouvelle route services
+app.use("/api/services", serviceRoutes);        // Nouvelle route pour services
 
 // Documentation Swagger
 setupSwagger(app);
@@ -38,9 +39,9 @@ setupSwagger(app);
 app.use(
   (
     err: any,
-    req: express.Request,
+    _req: express.Request,
     res: express.Response,
-    next: express.NextFunction
+    _next: express.NextFunction
   ) => {
     console.error("💥 Erreur détectée :", err.message);
     res

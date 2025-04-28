@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { JwtPayload } from "../middlewares/authMiddleware";
 import mongoose, { Document, Types } from "mongoose";
 import User, { IUser, UserRole } from "../models/User";
 
@@ -16,6 +17,8 @@ interface WorkingHours {
   day: string;
   start: string;
   end: string;
+  pauseStart?: string;
+  pauseEnd?: string;
 }
 
 interface UserDetails {
@@ -36,24 +39,6 @@ interface ExtraDetails {
   isActive?: boolean;
 }
 
-interface Filters {
-  rating?: number;
-  location?: string;
-  services?: string[];
-  page?: number;
-  limit?: number;
-  sort?: 'asc' | 'desc';
-  specialization?: string;
-}
-
-interface VeterinarianResult {
-  veterinarians: IUser[];
-  totalCount: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
 interface AuthTokens {
   accessToken: string;
   refreshToken: string;
@@ -67,6 +52,9 @@ interface SafeUserInfo {
   lastName: string;
   email: string;
   username: string;
+  phoneNumber: string;
+  profilePicture?: string;
+  address?: Address;
 }
 
 interface LoginCredentials {
@@ -83,344 +71,242 @@ interface UserCreateData {
   phoneNumber: string;
   role: UserRole;
 }
+
+interface TokenResponse {
+  accessToken: string;
+  refreshToken: string;
+}
 //#endregion
 
 //#region Constants
 const PASSWORD_MIN_LENGTH = 8;
 const ACCESS_TOKEN_EXPIRATION = "15m";
 const REFRESH_TOKEN_EXPIRATION = "7d";
-const VETERINARIANS_PER_PAGE = 10;
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_TIME = 30 * 60 * 1000; // 30 minutes
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const VALID_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
 
-const ERROR_MESSAGES = {
-  INVALID_INPUT: "Invalid input provided",
-  INVALID_PASSWORD: `Password must contain at least ${PASSWORD_MIN_LENGTH} characters with uppercase, lowercase and numbers`,
-  INVALID_EMAIL: "Invalid email format",
-  INVALID_PHONE: "Invalid phone number format (8-15 digits required)",
-  INVALID_SERVICES: "Services must be an array of strings",
-  INVALID_EXPERIENCE: "Experience years must be between 0 and 100",
-  INVALID_WORKING_HOURS: "Working hours must be an array with valid time slots",
-  INVALID_TIME_SLOT: "Each time slot must have 'day', 'start' and 'end'",
-  INVALID_DAY: (day: string) => `Invalid day: ${day}. Valid days: ${VALID_DAYS.join(', ')}`,
-  INVALID_TIME_FORMAT: "Invalid time format. Expected HH:MM",
-  INVALID_ADDRESS_FIELD: (field: string) => `Field ${field} must be a string`,
-  USER_EXISTS: "An account with these details already exists",
-  USER_NOT_FOUND: "User not found",
-  ROLE_MODIFICATION: "Role modification is not allowed",
-  DUPLICATE_FIELDS: "Phone number, username or email already in use by another account",
-  INVALID_RATING: "Rating must be between 0 and 5",
+const ErrorMessages = {
+  INVALID_CREDENTIALS: "Invalid username or password",
   ACCOUNT_LOCKED: (minutes: number) => `Account locked. Try again in ${minutes} minutes`,
-  INVALID_CREDENTIALS: "Invalid credentials",
-  JWT_CONFIG_MISSING: "JWT configuration missing",
   INVALID_REFRESH_TOKEN: "Invalid or expired refresh token",
-  VALIDATION_FAILED: "Validation failed",
-  MISSING_REFRESH_TOKEN: "Refresh token is required",
+  USER_NOT_FOUND: "User not found",
+  USER_EXISTS: "User already exists with this email, username or phone number",
+  INVALID_PASSWORD: "Password must contain at least 8 characters including uppercase, lowercase and numbers",
+  INVALID_EMAIL: "Invalid email format",
+  INVALID_PHONE: "Phone number must be 8-15 digits",
+  DUPLICATE_FIELDS: "Another user already exists with these details",
+  ROLE_MODIFICATION: "Role modification is not allowed",
+  JWT_CONFIG_MISSING: "JWT configuration missing",
   INVALID_USER_ID: "Invalid user ID format",
-  INVALID_TOKEN: "Invalid token provided",
-  INVALID_TOKEN_PAYLOAD: "Invalid token payload",
-  TOKEN_REFRESH_FAILED: "Failed to refresh token",
-  LOGOUT_FAILED: "Failed to logout user"
+  ACCOUNT_INACTIVE: "Account is inactive"
 };
 //#endregion
 
-export class UserService {
-  static getVeterinaireById: any;
-//#region Authentication Methods
-static async authenticateUser(credentials: LoginCredentials): Promise<AuthTokens> {
-  const { username, password } = credentials;
-  const normalized = username.trim().toLowerCase();
-
-  console.log(`[auth] Tentative de connexion pour : ${normalized}`);
-
-  // Rechercher l'utilisateur
-  const user = await this.findActiveUser(normalized);
-  console.log(`[auth] findActiveUser a renvoyé : ${user.username}`);
-
-  // Comparaison du mot de passe
-  console.log("[auth] mot de passe envoyé :", password);
-  console.log("[auth] hash en base        :", user.password);
-  const ok = await bcrypt.compare(password, user.password);
-  console.log("[auth] bcrypt.compare →", ok);
-
-  if (!ok) {
-    console.warn(`[auth] Mot de passe incorrect pour ${normalized}`);
-    throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
-  }
-
-  // Génération des tokens
-  const tokens = await this.generateAndSaveTokens(user);
-  console.log("[auth] Tokens générés");
-
-  return { ...tokens, user: this.getUserSafeInfo(user) };
-}
-
-
-
-private static async generateAndSaveTokens(user: IUser): Promise<{ accessToken: string; refreshToken: string }> {
-  const tokens = this.generateAuthTokens(user);
-  await Promise.all([
-    this.updateRefreshToken(user._id, tokens.refreshToken),
-    this.resetSecurityFields(user._id)
-  ]);
-  return tokens;
-}
-
-static async refreshAccessToken(
-  oldRefreshToken: string
-): Promise<{ accessToken: string; refreshToken: string }> {
-  if (!oldRefreshToken?.trim()) {
-    throw new Error(ERROR_MESSAGES.MISSING_REFRESH_TOKEN);
-  }
-
-  // 1) Vérifier la validité du JWT de refresh
-  let payload: { id: string };
-  try {
-    payload = jwt.verify(
-      oldRefreshToken.trim(),
-      process.env.JWT_REFRESH_SECRET!
-    ) as { id: string };
-  } catch (err: any) {
-    if (err instanceof jwt.TokenExpiredError) {
-      throw new Error("Refresh token expired");
-    }
-    throw new Error(ERROR_MESSAGES.INVALID_REFRESH_TOKEN);
-  }
-
-  // 2) Vérifier que ce refreshToken existe toujours pour cet utilisateur
-  const user = await User.findOne({
-    _id: new Types.ObjectId(payload.id),
-    refreshToken: oldRefreshToken.trim(),
-    isActive: true
-  });
-  if (!user) {
-    throw new Error(ERROR_MESSAGES.INVALID_REFRESH_TOKEN);
-  }
-
-  // 3) Générer de nouveaux tokens
-  const { accessToken, refreshToken } = this.generateAuthTokens(user);
-
-  // 4) Sauvegarder le nouveau refreshToken
-  await User.findByIdAndUpdate(user._id, { refreshToken, lastLogin: new Date() });
-
-  return { accessToken, refreshToken };
-}
-
-private static generateAuthTokens(user: IUser) {
-  this.validateJwtConfiguration();
-  const userInfo = this.getUserSafeInfo(user);
-  const accessToken = jwt.sign(userInfo, process.env.JWT_ACCESS_SECRET!, {
-    expiresIn: ACCESS_TOKEN_EXPIRATION
-  });
-  const refreshToken = jwt.sign(
-    { id: user._id.toString() },
-    process.env.JWT_REFRESH_SECRET!,
-    { expiresIn: REFRESH_TOKEN_EXPIRATION }
-  );
-  return { accessToken, refreshToken };
-}
-
-
-static isTokenValid(token: string): boolean {
-  try {
-    jwt.verify(token, process.env.JWT_ACCESS_SECRET!);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-private static verifyRefreshToken(token: string): { id: string } {
-  this.validateJwtConfiguration();
-
-  try {
-    return jwt.verify(token.trim(), process.env.JWT_REFRESH_SECRET!) as { id: string };
-  } catch (error) {
-    if (error instanceof jwt.TokenExpiredError) {
-      throw new Error("Refresh token expired");
-    }
-    throw new Error(ERROR_MESSAGES.INVALID_REFRESH_TOKEN);
-  }
-}
-
-static async logout(userId: string): Promise<void> {
-  if (!Types.ObjectId.isValid(userId)) {
-    throw new Error(ERROR_MESSAGES.INVALID_USER_ID);
-  }
-
-  try {
-    const result = await User.findByIdAndUpdate(
-      new Types.ObjectId(userId),
-      { $set: { refreshToken: null } },
-      { new: true }
-    );
-    if (!result) {
-      throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
-    }
-  } catch (error) {
-    console.error(`[auth] Échec du logout pour ${userId}:`, error);
-    throw new Error(ERROR_MESSAGES.LOGOUT_FAILED);
-  }
-}
-//#endregion
-  //#region User CRUD Operations
-  static async createUser(
-    userData: UserCreateData,
-    extraDetails: ExtraDetails = {}
-  ): Promise<IUser> {
-    this.validateUserData(userData, extraDetails);
-    await this.checkDuplicateUser(userData);
-    const hashedPassword = await this.hashPassword(userData.password);
-    const newUser = await this.saveUser(userData, extraDetails, hashedPassword);
-    return newUser.toObject();
-  }
-  static async getUserById(userId: string): Promise<IUser> {
-    this.validateUserId(userId);
-    const user = await User.findById(new Types.ObjectId(userId))
-      .select("-password -refreshToken -loginAttempts -lockUntil");
-    if (!user) {
-      throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
-    }
-    return user.toObject();
-  }
-  static async updateUser(
-    userId: string, 
-    updateData: Partial<IUser>
-  ): Promise<IUser> {
-    this.validateUserId(userId);
-    this.validateUpdateData(updateData);
-    if (updateData.phoneNumber || updateData.username || updateData.email) {
-      await this.checkUniqueFields(userId, updateData);
-    }
-    if (updateData.password) {
-      updateData.password = await this.hashPassword(updateData.password);
-    }
-    const updatedUser = await User.findByIdAndUpdate(
-      new Types.ObjectId(userId),
-      updateData,
-      { 
-        new: true, 
-        runValidators: true,
-        select: "-password -refreshToken -loginAttempts -lockUntil" 
+export class AuthService {
+  //#region Authentication
+  static async authenticate(credentials: LoginCredentials): Promise<AuthTokens> {
+    try {
+      const { username, password } = credentials;
+      
+      if (!username || !password) {
+        throw new Error(ErrorMessages.INVALID_CREDENTIALS);
       }
-    );
-    if (!updatedUser) {
-      throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
+
+      const user = await this.getActiveUser(username);
+      await this.verifyPassword(user, password);
+      
+      const tokens = await this.generateTokens(user);
+      return {
+        ...tokens,
+        user: this.getSafeUserInfo(user)
+      };
+    } catch (error) {
+      console.error('Authentication failed:', error);
+      throw error;
     }
-    return updatedUser.toObject();
   }
-  static async deleteUser(userId: string): Promise<IUser> {
-    this.validateUserId(userId);
+
+  private static async getActiveUser(username: string): Promise<IUser & { password: string }> {
+    const user = await User.findOne({ username: username.toLowerCase() })
+      .select('+password +refreshToken +loginAttempts +lockUntil +isActive')
+      .orFail(new Error(ErrorMessages.INVALID_CREDENTIALS));
+
+    if (!user.isActive) {
+      throw new Error(ErrorMessages.ACCOUNT_INACTIVE);
+    }
+
+    this.checkAccountLock(user);
+    return user;
+  }
+
+  private static async verifyPassword(user: IUser & { password: string }, password: string): Promise<void> {
+    const isMatch = await bcrypt.compare(password, user.password);
     
-    const deletedUser = await User.findByIdAndUpdate(
-      new Types.ObjectId(userId),
-      { isActive: false },
-      { new: true }
-    ).select("-password -refreshToken");
-    if (!deletedUser) {
-      throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
+    if (!isMatch) {
+      await this.handleFailedLogin(user.username);
+      throw new Error(ErrorMessages.INVALID_CREDENTIALS);
     }
-    return deletedUser.toObject();
-  }
-  //#endregion
-  //#region Private Helper Methods
-  private static async findActiveUser(username: string): Promise<IUser & { password: string }> {
-  const normalized = username.toLowerCase();
-
-  // Recherche de l’utilisateur (quel que soit isActive)
-  console.log("[findActiveUser] Recherche par username seulement :", normalized);
-  const user = await User.findOne({ username: normalized })
-    .select('+password +refreshToken +loginAttempts +lockUntil +lastFailedAttempt +isActive')
-    .collation({ locale: 'en', strength: 2 });
-
-  if (!user) {
-    console.warn("[findActiveUser] Aucun utilisateur trouvé pour :", normalized);
-    throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
   }
 
-  console.log("[findActiveUser] Utilisateur trouvé :", {
-    _id: user._id.toString(),
-    username: user.username,
-    isActive: user.isActive,
-    passwordHash: user.password
-  });
-
-  // Vérification du statut actif
-  if (!user.isActive) {
-    console.warn("[findActiveUser] Utilisateur trouvé mais inactif :", normalized);
-    throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
-  }
-
-  // Vérification du verrouillage
-  this.checkAccountLockStatus(user);
-
-  return user;
-  }
-  private static checkAccountLockStatus(user: IUser & { lockUntil?: Date | number | null }): void {
+  private static checkAccountLock(user: IUser & { lockUntil?: Date | number | null }): void {
     if (!user.lockUntil) return;
     
-    const lockUntilDate = typeof user.lockUntil === 'number' 
-      ? new Date(user.lockUntil)
+    const lockUntil = typeof user.lockUntil === 'number' 
+      ? new Date(user.lockUntil) 
       : user.lockUntil;
-      
-    if (lockUntilDate && new Date(lockUntilDate) > new Date()) {
-      const remainingTime = Math.ceil((new Date(lockUntilDate).getTime() - Date.now()) / (60 * 1000));
-      throw new Error(ERROR_MESSAGES.ACCOUNT_LOCKED(remainingTime));
+
+    if (lockUntil > new Date()) {
+      const minutes = Math.ceil((lockUntil.getTime() - Date.now()) / (60 * 1000));
+      throw new Error(ErrorMessages.ACCOUNT_LOCKED(minutes));
     }
-  }
-  private static async verifyCredentials(
-    user: IUser & { password: string }, 
-    inputPassword: string
-  ): Promise<void> {
-    const isMatch = await bcrypt.compare(inputPassword.trim(), user.password);
-    if (!isMatch) {
-      throw new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
-    }
-  }
-  private static async handleFailedLogin(username: string): Promise<void> {
-    const user = await User.findOne({ username });
-    if (!user) return;
-  
-    const updates: any = { $inc: { loginAttempts: 1 } };
-  
-    if ((user.loginAttempts || 0) + 1 >= MAX_LOGIN_ATTEMPTS) {
-      updates.$set = {
-        lockUntil: Date.now() + LOCK_TIME,
-        lastFailedAttempt: new Date()
-      };
-    }
-  
-    await User.updateOne({ username }, updates);
-  }
-  
-  private static async resetSecurityFields(userId: Types.ObjectId): Promise<void> {
-    await User.findByIdAndUpdate(userId, { 
-      $set: { 
-        loginAttempts: 0, 
-        lockUntil: null,
-        lastLogin: new Date() 
-      } 
-    });
   }
 
-  private static getUserSafeInfo(user: IUser): SafeUserInfo {
+  private static async handleFailedLogin(username: string): Promise<void> {
+    await User.updateOne(
+      { username },
+      { 
+        $inc: { loginAttempts: 1 },
+        $set: { lastFailedAttempt: new Date() }
+      }
+    );
+
+    const user = await User.findOne({ username });
+    if (user && (user.loginAttempts || 0) >= MAX_LOGIN_ATTEMPTS) {
+      await User.updateOne(
+        { username },
+        { $set: { lockUntil: Date.now() + LOCK_TIME } }
+      );
+    }
+  }
+  //#endregion
+
+  //#region Token Management
+  private static async generateTokens(user: IUser): Promise<TokenResponse> {
+    const tokens = this.createTokens(user);
+    await this.saveRefreshToken(user._id, tokens.refreshToken);
+    await this.resetSecurityFields(user._id);
+    return tokens;
+  }
+
+  private static createTokens(user: IUser): TokenResponse {
+    this.validateJwtConfig();
+  
+    const commonPayload: JwtPayload = {
+      id: user._id.toString(),
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      username: user.username,
+      phoneNumber: user.phoneNumber,
+      profilePicture: user.profilePicture,
+      address: user.address,
+      iat: Math.floor(Date.now() / 1000)
+      // Remove the exp property here
+    };
+  
+    const accessToken = jwt.sign(
+      commonPayload, // No exp in payload
+      process.env.JWT_ACCESS_SECRET!,
+      { expiresIn: ACCESS_TOKEN_EXPIRATION } // Use expiresIn option instead
+    );
+  
+    const refreshToken = jwt.sign(
+      commonPayload, // No exp in payload
+      process.env.JWT_REFRESH_SECRET!,
+      { expiresIn: REFRESH_TOKEN_EXPIRATION } // Use expiresIn option instead
+    );
+  
+    return { accessToken, refreshToken };
+  }
+
+  static async refreshToken(refreshToken: string): Promise<TokenResponse> {
+    if (!refreshToken?.trim()) {
+      throw new Error("Refresh token is required");
+    }
+  
+    try {
+      // Verify the token first
+      const decoded = jwt.verify(
+        refreshToken.trim(),
+        process.env.JWT_REFRESH_SECRET!
+      ) as JwtPayload;
+  
+      // Then find the user with this token
+      const user = await User.findOne({
+        _id: new Types.ObjectId(decoded.id),
+        refreshToken: refreshToken.trim()
+      });
+  
+      if (!user) {
+        throw new Error("Invalid refresh token");
+      }
+  
+      // Generate new tokens
+      return this.createTokens(user);
+    } catch (error) {
+      console.error('Refresh token error:', error);
+      throw new Error("Invalid or expired refresh token");
+    }
+  }
+  private static verifyToken(token: string, secret: string): JwtPayload {
+    try {
+      return jwt.verify(token.trim(), secret) as JwtPayload;
+    } catch (error) {
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new Error("Token expired");
+      }
+      throw new Error(ErrorMessages.INVALID_REFRESH_TOKEN);
+    }
+  }
+
+  private static async getUserByRefreshToken(userId: string, refreshToken: string): Promise<IUser> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new Error(ErrorMessages.INVALID_USER_ID);
+    }
+
+    return await User.findOne({
+      _id: new Types.ObjectId(userId),
+      refreshToken: refreshToken.trim(),
+      isActive: true
+    }).orFail(new Error(ErrorMessages.INVALID_REFRESH_TOKEN));
+  }
+
+  static async logout(userId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new Error(ErrorMessages.INVALID_USER_ID);
+    }
+
+    await User.findByIdAndUpdate(
+      new Types.ObjectId(userId),
+      { $set: { refreshToken: null } }
+    ).orFail(new Error(ErrorMessages.USER_NOT_FOUND));
+  }
+  //#endregion
+
+  //#region Helpers
+  private static getSafeUserInfo(user: IUser): SafeUserInfo {
     return {
       id: user._id.toString(),
       role: user.role,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      username: user.username
+      username: user.username,
+      phoneNumber: user.phoneNumber,
+      profilePicture: user.profilePicture,
+      address: user.address
     };
   }
-  private static validateJwtConfiguration(): void {
+
+  private static validateJwtConfig(): void {
     if (!process.env.JWT_ACCESS_SECRET || !process.env.JWT_REFRESH_SECRET) {
-      throw new Error(ERROR_MESSAGES.JWT_CONFIG_MISSING);
+      throw new Error(ErrorMessages.JWT_CONFIG_MISSING);
     }
   }
 
-  private static async updateRefreshToken(userId: Types.ObjectId, refreshToken: string): Promise<void> {
+  private static async saveRefreshToken(userId: Types.ObjectId, refreshToken: string): Promise<void> {
     await User.findByIdAndUpdate(userId, { 
       $set: { 
         refreshToken,
@@ -428,32 +314,104 @@ static async logout(userId: string): Promise<void> {
       } 
     });
   }
-  private static async findUserByRefreshToken(userId: string, refreshToken: string): Promise<IUser> {
-    const user = await User.findOne({
-      _id: new Types.ObjectId(userId),
-      refreshToken: refreshToken.trim(),
-      isActive: true
+
+  private static async resetSecurityFields(userId: Types.ObjectId): Promise<void> {
+    await User.findByIdAndUpdate(userId, { 
+      $set: { 
+        loginAttempts: 0, 
+        lockUntil: null
+      } 
     });
+  }
+  //#endregion
+}
 
-    if (!user) {
-      throw new Error(ERROR_MESSAGES.INVALID_REFRESH_TOKEN);
+export class UserService {
+  //#region Authentication Methods
+  static async authenticateUser(credentials: LoginCredentials): Promise<AuthTokens> {
+    return AuthService.authenticate(credentials);
+  }
+
+  static async refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
+    return AuthService.refreshToken(refreshToken);
+  }
+
+  static async logout(userId: string): Promise<void> {
+    return AuthService.logout(userId);
+  }
+  //#endregion
+
+  //#region CRUD Operations
+  static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {}): Promise<IUser> {
+    this.validateUserData(userData, extraDetails);
+    await this.checkDuplicateUser(userData);
+    
+    const hashedPassword = await this.hashPassword(userData.password);
+    const newUser = await this.saveUser(userData, extraDetails, hashedPassword);
+    
+    return newUser.toObject();
+  }
+
+  static async getUserById(userId: string): Promise<IUser> {
+    this.validateUserId(userId);
+    
+    return await User.findById(new Types.ObjectId(userId))
+      .select("-password -refreshToken -loginAttempts -lockUntil")
+      .orFail(new Error(ErrorMessages.USER_NOT_FOUND))
+      .then(user => user.toObject());
+  }
+
+  static async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser> {
+    this.validateUserId(userId);
+    this.validateUpdateData(updateData);
+    
+    if (updateData.phoneNumber || updateData.username || updateData.email) {
+      await this.checkUniqueFields(userId, updateData);
     }
-    return user;
+    
+    if (updateData.password) {
+      updateData.password = await this.hashPassword(updateData.password);
+    }
+
+    return await User.findByIdAndUpdate(
+      new Types.ObjectId(userId),
+      updateData,
+      { 
+        new: true,
+        runValidators: true,
+        select: "-password -refreshToken -loginAttempts -lockUntil"
+      }
+    ).orFail(new Error(ErrorMessages.USER_NOT_FOUND))
+    .then(user => user.toObject());
   }
 
-  private static generateAccessToken(userInfo: SafeUserInfo): string {
-    this.validateJwtConfiguration();
-    return jwt.sign(
-      { ...userInfo },
-      process.env.JWT_ACCESS_SECRET!,
-      { expiresIn: ACCESS_TOKEN_EXPIRATION }
-    );
+  static async deleteUser(userId: string): Promise<IUser> {
+    this.validateUserId(userId);
+    
+    return await User.findByIdAndUpdate(
+      new Types.ObjectId(userId),
+      { isActive: false },
+      { new: true }
+    ).select("-password -refreshToken")
+    .orFail(new Error(ErrorMessages.USER_NOT_FOUND))
+    .then(user => user.toObject());
   }
 
-  private static validateUserData(
-    userData: UserCreateData,
-    extraDetails: ExtraDetails
-  ): void {
+  static async getVeterinaireById(userId: string): Promise<IUser> {
+    this.validateUserId(userId);
+    
+    return await User.findOne({
+      _id: new Types.ObjectId(userId),
+      role: UserRole.VETERINAIRE
+    })
+    .select("-password -refreshToken -loginAttempts -lockUntil")
+    .orFail(new Error("Veterinarian not found"))
+    .then(user => user.toObject());
+  }
+  //#endregion
+
+  //#region Validation Helpers
+  private static validateUserData(userData: UserCreateData, extraDetails: ExtraDetails): void {
     this.validateEmail(userData.email);
     this.validatePhoneNumber(userData.phoneNumber);
     this.validatePassword(userData.password);
@@ -471,7 +429,7 @@ static async logout(userId: string): Promise<void> {
     });
 
     if (existingUser) {
-      throw new Error(ERROR_MESSAGES.USER_EXISTS);
+      throw new Error(ErrorMessages.USER_EXISTS);
     }
   }
 
@@ -486,9 +444,9 @@ static async logout(userId: string): Promise<void> {
       username: userData.username.toLowerCase(),
       password: hashedPassword,
       ...extraDetails,
-      refreshToken: null,
       isActive: true,
-      loginAttempts: 0
+      loginAttempts: 0,
+      refreshToken: null
     });
 
     await newUser.save();
@@ -497,7 +455,7 @@ static async logout(userId: string): Promise<void> {
 
   private static validateUpdateData(updateData: Partial<IUser>): void {
     if ('role' in updateData) {
-      throw new Error(ERROR_MESSAGES.ROLE_MODIFICATION);
+      throw new Error(ErrorMessages.ROLE_MODIFICATION);
     }
   }
 
@@ -524,7 +482,7 @@ static async logout(userId: string): Promise<void> {
     if (query.$or.length > 0) {
       const existingUser = await User.findOne(query);
       if (existingUser) {
-        throw new Error(ERROR_MESSAGES.DUPLICATE_FIELDS);
+        throw new Error(ErrorMessages.DUPLICATE_FIELDS);
       }
     }
   }
@@ -535,25 +493,25 @@ static async logout(userId: string): Promise<void> {
   }
 
   private static validatePassword(password: string): void {
-    if (!password || password.length < PASSWORD_MIN_LENGTH) {
-      throw new Error(ERROR_MESSAGES.INVALID_PASSWORD);
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      throw new Error(ErrorMessages.INVALID_PASSWORD);
     }
     if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-      throw new Error(ERROR_MESSAGES.INVALID_PASSWORD);
+      throw new Error(ErrorMessages.INVALID_PASSWORD);
     }
   }
 
   private static validateEmail(email: string): void {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      throw new Error(ERROR_MESSAGES.INVALID_EMAIL);
+      throw new Error(ErrorMessages.INVALID_EMAIL);
     }
   }
 
   private static validatePhoneNumber(phone: string): void {
     const phoneRegex = /^[0-9]{8,15}$/;
     if (!phoneRegex.test(phone)) {
-      throw new Error(ERROR_MESSAGES.INVALID_PHONE);
+      throw new Error(ErrorMessages.INVALID_PHONE);
     }
   }
 
@@ -561,51 +519,64 @@ static async logout(userId: string): Promise<void> {
     if (!details) return;
 
     if (details.services && !this.isStringArray(details.services)) {
-      throw new Error(ERROR_MESSAGES.INVALID_SERVICES);
+      throw new Error("Services must be an array of strings");
     }
+
     if (details.workingHours) {
       this.validateWorkingHours(details.workingHours);
     }
+
     if (details.experienceYears !== undefined && 
         (details.experienceYears < 0 || details.experienceYears > 100)) {
-      throw new Error(ERROR_MESSAGES.INVALID_EXPERIENCE);
+      throw new Error("Experience years must be between 0 and 100");
     }
   }
+
   private static validateWorkingHours(workingHours: WorkingHours[]): void {
     if (!Array.isArray(workingHours)) {
-      throw new Error(ERROR_MESSAGES.INVALID_WORKING_HOURS);
+      throw new Error("Invalid working hours format");
     }
 
     for (const slot of workingHours) {
       if (!slot.day || !slot.start || !slot.end) {
-        throw new Error(ERROR_MESSAGES.INVALID_TIME_SLOT);
+        throw new Error("Each time slot must have day, start and end");
       }
+
       if (!VALID_DAYS.includes(slot.day as typeof VALID_DAYS[number])) {
-        throw new Error(ERROR_MESSAGES.INVALID_DAY(slot.day));
+        throw new Error(`Invalid day: ${slot.day}`);
       }
-      if (!this.isValidTimeFormat(slot.start) || !this.isValidTimeFormat(slot.end)) {
-        throw new Error(ERROR_MESSAGES.INVALID_TIME_FORMAT);
+
+      if (!TIME_REGEX.test(slot.start) || !TIME_REGEX.test(slot.end)) {
+        throw new Error("Invalid time format (HH:MM required)");
+      }
+
+      if (slot.pauseStart && !TIME_REGEX.test(slot.pauseStart)) {
+        throw new Error("Invalid pause start time format");
+      }
+
+      if (slot.pauseEnd && !TIME_REGEX.test(slot.pauseEnd)) {
+        throw new Error("Invalid pause end time format");
       }
     }
   }
+
   private static validateAddress(address?: Address): void {
     if (!address) return;
     
     Object.entries(address).forEach(([field, value]) => {
       if (value !== undefined && typeof value !== 'string') {
-        throw new Error(ERROR_MESSAGES.INVALID_ADDRESS_FIELD(field));
+        throw new Error(`Invalid address field: ${field}`);
       }
     });
   }
+
   private static isStringArray(arr: any[]): boolean {
     return Array.isArray(arr) && arr.every(item => typeof item === 'string');
   }
-  private static isValidTimeFormat(time: string): boolean {
-    return /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
-  }
+
   private static validateUserId(userId: string): void {
     if (!Types.ObjectId.isValid(userId)) {
-      throw new Error(ERROR_MESSAGES.INVALID_USER_ID);
+      throw new Error(ErrorMessages.INVALID_USER_ID);
     }
   }
   //#endregion
