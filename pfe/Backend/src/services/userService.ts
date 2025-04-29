@@ -437,15 +437,11 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
   }
 
   static async deleteUser(userId: string): Promise<IUser> {
-    this.validateUserId(userId);
-    
-    return await User.findByIdAndUpdate(
-      new Types.ObjectId(userId),
-      { isActive: false },
-      { new: true }
-    ).select("-password -refreshToken")
-    .orFail(new Error(ErrorMessages.USER_NOT_FOUND))
-    .then(user => user.toObject());
+    const deletedUser = await User.findByIdAndDelete(userId);
+    if (!deletedUser) {
+      throw new Error("Utilisateur non trouvé"); // Géré par le catch du contrôleur
+    }
+    return deletedUser;
   }
 
   static async getVeterinaireById(userId: string): Promise<IUser> {

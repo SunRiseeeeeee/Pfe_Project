@@ -85,22 +85,21 @@ export const deleteUser: ExpressController = async (req, res) => {
       return;
     }
 
-    const result = await UserService.deleteUser(userId);
-    if (!result) {
+    const deletedUser = await UserService.deleteUser(userId);
+    if (!deletedUser) {
       sendJsonResponse(res, 404, { message: "Utilisateur non trouvé" });
       return;
     }
 
-    sendJsonResponse(res, 200, { message: "Compte désactivé avec succès" });
+    sendJsonResponse(res, 200, { message: "Utilisateur supprimé définitivement avec succès" });
   } catch (error) {
     console.error("Erreur deleteUser:", error);
     sendJsonResponse(res, 500, {
-      message: "Erreur lors de la désactivation du compte",
-      error: error instanceof Error ? error.message : "Erreur inconnue"
+      message: "Erreur lors de la suppression de l'utilisateur",
+      error: error instanceof Error ? error.message : "Erreur inconnue",
     });
   }
 };
-
 export const getVeterinarians: ExpressController = async (req, res) => {
   try {
     const { 
