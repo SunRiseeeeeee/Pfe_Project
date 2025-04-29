@@ -342,16 +342,67 @@ export class UserService {
   //#endregion
 
   //#region CRUD Operations
-  static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {}): Promise<IUser> {
-    this.validateUserData(userData, extraDetails);
-    await this.checkDuplicateUser(userData);
-    
-    const hashedPassword = await this.hashPassword(userData.password);
-    const newUser = await this.saveUser(userData, extraDetails, hashedPassword);
-    
-    return newUser.toObject();
-  }
+// Ensure this is the ONLY declaration of createUser
+static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {}): Promise<IUser> {
+  try {
+      // 1. Validation
+      this.validateUserData(userData, extraDetails);
+      await this.checkDuplicateUser(userData);
+      
+      // 2. Hashage du mot de passe
+      const hashedPassword = await this.hashPassword(userData.password);
 
+      // 3. Création et sauvegarde du document
+      const newUser = new User({
+          ...userData,
+          ...extraDetails,
+          password: hashedPassword,
+          isActive: true
+      });
+
+      const savedUser = await newUser.save();
+      
+      // 4. Vérification de la sauvegarde
+      if (!savedUser?._id) {
+          throw new Error("SERVER_ERROR: Document sauvegardé sans ID");
+      }
+
+      // 5. Conversion en objet simple avec typage correct
+      const userObject = savedUser.toObject({
+          getters: true,
+          virtuals: true,
+          versionKey: false
+      }) as unknown as IUser;
+
+      // 6. Construction du résultat final
+      return {
+          ...userObject,
+          _id: savedUser._id, // Garantie de l'ID
+          id: savedUser._id.toString() // Pour la compatibilité avec toJSON
+      } as IUser;
+
+  } catch (error) {
+      console.error('Erreur création utilisateur:', {
+          error,
+          inputData: {
+              ...userData,
+              password: '***',
+              extraDetails: extraDetails
+          }
+      });
+
+      if (error instanceof mongoose.Error.ValidationError) {
+          const messages = Object.values(error.errors).map(e => e.message);
+          throw new Error(`VALIDATION_ERROR: ${messages.join(', ')}`);
+      }
+
+      if ((error as any).code === 11000) {
+          throw new Error("DUPLICATE_USER: Un utilisateur existe déjà avec ces informations");
+      }
+
+      throw new Error(`SERVER_ERROR: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+  }
+}
   static async getUserById(userId: string): Promise<IUser> {
     this.validateUserId(userId);
     

@@ -37,6 +37,7 @@ export interface IUserDetails {
 
 // Interface TypeScript pour un utilisateur
 export interface IUser extends Document {
+  [x: string]: any;
   _id: Types.ObjectId;
   firstName: string;
   lastName: string;
@@ -81,12 +82,7 @@ const UserSchema: Schema = new Schema<IUser>(
       lowercase: true,
       match: /^\S+@\S+\.\S+$/,
     },
-    password: {
-      type: String,
-      required: true,
-      select: false,
-      minlength: 8,
-    },
+    password: {type: String,required: true,select: false,minlength: 8,},
     phoneNumber: {
       type: String,
       required: true,

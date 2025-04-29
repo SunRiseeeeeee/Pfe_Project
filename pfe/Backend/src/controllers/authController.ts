@@ -1,17 +1,25 @@
 import { Request, Response, NextFunction, RequestHandler, ErrorRequestHandler } from "express";
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import jwt from "jsonwebtoken";
 import { AuthService, UserService } from "../services/userService";
 import { UserRole } from "../types";
 import { IUser } from "../models/User";
 
-//#region Interfaces
+//#region Interfaces et Types
 interface WorkingHours {
   day: string;
   start: string;
   end: string;
   pauseStart?: string;
   pauseEnd?: string;
+}
+
+interface Address {
+  street?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
 }
 
 interface UserDetails {
@@ -31,8 +39,13 @@ interface SignupRequest {
   profilePicture?: string;
   mapsLocation?: string;
   description?: string;
-  services?: string[];
-  workingHours?: WorkingHours[];
+  address?: Address;
+  details?: {
+    services?: string[];
+    workingHours?: WorkingHours[];
+    specialization?: string;
+    experienceYears?: number;
+  };
 }
 
 interface LoginRequest {
@@ -53,13 +66,12 @@ interface SafeUserInfo {
   username: string;
   phoneNumber: string;
   profilePicture?: string;
-  address?: {
-    street?: string;
-    city?: string;
-    state?: string;
-    country?: string;
-    postalCode?: string;
-  };
+  address?: Address;
+  details?: UserDetails;
+  mapsLocation?: string;
+  description?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 interface AuthTokens {
@@ -78,6 +90,19 @@ interface AuthResponse {
   };
   user?: SafeUserInfo;
   error?: string;
+  debug?: {
+    stack?: string;
+    [key: string]: unknown;
+  };
+}
+
+type ErrorMessage = string | ((context?: string) => string);
+type ErrorMessages = Record<string, ErrorMessage>;
+
+interface ErrorResponse {
+  status: number;
+  code: string;
+  message: string;
 }
 //#endregion
 
@@ -86,88 +111,65 @@ const VALID_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Sat
 const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const USERNAME_REGEX = /^[a-zA-Z0-9_]+$/;
 const EMAIL_REGEX = /^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/;
-
-enum ErrorCode {
-  MISSING_FIELD = "MISSING_FIELD",
-  INVALID_EMAIL = "INVALID_EMAIL",
-  INVALID_USERNAME = "INVALID_USERNAME",
-  INVALID_WORKING_HOURS = "INVALID_WORKING_HOURS",
-  MISSING_CREDENTIALS = "MISSING_CREDENTIALS",
-  INVALID_CREDENTIALS = "INVALID_CREDENTIALS",
-  MISSING_TOKEN = "MISSING_TOKEN",
-  INVALID_TOKEN = "INVALID_TOKEN",
-  SERVER_ERROR = "SERVER_ERROR",
-  ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
-}
-
-interface ErrorMessages {
-  [ErrorCode.MISSING_FIELD]: string;
-  [ErrorCode.INVALID_EMAIL]: string;
-  [ErrorCode.INVALID_USERNAME]: string;
-  [ErrorCode.INVALID_WORKING_HOURS]: string;
-  [ErrorCode.MISSING_CREDENTIALS]: string;
-  [ErrorCode.INVALID_CREDENTIALS]: string;
-  [ErrorCode.MISSING_TOKEN]: string;
-  [ErrorCode.INVALID_TOKEN]: string;
-  [ErrorCode.SERVER_ERROR]: string;
-  [ErrorCode.ACCOUNT_LOCKED]: string;
-}
+const PHONE_REGEX = /^[0-9]{8,15}$/;
 
 const ERROR_MESSAGES: ErrorMessages = {
-  [ErrorCode.MISSING_FIELD]: "Le champ est requis.",
-  [ErrorCode.INVALID_EMAIL]: "L'email est invalide.",
-  [ErrorCode.INVALID_USERNAME]: "Le nom d'utilisateur est invalide.",
-  [ErrorCode.INVALID_WORKING_HOURS]: "Les heures de travail sont invalides.",
-  [ErrorCode.MISSING_CREDENTIALS]: "Identifiants manquants.",
-  [ErrorCode.INVALID_CREDENTIALS]: "Identifiants incorrects.",
-  [ErrorCode.MISSING_TOKEN]: "Token manquant.",
-  [ErrorCode.INVALID_TOKEN]: "Token invalide.",
-  [ErrorCode.SERVER_ERROR]: "Erreur serveur.",
-  [ErrorCode.ACCOUNT_LOCKED]: "Compte bloqué. Réessayez plus tard."
+  MISSING_FIELD: (field?: string) => `Le champ ${field ? `'${field}'` : ''} est requis.`,
+  INVALID_EMAIL: "L'email est invalide.",
+  INVALID_USERNAME: "Le nom d'utilisateur est invalide (caractères alphanumériques et _ uniquement).",
+  INVALID_PHONE: "Le numéro de téléphone doit contenir 8 à 15 chiffres.",
+  INVALID_WORKING_HOURS: "Les heures de travail sont invalides.",
+  MISSING_CREDENTIALS: "Identifiants manquants.",
+  INVALID_CREDENTIALS: "Identifiants incorrects.",
+  MISSING_TOKEN: "Token manquant.",
+  INVALID_TOKEN: "Token invalide.",
+  SERVER_ERROR: "Erreur serveur.",
+  ACCOUNT_LOCKED: (minutes?: string) => `Compte bloqué. Réessayez dans ${minutes || 'quelques'} minutes.`,
+  VALIDATION_ERROR: "Erreur de validation",
+  DUPLICATE_USER: "Un utilisateur avec ces informations existe déjà",
+  ACCOUNT_INACTIVE: "Le compte est désactivé"
 };
 
-const getErrorMessage = (code: ErrorCode, field?: string): string => {
-  const baseMessage = ERROR_MESSAGES[code];
-  
-  if (code === ErrorCode.MISSING_FIELD && field) {
-    return `Le champ '${field}' est requis.`;
-  }
-  
-  if (code === ErrorCode.ACCOUNT_LOCKED && field) {
-    return `Compte bloqué. Réessayez dans ${field} minutes.`;
-  }
-  
-  return baseMessage;
+const getErrorMessage = (code: string, context?: string): string => {
+  const message = ERROR_MESSAGES[code];
+  return typeof message === 'function' ? message(context) : message || "Erreur inconnue";
 };
 //#endregion
 
 //#region Helper Functions
 const validateRequiredString = (value: unknown, fieldName: string): string => {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error(getErrorMessage(ErrorCode.MISSING_FIELD, fieldName));
+    throw new Error(getErrorMessage("MISSING_FIELD", fieldName));
   }
   return value.trim();
 };
 
 const validateEmailFormat = (email: string): void => {
   if (!EMAIL_REGEX.test(email)) {
-    throw new Error(getErrorMessage(ErrorCode.INVALID_EMAIL));
+    throw new Error(getErrorMessage("INVALID_EMAIL"));
   }
 };
 
 const validateUsernameFormat = (username: string): void => {
   if (!USERNAME_REGEX.test(username)) {
-    throw new Error(getErrorMessage(ErrorCode.INVALID_USERNAME));
+    throw new Error(getErrorMessage("INVALID_USERNAME"));
+  }
+};
+
+const validatePhoneFormat = (phone: string): void => {
+  if (!PHONE_REGEX.test(phone)) {
+    throw new Error(getErrorMessage("INVALID_PHONE"));
   }
 };
 
 const sanitizeOptionalString = (value?: unknown): string | undefined => {
-  return typeof value === 'string' ? value.trim() : undefined;
+  if (value === null || value === undefined) return undefined;
+  return typeof value === 'string' ? value.trim() : String(value).trim();
 };
 
 const validateWorkingHours = (hours: unknown): WorkingHours[] => {
   if (!Array.isArray(hours)) {
-    throw new Error(getErrorMessage(ErrorCode.INVALID_WORKING_HOURS));
+    throw new Error(getErrorMessage("INVALID_WORKING_HOURS"));
   }
 
   return hours.map((slot, index) => {
@@ -187,91 +189,245 @@ const validateWorkingHours = (hours: unknown): WorkingHours[] => {
       }
     });
 
-    return { day, start, end, ...(pauseStart && { pauseStart }), ...(pauseEnd && { pauseEnd }) };
+    return { 
+      day, 
+      start, 
+      end, 
+      ...(pauseStart && { pauseStart }), 
+      ...(pauseEnd && { pauseEnd }) 
+    };
   });
+};
+
+const buildExtraDetails = (role: UserRole, body: SignupRequest): Partial<IUser> => {
+  const details: Partial<IUser> = {
+    profilePicture: sanitizeOptionalString(body.profilePicture),
+    mapsLocation: sanitizeOptionalString(body.mapsLocation),
+    description: sanitizeOptionalString(body.description),
+    address: body.address ? {
+      street: sanitizeOptionalString(body.address.street),
+      city: sanitizeOptionalString(body.address.city),
+      state: sanitizeOptionalString(body.address.state),
+      country: sanitizeOptionalString(body.address.country),
+      postalCode: sanitizeOptionalString(body.address.postalCode)
+    } : undefined,
+    details: {
+      services: Array.isArray(body.details?.services) ? body.details.services : [],
+      workingHours: body.details?.workingHours ? validateWorkingHours(body.details.workingHours) : [],
+      specialization: sanitizeOptionalString(body.details?.specialization),
+      experienceYears: Number(body.details?.experienceYears) || 0
+    }
+  };
+
+  if (role === UserRole.VETERINAIRE) {
+    details.rating = 0;
+  }
+
+  return details;
+};
+
+const handleControllerError = (error: unknown): ErrorResponse => {
+  console.error('Controller error:', error);
+
+  if (error instanceof mongoose.Error.ValidationError) {
+    return {
+      status: 400,
+      code: "VALIDATION_ERROR",
+      message: error.message
+    };
+  }
+
+  if (error instanceof Error) {
+    if (error.message.includes('DUPLICATE_USER') || (error as any).code === 11000) {
+      return {
+        status: 409,
+        code: "DUPLICATE_USER",
+        message: getErrorMessage("DUPLICATE_USER")
+      };
+    }
+    if (error.message.includes('VALIDATION_ERROR')) {
+      return {
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: error.message.replace('VALIDATION_ERROR: ', '')
+      };
+    }
+    if (error.message.includes('Account locked')) {
+      const minutes = error.message.match(/\d+/)?.[0];
+      return {
+        status: 403,
+        code: "ACCOUNT_LOCKED",
+        message: getErrorMessage("ACCOUNT_LOCKED", minutes)
+      };
+    }
+    if (error.message.includes('ACCOUNT_INACTIVE')) {
+      return {
+        status: 403,
+        code: "ACCOUNT_INACTIVE",
+        message: getErrorMessage("ACCOUNT_INACTIVE")
+      };
+    }
+  }
+
+  return {
+    status: 500,
+    code: "SERVER_ERROR",
+    message: getErrorMessage("SERVER_ERROR")
+  };
 };
 //#endregion
 
 //#region Controller Handlers
-export const signupHandler = (role: UserRole): RequestHandler => async (req: Request<{}, {}, SignupRequest>, res: Response<AuthResponse>, next: NextFunction) => {
-  try {
-    // Validate required fields
-    const firstName = validateRequiredString(req.body.firstName, "firstName");
-    const lastName = validateRequiredString(req.body.lastName, "lastName");
-    const username = validateRequiredString(req.body.username, "username").toLowerCase();
-    const email = validateRequiredString(req.body.email, "email").toLowerCase();
-    const password = validateRequiredString(req.body.password, "password");
-    const phoneNumber = validateRequiredString(req.body.phoneNumber, "phoneNumber");
+export const signupHandler = (role: UserRole): RequestHandler => {
+  const handler: RequestHandler = async (req, res, next) => {
+    try {
+      // 1. Validation des champs obligatoires avec vérification de type
+      const body = req.body as SignupRequest;
+      
+      const requiredFields = {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        username: body.username,
+        email: body.email,
+        password: body.password,
+        phoneNumber: body.phoneNumber
+      };
 
-    // Validate formats
-    validateUsernameFormat(username);
-    validateEmailFormat(email);
+      // Validation et nettoyage des champs
+      const validated = {
+        firstName: validateRequiredString(body.firstName, "firstName"),
+        lastName: validateRequiredString(body.lastName, "lastName"),
+        username: validateRequiredString(body.username, "username").toLowerCase(),
+        email: validateRequiredString(body.email, "email").toLowerCase(),
+        password: validateRequiredString(body.password, "password"),
+        phoneNumber: validateRequiredString(body.phoneNumber, "phoneNumber")
+      };
 
-    // Prepare extra details
-    const extraDetails: Partial<IUser> = {
-      profilePicture: sanitizeOptionalString(req.body.profilePicture),
-      mapsLocation: sanitizeOptionalString(req.body.mapsLocation),
-      description: sanitizeOptionalString(req.body.description),
-      details: {},
-      reviews: []
-    };
+      // Validation des formats
+      validateUsernameFormat(validated.username);
+      validateEmailFormat(validated.email);
+      validatePhoneFormat(validated.phoneNumber);
 
-    // Veterinarian specific fields
-    if (role === UserRole.VETERINAIRE) {
-      if (req.body.services) {
-        extraDetails.details = {
-          ...extraDetails.details,
-          services: Array.isArray(req.body.services) ? req.body.services : []
-        };
+      // 2. Préparation des données optionnelles
+      const extraDetails = buildExtraDetails(role, body);
+
+      // 3. Création de l'utilisateur avec les données validées
+      const user = await UserService.createUser(
+        { 
+          ...validated,
+          role
+        },
+        extraDetails
+      );
+
+      // 4. Vérification améliorée de la création
+      if (!user || !user._id) {
+        console.error('Erreur de création - Objet utilisateur:', user);
+        throw new Error("SERVER_ERROR: Échec de la création de l'utilisateur");
       }
 
-      if (req.body.workingHours) {
-        extraDetails.details = {
-          ...extraDetails.details,
-          workingHours: validateWorkingHours(req.body.workingHours)
-        };
+      // 5. Conversion explicite de l'ID
+      const userId = user._id.toString();
+      if (!userId) {
+        throw new Error("SERVER_ERROR: Conversion d'ID échouée");
       }
-      extraDetails.rating = 0;
+
+      // 6. Formatage de la réponse
+      const userResponse: SafeUserInfo = {
+        id: userId,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        username: user.username,
+        phoneNumber: user.phoneNumber,
+        ...(user.profilePicture && { profilePicture: user.profilePicture }),
+        ...(user.address && { address: user.address }),
+        ...(user.details && { details: user.details }),
+        ...(user.mapsLocation && { mapsLocation: user.mapsLocation }),
+        ...(user.description && { description: user.description }),
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      };
+
+      // 7. Réponse réussie avec vérification finale
+      if (!userResponse.id) {
+        throw new Error("SERVER_ERROR: Formatage de réponse échoué");
+      }
+
+      res.status(201).json({
+        success: true,
+        message: `${role} inscrit avec succès`,
+        user: userResponse
+      });
+
+    } catch (error: unknown) {
+      // Gestion d'erreur améliorée avec plus de détails
+      let status = 500;
+      let code = "SERVER_ERROR";
+      let errorMessage = "Erreur serveur";
+
+      if (error instanceof mongoose.Error.ValidationError) {
+        status = 400;
+        code = "VALIDATION_ERROR";
+        errorMessage = error.message;
+      } else if (error instanceof Error) {
+        if (error.message.includes('VALIDATION_ERROR')) {
+          status = 400;
+          code = "VALIDATION_ERROR";
+          errorMessage = error.message.replace('VALIDATION_ERROR: ', '');
+        } else if (error.message.includes('DUPLICATE_USER')) {
+          status = 409;
+          code = "DUPLICATE_USER";
+          errorMessage = "Un utilisateur avec ces informations existe déjà";
+        } else if (error.message.includes('SERVER_ERROR')) {
+          // Ajout de logs pour les erreurs serveur
+          console.error('Erreur serveur détaillée:', {
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+          });
+          errorMessage = "Problème lors de la création du compte";
+        }
+      }
+
+      const response: AuthResponse = {
+        success: false,
+        message: errorMessage,
+        error: code,
+        ...(process.env.NODE_ENV === 'development' && {
+          debug: {
+            stack: error instanceof Error ? error.stack : undefined,
+            ...(error instanceof mongoose.Error.ValidationError && { 
+              errors: (error as any).errors 
+            }),
+            // Ajout d'informations supplémentaires en développement
+            timestamp: new Date().toISOString(),
+            receivedData: process.env.NODE_ENV === 'development' ? req.body : undefined
+          }
+        })
+      };
+
+      res.status(status).json(response);
     }
-
-    // Create user
-    const user = await UserService.createUser(
-      { firstName, lastName, username, email, password, phoneNumber, role },
-      extraDetails
-    );
-
-    res.status(201).json({
-      success: true,
-      message: `${role} inscrit avec succès`,
-      userId: user._id.toString()
-    });
-
-  } catch (error: any) {
-    console.error('Signup error:', error);
-    const status = error.message.includes('exists') ? 409 : 400;
-    res.status(status).json({
-      success: false,
-      message: error.message,
-      error: 'VALIDATION_ERROR'
-    });
-  }
+  };
+  return handler;
 };
-
-export const loginHandler = async (req: Request<{}, AuthResponse, LoginRequest>, res: Response<AuthResponse>, next: NextFunction): Promise<void> => {
+export const loginHandler: RequestHandler = async (req, res, next) => {
   try {
-    const { username, password } = req.body;
+    const { username, password } = req.body as LoginRequest;
     
     if (!username || !password) {
       res.status(400).json({
         success: false,
-        message: getErrorMessage(ErrorCode.MISSING_CREDENTIALS),
-        error: ErrorCode.MISSING_CREDENTIALS
+        message: getErrorMessage("MISSING_CREDENTIALS"),
+        error: "MISSING_CREDENTIALS"
       });
       return;
     }
 
     const auth = await AuthService.authenticate({
-      username: username.trim(),
+      username: username.trim().toLowerCase(),
       password: password.trim()
     });
 
@@ -285,41 +441,26 @@ export const loginHandler = async (req: Request<{}, AuthResponse, LoginRequest>,
       user: auth.user
     });
 
-  } catch (error: any) {
-    console.error('Login error:', error);
+  } catch (error: unknown) {
+    const { status, code, message } = handleControllerError(error);
     
-    let status = 500;
-    let errorCode = ErrorCode.SERVER_ERROR;
-    let message = getErrorMessage(ErrorCode.SERVER_ERROR);
-    
-    if (error.message.includes(ErrorCode.INVALID_CREDENTIALS)) {
-      status = 401;
-      errorCode = ErrorCode.INVALID_CREDENTIALS;
-      message = getErrorMessage(ErrorCode.INVALID_CREDENTIALS);
-    } else if (error.message.includes('Account locked')) {
-      status = 403;
-      errorCode = ErrorCode.ACCOUNT_LOCKED;
-      const minutes = error.message.match(/\d+/)?.[0] || '30';
-      message = getErrorMessage(ErrorCode.ACCOUNT_LOCKED, minutes);
-    }
-
     res.status(status).json({
       success: false,
       message,
-      error: errorCode
+      error: code
     });
   }
 };
 
-export const refreshTokenHandler = async (req: Request<{}, AuthResponse, RefreshTokenRequest>, res: Response<AuthResponse>, next: NextFunction): Promise<void> => {
+export const refreshTokenHandler: RequestHandler = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const { refreshToken } = req.body as RefreshTokenRequest;
     
     if (!refreshToken?.trim()) {
       res.status(400).json({
         success: false,
-        message: getErrorMessage(ErrorCode.MISSING_TOKEN),
-        error: ErrorCode.MISSING_TOKEN
+        message: getErrorMessage("MISSING_TOKEN"),
+        error: "MISSING_TOKEN"
       });
       return;
     }
@@ -335,30 +476,26 @@ export const refreshTokenHandler = async (req: Request<{}, AuthResponse, Refresh
       }
     });
 
-  } catch (error: any) {
-    console.error('Refresh token error:', error);
-    const status = error.message.includes('expired') ? 401 : 400;
+  } catch (error: unknown) {
+    const { status, code, message } = handleControllerError(error);
+    
     res.status(status).json({
       success: false,
-      message: error.message.includes('expired') 
-        ? getErrorMessage(ErrorCode.INVALID_TOKEN)
-        : getErrorMessage(ErrorCode.MISSING_TOKEN),
-      error: error.message.includes('expired') 
-        ? ErrorCode.INVALID_TOKEN 
-        : ErrorCode.MISSING_TOKEN
+      message,
+      error: code
     });
   }
 };
 
-export const logoutHandler = async (req: Request, res: Response<AuthResponse>, next: NextFunction): Promise<void> => {
+export const logoutHandler: RequestHandler = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     
     if (!authHeader?.startsWith("Bearer ")) {
       res.status(401).json({
         success: false,
-        message: getErrorMessage(ErrorCode.MISSING_TOKEN),
-        error: ErrorCode.MISSING_TOKEN
+        message: getErrorMessage("MISSING_TOKEN"),
+        error: "MISSING_TOKEN"
       });
       return;
     }
@@ -370,7 +507,7 @@ export const logoutHandler = async (req: Request, res: Response<AuthResponse>, n
       res.status(401).json({
         success: false,
         message: "ID utilisateur invalide",
-        error: ErrorCode.INVALID_TOKEN
+        error: "INVALID_TOKEN"
       });
       return;
     }
@@ -381,45 +518,30 @@ export const logoutHandler = async (req: Request, res: Response<AuthResponse>, n
       message: "Déconnexion réussie" 
     });
 
-  } catch (error: any) {
-    console.error('Logout error:', error);
-    res.status(401).json({
+  } catch (error: unknown) {
+    const { status, code, message } = handleControllerError(error);
+    
+    res.status(status).json({
       success: false,
-      message: error.message.includes('expired') 
-        ? getErrorMessage(ErrorCode.INVALID_TOKEN)
-        : "Erreur de déconnexion",
-      error: ErrorCode.INVALID_TOKEN
+      message,
+      error: code
     });
   }
 };
 
-export const errorHandler: ErrorRequestHandler = (err: unknown, req: Request, res: Response<AuthResponse>, next: NextFunction) => {
-  console.error("[errorHandler]", err);
+export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
+  const { status, code, message } = handleControllerError(err);
   
-  let status = 500;
-  let message = getErrorMessage(ErrorCode.SERVER_ERROR);
-  let errorCode = ErrorCode.SERVER_ERROR;
-
-  if (err instanceof Error) {
-    message = err.message;
-    
-    if (err.message.includes(ErrorCode.INVALID_CREDENTIALS)) {
-      status = 401;
-      errorCode = ErrorCode.INVALID_CREDENTIALS;
-    } else if (err.message.includes('Account locked')) {
-      status = 403;
-      errorCode = ErrorCode.ACCOUNT_LOCKED;
-    } else if (err.message.includes(ErrorCode.MISSING_FIELD) || 
-               err.message.includes(ErrorCode.MISSING_CREDENTIALS) || 
-               err.message.includes(ErrorCode.MISSING_TOKEN)) {
-      status = 400;
-    }
-  }
-
   res.status(status).json({
     success: false,
     message,
-    error: errorCode
+    error: code,
+    ...(process.env.NODE_ENV === 'development' && {
+      debug: {
+        stack: err instanceof Error ? err.stack : undefined,
+        ...(err instanceof mongoose.Error.ValidationError && { errors: (err as any).errors })
+      }
+    })
   });
 };
 //#endregion
