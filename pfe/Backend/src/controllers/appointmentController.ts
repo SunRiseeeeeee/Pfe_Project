@@ -313,49 +313,80 @@
     try {
       const { id } = req.params;
       const updatedData = req.body;
-      const user = req.user;
-
+      const user = req.user; // Récupéré depuis le middleware d'authentification
+  
+      if (!user) {
+        sendResponse(res, 401, {}, "Authentification requise");
+        return;
+      }
+  
+      // Validation de l'ID
       if (!mongoose.Types.ObjectId.isValid(id)) {
         sendResponse(res, 400, {}, "ID de rendez-vous invalide");
         return;
       }
-
+  
+      // Récupération du rendez-vous
       const appointment = await Appointment.findById(id);
       if (!appointment) {
-        sendResponse(res, 404, {}, "Rendez-vous non trouvé.");
+        sendResponse(res, 404, {}, "Rendez-vous non trouvé");
         return;
       }
-
-      // Vérification des permissions
-      if (
-        user?.role !== UserRole.ADMIN && 
-        String(user?.id) !== String(appointment.clientId) && 
-        String(user?.id) !== String(appointment.veterinaireId)
-      ) {
-        sendResponse(res, 403, {}, "Non autorisé à modifier ce rendez-vous.");
+  
+      // Vérification des permissions basée sur le rôle
+      const isAdmin = user.role === UserRole.ADMIN;
+      const isClientOwner = user.role === UserRole.CLIENT && user.id === appointment.clientId.toString();
+      const isAssignedVet = user.role === UserRole.VETERINAIRE && user.id === appointment.veterinaireId.toString();
+  
+      if (!isAdmin && !isClientOwner && !isAssignedVet) {
+        sendResponse(res, 403, {}, "Action non autorisée");
         return;
       }
-
-      // Validation des données
-      if (updatedData.type && !Object.values(AppointmentType).includes(updatedData.type)) {
-        sendResponse(
-          res,
-          400,
-          {},
-          `Type de rendez-vous invalide. Autorisés : ${Object.values(AppointmentType).join(", ")}`
-        );
+  
+      // Protection contre les modifications non autorisées
+      const protectedFields: { [key: string]: boolean } = {
+        clientId: !isAdmin,
+        veterinaireId: !isAdmin,
+        createdAt: true,
+        updatedAt: true
+      };
+  
+      Object.keys(protectedFields).forEach(field => {
+        if (updatedData[field] && protectedFields[field]) {
+          delete updatedData[field];
+          console.warn(`Tentative de modification non autorisée du champ ${field}`);
+        }
+      });
+  
+      // Validation spécifique selon le rôle
+      if (updatedData.status && !isAdmin && !isAssignedVet) {
+        sendResponse(res, 403, {}, "Modification du statut non autorisée");
         return;
       }
-
+  
+      // Mise à jour
       const updatedAppointment = await Appointment.findByIdAndUpdate(
         id,
         updatedData,
-        { new: true }
+        { new: true, runValidators: true }
       );
-
-      sendResponse(res, 200, updatedAppointment!);
+  
+      if (!updatedAppointment) {
+        sendResponse(res, 404, {}, "Erreur lors de la mise à jour");
+        return;
+      }
+  
+      // Réponse
+      sendResponse(res, 200, {
+        id: updatedAppointment._id,
+        date: updatedAppointment.date,
+        animalType: updatedAppointment.animalType,
+        type: updatedAppointment.type,
+        status: updatedAppointment.status,
+        services: updatedAppointment.services
+      });
+  
     } catch (error) {
-      console.error("[updateAppointment] Error:", error);
       next(error);
     }
   };
