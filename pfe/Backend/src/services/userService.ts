@@ -208,7 +208,7 @@ export class AuthService {
   
     const accessToken = jwt.sign(
       commonPayload, // No exp in payload
-      process.env.JWT_ACCESS_SECRET!,
+      process.env.JWT_SECRET!,
       { expiresIn: ACCESS_TOKEN_EXPIRATION } // Use expiresIn option instead
     );
   
@@ -301,7 +301,7 @@ export class AuthService {
   }
 
   private static validateJwtConfig(): void {
-    if (!process.env.JWT_ACCESS_SECRET || !process.env.JWT_REFRESH_SECRET) {
+    if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
       throw new Error(ErrorMessages.JWT_CONFIG_MISSING);
     }
   }

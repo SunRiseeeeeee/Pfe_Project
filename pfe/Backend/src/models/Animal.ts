@@ -2,11 +2,11 @@ import mongoose, { Schema, Document } from "mongoose";
 
 // Interface TypeScript pour un Animal
 export interface IAnimal extends Document {
-  name: string; // Nom de l'animal
-  picture?: string; // Photo de l'animal (optionnelle)
-  breed?: string; // Race de l'animal (optionnelle)
-  gender?: "Male" | "Female"; // Genre de l'animal (optionnel)
-  birthDate?: Date; // Date de naissance de l'animal (optionnelle)
+  name: string; 
+  picture?: string; 
+  breed?: string; 
+  gender?: "Male" | "Female"; 
+  birthDate?: Date; 
   owner: mongoose.Schema.Types.ObjectId; // Référence à l'utilisateur propriétaire
 }
 
@@ -27,6 +27,4 @@ const AnimalSchema: Schema = new Schema({
     required: true, 
   }, // Référence à l'utilisateur propriétaire (obligatoire)
 });
-
-// Création du modèle Mongoose
 export default mongoose.model<IAnimal>("Animal", AnimalSchema);

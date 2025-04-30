@@ -501,7 +501,7 @@ export const logoutHandler: RequestHandler = async (req, res, next) => {
     }
 
     const token = authHeader.slice(7);
-    const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as { id: string };
+    const payload = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
     
     if (!Types.ObjectId.isValid(payload.id)) {
       res.status(401).json({

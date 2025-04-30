@@ -1,4 +1,8 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
+// Ajouter en haut du fichier
+import dotenv from 'dotenv';
+dotenv.config();
+
 import jwt from "jsonwebtoken";
 import { UserRole } from "../models/User";
 
