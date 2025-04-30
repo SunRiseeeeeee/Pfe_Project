@@ -1,9 +1,11 @@
+import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
 
 class AppointmentsScreen extends StatefulWidget {
   final Veterinarian vet;
-
   const AppointmentsScreen({Key? key, required this.vet}) : super(key: key);
 
   @override
@@ -21,6 +23,113 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   final List<String> petTypes = ['Dog', 'Cat', 'Bird', 'Fish'];
   final List<String> vetTypes = ['General', 'Emergency'];
   final List<String> services = ['Consultation', 'Vaccination'];
+
+  bool _isLoading = false; // To track loading state during API call
+
+  Future<void> _createAppointment(String clientId) async {
+    if (selectedPetType == null ||
+        selectedDate == null ||
+        selectedTime == null ||
+        selectedVetType == null ||
+        selectedService == null ||
+        selectedReason == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please fill all fields")),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true; // Show loading indicator
+    });
+
+    try {
+      // Combine date and time into a single DateTime object
+      final appointmentDateTime = DateTime(
+        selectedDate!.year,
+        selectedDate!.month,
+        selectedDate!.day,
+        selectedTime!.hour,
+        selectedTime!.minute,
+      );
+
+      // Prepare payload for the API request
+      final payload = {
+        "date": appointmentDateTime.toIso8601String(), // ISO 8601 format
+        "clientId": clientId, // Client ID retrieved from SharedPreferences
+        "veterinaireId": widget.vet.id, // Veterinarian ID from the widget
+        "animalType": selectedPetType!,
+        "type": selectedVetType!.toLowerCase(), // Convert to lowercase to match enum
+        "service": selectedService!,
+        "reason": selectedReason!,
+        "status": "pending", // Default status
+      };
+
+      // Initialize Dio
+      final dio = Dio();
+
+      // Send POST request to create the appointment
+      final response = await dio.post(
+        "http://localhost:3000/api/appointments", // Replace with your API URL
+        data: payload,
+        options: Options(
+          headers: {"Content-Type": "application/json"},
+        ),
+      );
+
+      if (response.statusCode == 201) {
+        // Appointment created successfully
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Appointment created successfully!")),
+        );
+        // Optionally, navigate to another screen or reset the form
+        setState(() {
+          _resetForm();
+        });
+      } else {
+        // Handle API error
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: ${response.data['message']}")),
+        );
+      }
+    } catch (e) {
+      // Handle network or other errors
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("An error occurred. Please try again.")),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false; // Hide loading indicator
+      });
+    }
+  }
+
+  void _resetForm() {
+    setState(() {
+      selectedPetType = null;
+      selectedDate = null;
+      selectedTime = null;
+      selectedVetType = null;
+      selectedService = null;
+      selectedReason = null;
+    });
+  }
+
+  Future<void> _onNextButtonPressed() async {
+    // Retrieve the client ID from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final clientId = prefs.getString('clientId');
+
+    if (clientId == null || clientId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Client ID not found. Please log in again.")),
+      );
+      return;
+    }
+
+    // Create the appointment using the retrieved client ID
+    await _createAppointment(clientId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +168,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                       'Bird': 'assets/images/pet4.jpg',
                       'Fish': 'assets/images/pet5.jpg',
                     }[pet];
-
                     return GestureDetector(
                       onTap: () => setState(() => selectedPetType = pet),
                       child: Container(
@@ -187,9 +295,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Handle next button logic here
-                  },
+                  onPressed: _isLoading ? null : _onNextButtonPressed,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.deepPurple,
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -199,7 +305,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                     elevation: 50, // Add shadow to the button
                     shadowColor: Colors.black.withOpacity(0.2), // Shadow color
                   ),
-                  child: const Text(
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
                     'Next',
                     style: TextStyle(fontSize: 16, color: Colors.white),
                   ),

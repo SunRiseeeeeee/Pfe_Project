@@ -8,14 +8,21 @@ class VetService {
   static Future<Map<String, dynamic>> fetchVeterinarians({
     String? rating,
     String? location,
+    List<String>? services,
     int page = 1,
     int limit = 10,
     String sort = "desc",
   }) async {
     try {
       final queryParams = {
-        if (rating != null && rating.trim().isNotEmpty) 'rating': rating.trim(),
-        if (location != null && location.trim().isNotEmpty) 'location': location.trim(),
+        if (rating != null && rating
+            .trim()
+            .isNotEmpty) 'rating': rating.trim(),
+        if (location != null && location
+            .trim()
+            .isNotEmpty) 'location': location.trim(),
+        if (services != null && services.isNotEmpty) 'services': services.join(
+            ","),
         'page': page.toString(),
         'limit': limit.toString(),
         'sort': sort,
@@ -24,23 +31,10 @@ class VetService {
       final response = await _dio.get(baseUrl, queryParameters: queryParams);
 
       if (response.statusCode == 200) {
-        final jsonData = response.data;
-        final veterinariansData = jsonData['veterinarians'];
-        final int currentPage = jsonData['currentPage'] ?? 1;
-        final int totalPages = jsonData['totalPages'] ?? 1;
-        final int totalCount = jsonData['totalCount'] ?? 0;
-
-        final List<Veterinarian> veterinarians =
-        veterinariansData.map<Veterinarian>((json) => Veterinarian.fromJson(json)).toList();
-
-        return {
-          'currentPage': currentPage,
-          'totalPages': totalPages,
-          'totalCount': totalCount,
-          'veterinarians': veterinarians,
-        };
+        return response.data; // ← Return raw API response
       } else {
-        throw Exception('Failed to load veterinarians. Status Code: ${response.statusCode}');
+        throw Exception('Failed to load veterinarians. Status Code: ${response
+            .statusCode}');
       }
     } catch (e) {
       print('Error fetching veterinarians: $e');

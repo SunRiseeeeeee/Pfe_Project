@@ -34,18 +34,63 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: _screens[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        selectedItemColor: Colors.deepPurple,
-        unselectedItemColor: Colors.grey,
-        currentIndex: _selectedIndex,
-        type: BottomNavigationBarType.fixed,
-        onTap: _onItemTapped,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: 'Appointment'),
-          BottomNavigationBarItem(icon: Icon(Icons.message), label: 'Message'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+      bottomNavigationBar: _buildCustomBottomNavigationBar(),
+    );
+  }
+
+  // Custom Bottom Navigation Bar
+  Widget _buildCustomBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+        child: BottomNavigationBar(
+          backgroundColor: Colors.white, // Base color
+          selectedItemColor: Colors.deepPurple, // Active item color
+          unselectedItemColor: Colors.grey, // Inactive item color
+          currentIndex: _selectedIndex,
+          type: BottomNavigationBarType.fixed,
+          onTap: _onItemTapped,
+          elevation: 0, // Remove default elevation
+          selectedFontSize: 12,
+          unselectedFontSize: 10,
+          showSelectedLabels: true,
+          showUnselectedLabels: true,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home, size: 28),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.calendar_today, size: 28),
+              label: 'Appointment',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.message, size: 28),
+              label: 'Message',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person, size: 28),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -65,7 +110,6 @@ class _HomeContentState extends State<HomeContent> {
   String? locationFilter;
   int limit = 10;
   String sort = "desc";
-
   late Future<Map<String, dynamic>> veterinariansFuture;
 
   @override
@@ -138,7 +182,6 @@ class _HomeContentState extends State<HomeContent> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-
                 // Handle errors during the API call
                 if (snapshot.hasError) {
                   print('API Error: ${snapshot.error}'); // Log the error for debugging
@@ -149,10 +192,8 @@ class _HomeContentState extends State<HomeContent> {
                     ),
                   );
                 }
-
                 // Extract the data from the snapshot
                 final Map<String, dynamic>? responseData = snapshot.data;
-
                 // Handle empty or null data
                 if (responseData == null ||
                     responseData['veterinarians'] == null ||
@@ -164,15 +205,12 @@ class _HomeContentState extends State<HomeContent> {
                     ),
                   );
                 }
-
                 // Extract the list of veterinarians and pagination details
                 final List<dynamic> veterinariansData = responseData['veterinarians'];
                 final int totalPages = responseData['totalPages'] ?? 1;
-
                 // Convert the list into a list of Veterinarian objects
                 final List<Veterinarian> veterinarians =
                 veterinariansData.map((json) => Veterinarian.fromJson(json)).toList();
-
                 // Display the list of veterinarians
                 return Column(
                   children: [
@@ -182,7 +220,6 @@ class _HomeContentState extends State<HomeContent> {
                       itemCount: veterinarians.length,
                       itemBuilder: (context, index) {
                         final vet = veterinarians[index];
-
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: Hero(
@@ -216,9 +253,12 @@ class _HomeContentState extends State<HomeContent> {
                                 children: [
                                   const Icon(Icons.calendar_today, size: 16),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    vet.workingHours ?? 'N/A',
-                                    style: const TextStyle(fontFamily: 'Poppins'),
+                                  Expanded(
+                                    child: Text(
+                                      vet.workingHours ?? 'N/A',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -235,7 +275,6 @@ class _HomeContentState extends State<HomeContent> {
                         );
                       },
                     ),
-
                     // Pagination Controls
                     Padding(
                       padding: const EdgeInsets.all(8.0),
@@ -352,7 +391,6 @@ class _AutoSlidingPageViewState extends State<AutoSlidingPageView> {
     {'image': 'assets/images/vet2.jpg', 'title': 'Explore Our Services', 'subtitle': 'We offer vaccinations.'},
     {'image': 'assets/images/discover2.jpg', 'title': 'Book Appointments', 'subtitle': 'Schedule visits with ease.'},
   ];
-
   late PageController _pageController;
   int _currentPage = 0;
 
@@ -409,9 +447,11 @@ class _AutoSlidingPageViewState extends State<AutoSlidingPageView> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_carouselItems[_currentPage]['title']!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Montserrat', color: Colors.white)),
+                  Text(_carouselItems[_currentPage]['title']!,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Montserrat', color: Colors.white)),
                   const SizedBox(height: 4),
-                  Text(_carouselItems[_currentPage]['subtitle']!, style: const TextStyle(fontSize: 14, fontFamily: 'Poppins', color: Colors.white)),
+                  Text(_carouselItems[_currentPage]['subtitle']!,
+                      style: const TextStyle(fontSize: 14, fontFamily: 'Poppins', color: Colors.white)),
                   const SizedBox(height: 10),
                   ElevatedButton(
                     onPressed: () {},
