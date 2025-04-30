@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   final Dio _dio = Dio(BaseOptions(
@@ -110,6 +111,34 @@ class AuthService {
         "success": false,
         "message": e.response?.data["message"] ?? "An error occurred. Please try again."
       };
+    }
+  }
+
+  // Logout function
+  Future<void> logout() async {
+    try {
+      // Retrieve the refresh token from SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final refreshToken = prefs.getString('refreshToken');
+
+      if (refreshToken == null) {
+        throw Exception("Refresh token not found");
+      }
+
+      // Send the logout request to the backend
+      final response = await _dio.post(
+        "/logout", // Endpoint for logout
+        data: {"refreshToken": refreshToken},
+      );
+
+      if (response.statusCode == 200) {
+        // Clear all stored user data after successful logout
+        await prefs.clear();
+      } else {
+        throw Exception(response.data["message"] ?? "Logout failed");
+      }
+    } catch (e) {
+      throw Exception("Logout failed: $e");
     }
   }
 }

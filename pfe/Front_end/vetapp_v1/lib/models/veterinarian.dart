@@ -21,15 +21,32 @@ class Veterinarian {
 
   // Factory constructor to create a Veterinarian object from JSON
   factory Veterinarian.fromJson(Map<String, dynamic> json) {
+    // Helper function to safely extract String from dynamic
+    String safeString(dynamic value) {
+      if (value is String) return value;
+      if (value is List) return value.isNotEmpty ? value.first.toString() : 'Unknown';
+      return value?.toString() ?? 'Unknown';
+    }
+
+    // Helper function to safely extract working hours
+    String? safeWorkingHours(dynamic details) {
+      if (details is Map) {
+        final hours = details['workingHours'];
+        if (hours is String) return hours;
+        if (hours is List) return hours.isNotEmpty ? hours.first.toString() : null;
+      }
+      return null;
+    }
+
     return Veterinarian(
-      id: json['_id'], // Assuming '_id' is the unique identifier from the API
-      firstName: json['firstName'] ?? 'Unknown', // Default value if firstName is null
-      lastName: json['lastName'] ?? 'Unknown',
-      profilePicture: json['profilePicture'], // Nullable field
-      rating: json['rating']?.toDouble() ?? 0.0, // Default to 0.0 if rating is null
-      workingHours: json['details']?['workingHours'], // Nested field in the JSON
-      location: json['location'],
-      description: json['description'],
+      id: safeString(json['_id']),
+      firstName: safeString(json['firstName']),
+      lastName: safeString(json['lastName']),
+      profilePicture: json['profilePicture'] is String ? json['profilePicture'] : null,
+      rating: (json['rating'] is num ? json['rating'].toDouble() : 0.0),
+      workingHours: safeWorkingHours(json['details']),
+      location: json['location'] is String ? json['location'] : null,
+      description: json['description'] is String ? json['description'] : null,
     );
   }
 }
