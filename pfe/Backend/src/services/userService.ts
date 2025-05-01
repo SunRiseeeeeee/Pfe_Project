@@ -140,16 +140,13 @@ export class AuthService {
     this.checkAccountLock(user);
     return user;
   }
-
   private static async verifyPassword(user: IUser & { password: string }, password: string): Promise<void> {
-    const isMatch = await bcrypt.compare(password, user.password);
-    
+    const isMatch = await bcrypt.compare(password, user.password); 
     if (!isMatch) {
       await this.handleFailedLogin(user.username);
       throw new Error(ErrorMessages.INVALID_CREDENTIALS);
     }
   }
-
   private static checkAccountLock(user: IUser & { lockUntil?: Date | number | null }): void {
     if (!user.lockUntil) return;
     
@@ -260,19 +257,16 @@ export class AuthService {
       throw new Error(ErrorMessages.INVALID_REFRESH_TOKEN);
     }
   }
-
   private static async getUserByRefreshToken(userId: string, refreshToken: string): Promise<IUser> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new Error(ErrorMessages.INVALID_USER_ID);
     }
-
     return await User.findOne({
       _id: new Types.ObjectId(userId),
       refreshToken: refreshToken.trim(),
       isActive: true
     }).orFail(new Error(ErrorMessages.INVALID_REFRESH_TOKEN));
   }
-
   static async logout(userId: string): Promise<void> {
     if (!Types.ObjectId.isValid(userId)) {
       throw new Error(ErrorMessages.INVALID_USER_ID);
@@ -284,7 +278,6 @@ export class AuthService {
     ).orFail(new Error(ErrorMessages.USER_NOT_FOUND));
   }
   //#endregion
-
   //#region Helpers
   private static getSafeUserInfo(user: IUser): SafeUserInfo {
     return {
@@ -299,13 +292,11 @@ export class AuthService {
       address: user.address
     };
   }
-
   private static validateJwtConfig(): void {
     if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
       throw new Error(ErrorMessages.JWT_CONFIG_MISSING);
     }
   }
-
   private static async saveRefreshToken(userId: Types.ObjectId, refreshToken: string): Promise<void> {
     await User.findByIdAndUpdate(userId, { 
       $set: { 
@@ -314,7 +305,6 @@ export class AuthService {
       } 
     });
   }
-
   private static async resetSecurityFields(userId: Types.ObjectId): Promise<void> {
     await User.findByIdAndUpdate(userId, { 
       $set: { 
@@ -325,22 +315,18 @@ export class AuthService {
   }
   //#endregion
 }
-
 export class UserService {
   //#region Authentication Methods
   static async authenticateUser(credentials: LoginCredentials): Promise<AuthTokens> {
     return AuthService.authenticate(credentials);
   }
-
   static async refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
     return AuthService.refreshToken(refreshToken);
   }
-
   static async logout(userId: string): Promise<void> {
     return AuthService.logout(userId);
   }
   //#endregion
-
   //#region CRUD Operations
 // Ensure this is the ONLY declaration of createUser
 static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {}): Promise<IUser> {
@@ -348,10 +334,8 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
       // 1. Validation
       this.validateUserData(userData, extraDetails);
       await this.checkDuplicateUser(userData);
-      
       // 2. Hashage du mot de passe
       const hashedPassword = await this.hashPassword(userData.password);
-
       // 3. Création et sauvegarde du document
       const newUser = new User({
           ...userData,
@@ -359,21 +343,17 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
           password: hashedPassword,
           isActive: true
       });
-
-      const savedUser = await newUser.save();
-      
+      const savedUser = await newUser.save();      
       // 4. Vérification de la sauvegarde
       if (!savedUser?._id) {
           throw new Error("SERVER_ERROR: Document sauvegardé sans ID");
       }
-
       // 5. Conversion en objet simple avec typage correct
       const userObject = savedUser.toObject({
           getters: true,
           virtuals: true,
           versionKey: false
       }) as unknown as IUser;
-
       // 6. Construction du résultat final
       return {
           ...userObject,
