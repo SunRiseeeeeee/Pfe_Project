@@ -380,7 +380,6 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
           _id: savedUser._id, // Garantie de l'ID
           id: savedUser._id.toString() // Pour la compatibilité avec toJSON
       } as IUser;
-
   } catch (error) {
       console.error('Erreur création utilisateur:', {
           error,
@@ -390,7 +389,6 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
               extraDetails: extraDetails
           }
       });
-
       if (error instanceof mongoose.Error.ValidationError) {
           const messages = Object.values(error.errors).map(e => e.message);
           throw new Error(`VALIDATION_ERROR: ${messages.join(', ')}`);
@@ -404,26 +402,21 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
   }
 }
   static async getUserById(userId: string): Promise<IUser> {
-    this.validateUserId(userId);
-    
+    this.validateUserId(userId);   
     return await User.findById(new Types.ObjectId(userId))
       .select("-password -refreshToken -loginAttempts -lockUntil")
       .orFail(new Error(ErrorMessages.USER_NOT_FOUND))
       .then(user => user.toObject());
   }
-
   static async updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser> {
     this.validateUserId(userId);
     this.validateUpdateData(updateData);
-    
     if (updateData.phoneNumber || updateData.username || updateData.email) {
       await this.checkUniqueFields(userId, updateData);
-    }
-    
+    }   
     if (updateData.password) {
       updateData.password = await this.hashPassword(updateData.password);
     }
-
     return await User.findByIdAndUpdate(
       new Types.ObjectId(userId),
       updateData,
@@ -435,7 +428,6 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
     ).orFail(new Error(ErrorMessages.USER_NOT_FOUND))
     .then(user => user.toObject());
   }
-
   static async deleteUser(userId: string): Promise<IUser> {
     const deletedUser = await User.findByIdAndDelete(userId);
     if (!deletedUser) {
@@ -443,7 +435,6 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
     }
     return deletedUser;
   }
-
   static async getVeterinaireById(userId: string): Promise<IUser> {
     this.validateUserId(userId);
     
@@ -456,7 +447,6 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
     .then(user => user.toObject());
   }
   //#endregion
-
   //#region Validation Helpers
   private static validateUserData(userData: UserCreateData, extraDetails: ExtraDetails): void {
     this.validateEmail(userData.email);

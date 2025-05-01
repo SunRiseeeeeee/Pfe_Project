@@ -499,7 +499,6 @@ export const logoutHandler: RequestHandler = async (req, res, next) => {
       });
       return;
     }
-
     const token = authHeader.slice(7);
     const payload = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
     
@@ -511,16 +510,13 @@ export const logoutHandler: RequestHandler = async (req, res, next) => {
       });
       return;
     }
-
     await AuthService.logout(payload.id);
     res.status(200).json({ 
       success: true, 
       message: "Déconnexion réussie" 
     });
-
   } catch (error: unknown) {
     const { status, code, message } = handleControllerError(error);
-    
     res.status(status).json({
       success: false,
       message,
@@ -528,10 +524,8 @@ export const logoutHandler: RequestHandler = async (req, res, next) => {
     });
   }
 };
-
 export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   const { status, code, message } = handleControllerError(err);
-  
   res.status(status).json({
     success: false,
     message,
@@ -545,10 +539,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   });
 };
 //#endregion
-
-//#region Route Exports
 export const signupClient = signupHandler(UserRole.CLIENT);
 export const signupVeterinaire = signupHandler(UserRole.VETERINAIRE);
 export const signupSecretaire = signupHandler(UserRole.SECRETAIRE);
 export const signupAdmin = signupHandler(UserRole.ADMIN);
-//#endregion

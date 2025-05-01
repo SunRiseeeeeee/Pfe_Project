@@ -207,24 +207,17 @@
   ): Promise<void> => {
     try {
       const { clientId } = req.params;
-
-      if (!req.user) {
-        sendResponse(res, 401, {}, "Non authentifié.");
-        return;
-      }
-
-      if (req.user.role !== UserRole.CLIENT || String(req.user.id) !== String(clientId)) {
-        sendResponse(res, 403, {}, "Non autorisé à accéder à ces rendez-vous.");
-        return;
-      }
-
+  
+      // Validation de l'ID
       if (!mongoose.Types.ObjectId.isValid(clientId)) {
         sendResponse(res, 400, {}, "ID client invalide");
         return;
       }
-
+  
+      // Récupération de tous les rendez-vous pour ce client
       const appointments = await Appointment.find({ clientId });
-
+  
+      // Renvoi des données
       sendResponse(res, 200, { appointments });
     } catch (error) {
       console.error("[getAppointmentsByClient] Error:", error);
@@ -239,33 +232,24 @@
     next: NextFunction
   ): Promise<void> => {
     try {
-      const { veterinaireId } = req.params;
-      const user = req.user;
-
-      if (!user || (user.role !== UserRole.VETERINAIRE && user.role !== UserRole.ADMIN)) {
-        sendResponse(res, 403, {}, "Accès non autorisé.");
-        return;
-      }
-
-      if (user.role === UserRole.VETERINAIRE && String(user.id) !== String(veterinaireId)) {
-        sendResponse(res, 403, {}, "Vous ne pouvez voir que vos propres rendez-vous.");
-        return;
-      }
-
-      if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+      const { veterinaire } = req.params;
+  
+      // Validation de l'ID
+      if (!mongoose.Types.ObjectId.isValid(veterinaire)) {
         sendResponse(res, 400, {}, "ID vétérinaire invalide");
         return;
       }
-
-      const appointments = await Appointment.find({ veterinaireId });
-
+  
+      // Récupération de tous les rendez-vous pour ce vétérinaire
+      const appointments = await Appointment.find({ veterinaireId: veterinaire });
+  
       sendResponse(res, 200, { appointments });
     } catch (error) {
       console.error("[getAppointmentsByVeterinaire] Error:", error);
       next(error);
     }
   };
-
+  
   // Supprimer un rendez-vous
   export const deleteAppointment = async (
     req: Request,
@@ -287,14 +271,6 @@
         return;
       }
 
-      // Seul le client ou l'admin peut supprimer
-      if (
-        user?.role !== UserRole.ADMIN && 
-        String(user?.id) !== String(appointment.clientId)
-      ) {
-        sendResponse(res, 403, {}, "Non autorisé à supprimer ce rendez-vous.");
-        return;
-      }
 
       await Appointment.findByIdAndDelete(id);
       sendResponse(res, 200, {}, "Rendez-vous supprimé avec succès.");
@@ -313,12 +289,6 @@
     try {
       const { id } = req.params;
       const updatedData = req.body;
-      const user = req.user; // Récupéré depuis le middleware d'authentification
-  
-      if (!user) {
-        sendResponse(res, 401, {}, "Authentification requise");
-        return;
-      }
   
       // Validation de l'ID
       if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -333,22 +303,12 @@
         return;
       }
   
-      // Vérification des permissions basée sur le rôle
-      const isAdmin = user.role === UserRole.ADMIN;
-      const isClientOwner = user.role === UserRole.CLIENT && user.id === appointment.clientId.toString();
-      const isAssignedVet = user.role === UserRole.VETERINAIRE && user.id === appointment.veterinaireId.toString();
-  
-      if (!isAdmin && !isClientOwner && !isAssignedVet) {
-        sendResponse(res, 403, {}, "Action non autorisée");
-        return;
-      }
-  
       // Protection contre les modifications non autorisées
       const protectedFields: { [key: string]: boolean } = {
-        clientId: !isAdmin,
-        veterinaireId: !isAdmin,
-        createdAt: true,
-        updatedAt: true
+        clientId: true,  // Empêche la modification de clientId
+        veterinaireId: true,  // Empêche la modification de veterinaireId
+        createdAt: true,  // Empêche la modification de createdAt
+        updatedAt: true   // Empêche la modification de updatedAt
       };
   
       Object.keys(protectedFields).forEach(field => {
@@ -357,12 +317,6 @@
           console.warn(`Tentative de modification non autorisée du champ ${field}`);
         }
       });
-  
-      // Validation spécifique selon le rôle
-      if (updatedData.status && !isAdmin && !isAssignedVet) {
-        sendResponse(res, 403, {}, "Modification du statut non autorisée");
-        return;
-      }
   
       // Mise à jour
       const updatedAppointment = await Appointment.findByIdAndUpdate(

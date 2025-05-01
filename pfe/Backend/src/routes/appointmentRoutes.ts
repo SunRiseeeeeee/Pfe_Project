@@ -12,6 +12,7 @@ import {
   rejectAppointment,
 } from "../controllers/appointmentController";
 
+
 const router = express.Router();
 
 /**
@@ -81,9 +82,8 @@ router.get("/:id", asyncHandler(getAppointmentById)); // Obtenir un rendez-vous 
  */
 
 router.get(
-  "/client/:clientId", 
-  authenticateToken,
-  asyncHandler(getAppointmentsByClient)
+  "/client/:clientId",
+  asyncHandler(getAppointmentsByClient)  // plus de authenticateToken ici
 );
 
 /**
@@ -102,7 +102,7 @@ router.get(
  *       200:
  *         description: Liste des rendez-vous récupérée avec succès
  */
-router.get("/veterinarian/:veterinaire", asyncHandler(getAppointmentsByVeterinaire)); // Obtenir les rendez-vous pour un vétérinaire
+router.get("/veterinarian/:veterinaire",getAppointmentsByVeterinaire); // Obtenir les rendez-vous pour un vétérinaire
 
 /**
  * @swagger
@@ -135,7 +135,8 @@ router.get("/veterinarian/:veterinaire", asyncHandler(getAppointmentsByVeterinai
  *       200:
  *         description: Rendez-vous mis à jour avec succès
  */
-router.put("/:id", asyncHandler(updateAppointment)); // Mise à jour du rendez-vous
+router.put("/:id", updateAppointment);  // Utilisation directe de la fonction
+
 
 /**
  * @swagger
@@ -153,7 +154,7 @@ router.put("/:id", asyncHandler(updateAppointment)); // Mise à jour du rendez-v
  *       200:
  *         description: Rendez-vous supprimé avec succès
  */
-router.delete("/:id", asyncHandler(deleteAppointment)); // Suppression d'un rendez-vous
+router.delete("/:id", deleteAppointment); // Suppression d'un rendez-vous
 
 /**
  * @swagger
@@ -171,7 +172,7 @@ router.delete("/:id", asyncHandler(deleteAppointment)); // Suppression d'un rend
  *       200:
  *         description: Rendez-vous accepté avec succès
  */
-router.put("/:id/accept", authenticateToken, asyncHandler(acceptAppointment)); // Accepter un rendez-vous
+router.put("/:id/accept", acceptAppointment); // Accepter un rendez-vous
 
 /**
  * @swagger
@@ -189,6 +190,6 @@ router.put("/:id/accept", authenticateToken, asyncHandler(acceptAppointment)); /
  *       200:
  *         description: Rendez-vous refusé avec succès
  */
-router.put("/:id/reject", authenticateToken, asyncHandler(rejectAppointment)); // Refuser un rendez-vous
+router.put("/:id/reject",  rejectAppointment); // Refuser un rendez-vous
 
 export default router;
