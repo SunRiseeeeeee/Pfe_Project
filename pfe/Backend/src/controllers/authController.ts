@@ -3,7 +3,8 @@ import mongoose, { Types } from "mongoose";
 import jwt from "jsonwebtoken";
 import { AuthService, UserService } from "../services/userService";
 import { UserRole } from "../types";
-import { IUser } from "../models/User";
+import User, { IUser } from "../models/User";
+import bcrypt from "bcryptjs";
 
 //#region Interfaces et Types
 interface WorkingHours {
@@ -278,6 +279,62 @@ const handleControllerError = (error: unknown): ErrorResponse => {
 //#endregion
 
 //#region Controller Handlers
+export const signupSecretaire: RequestHandler = async (req, res, next) => {
+  try {
+    const { firstName, lastName, username, email, password, phoneNumber } = req.body;
+    const { veterinaireId } = req.params;
+
+    // 1) Vérifier l'ID du vétérinaire
+    if (!veterinaireId) {
+      res.status(400).json({ message: "L'ID du vétérinaire est requis." });
+      return;
+    }
+    const veterinaire = await User.findById(veterinaireId);
+    if (!veterinaire || veterinaire.role !== UserRole.VETERINAIRE) {
+      res.status(400).json({ message: "Vétérinaire introuvable ou rôle invalide." });
+      return;
+    }
+
+    // 2) Vérifier doublons
+    const exists = await User.findOne({ $or: [{ username }, { email }] });
+    if (exists) {
+      res.status(409).json({ message: "Username ou email déjà utilisé." });
+      return;
+    }
+
+    // 3) Hasher le mot de passe
+    const hashed = await bcrypt.hash(password, 12);
+
+    // 4) Créer et sauver la secrétaire
+    const newSecretaire = new User({
+      firstName,
+      lastName,
+      username,
+      email,
+      password: hashed,
+      phoneNumber,
+      role: UserRole.SECRETAIRE,
+      veterinaireId,
+    });
+    await newSecretaire.save();
+
+    // 5) Répondre sans `return res...`
+    res.status(201).json({
+      message: "Secrétaire créée avec succès.",
+      user: {
+        id: newSecretaire._id,
+        firstName: newSecretaire.firstName,
+        lastName: newSecretaire.lastName,
+        username: newSecretaire.username,
+        email: newSecretaire.email,
+        phoneNumber: newSecretaire.phoneNumber,
+      },
+    });
+    return;  
+  } catch (err) {
+    next(err);
+  }
+};
 export const signupHandler = (role: UserRole): RequestHandler => {
   const handler: RequestHandler = async (req, res, next) => {
     try {
@@ -541,5 +598,4 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 //#endregion
 export const signupClient = signupHandler(UserRole.CLIENT);
 export const signupVeterinaire = signupHandler(UserRole.VETERINAIRE);
-export const signupSecretaire = signupHandler(UserRole.SECRETAIRE);
 export const signupAdmin = signupHandler(UserRole.ADMIN);

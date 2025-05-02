@@ -8,7 +8,6 @@ export enum UserRole {
   ADMIN = "admin",
 }
 
-
 // Interface pour les horaires de travail incluant une pause
 interface IWorkingHour {
   day: string;
@@ -37,7 +36,6 @@ export interface IUserDetails {
 
 // Interface TypeScript pour un utilisateur
 export interface IUser extends Document {
-  [x: string]: any;
   _id: Types.ObjectId;
   firstName: string;
   lastName: string;
@@ -45,7 +43,8 @@ export interface IUser extends Document {
   email: string;
   password: string;
   phoneNumber: string;
-  role: UserRole; // Rôle de type UserRole
+  role: UserRole;
+  veterinaireId?: Types.ObjectId; // ID du vétérinaire associé (pour les secrétaires)
   profilePicture?: string;
   mapsLocation?: string;
   description?: string;
@@ -56,7 +55,7 @@ export interface IUser extends Document {
   refreshToken?: string | null;
   isActive?: boolean;
   loginAttempts?: number;
-  lockUntil?: Date | number | null;
+  lockUntil?: Date | null;
   lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -82,7 +81,7 @@ const UserSchema: Schema = new Schema<IUser>(
       lowercase: true,
       match: /^\S+@\S+\.\S+$/,
     },
-    password: {type: String,required: true,select: false,minlength: 8,},
+    password: { type: String, required: true, select: false, minlength: 8 },
     phoneNumber: {
       type: String,
       required: true,
@@ -95,10 +94,18 @@ const UserSchema: Schema = new Schema<IUser>(
       enum: Object.values(UserRole),
       required: true,
       validate: {
-        validator: function(value: string) {
+        validator: function (value: string) {
           return Object.values(UserRole).includes(value as UserRole);
         },
         message: 'Role invalide',
+      },
+    },
+    // Champ ajouté pour lier la secrétaire à son vétérinaire
+    veterinaireId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: function () {
+        return this.role === UserRole.SECRETAIRE;
       },
     },
     profilePicture: { type: String, default: null },
@@ -207,13 +214,6 @@ const UserSchema: Schema = new Schema<IUser>(
 UserSchema.index({ email: 1, username: 1, phoneNumber: 1 }, { unique: true });
 UserSchema.index({ "address.city": 1, "address.country": 1 });
 UserSchema.index({ role: 1, isActive: 1 });
-
-// Type pour les documents utilisateur avec mot de passe
-export type UserWithPassword = IUser & {
-  password: string;
-  loginAttempts?: number;
-  lockUntil?: Date | number | null;
-};
 
 const User = mongoose.model<IUser>("User", UserSchema);
 export default User;

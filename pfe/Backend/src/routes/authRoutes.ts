@@ -1,13 +1,16 @@
 import { Router } from "express";
 import {
   signupClient,
-  signupSecretaire,
   signupVeterinaire,
   signupAdmin,
-  loginHandler as login,
-  refreshTokenHandler as refreshAccessToken,
-  logoutHandler as logout,
+  loginHandler,
+  refreshTokenHandler,
+  logoutHandler,
 } from "../controllers/authController";
+import { signupSecretaire } from "../controllers/authController"; // adapte le chemin si besoin
+
+
+
 
 const router = Router();
 
@@ -117,10 +120,17 @@ router.post("/signup/client", signupClient);
 
 /**
  * @swagger
- * /auth/signup/secretaire:
+ * /auth/signup/secretaire/{veterinaireId}:
  *   post:
- *     summary: Register a new secretary
+ *     summary: Register a new secretary under a specific veterinarian
  *     tags: [Auth]
+ *     parameters:
+ *       - in: path
+ *         name: veterinaireId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the veterinarian creating the secretary account
  *     requestBody:
  *       required: true
  *       content:
@@ -141,7 +151,8 @@ router.post("/signup/client", signupClient);
  *       500:
  *         description: Server error
  */
-router.post("/signup/secretaire", signupSecretaire);
+router.post("/signup/secretaire/:veterinaireId", signupSecretaire);
+
 
 /**
  * @swagger
@@ -243,7 +254,7 @@ router.post("/signup/admin", signupAdmin);
  *       500:
  *         description: Server error
  */
-router.post("/login", login);
+router.post("/login", loginHandler);
 
 /**
  * @swagger
@@ -274,7 +285,7 @@ router.post("/login", login);
  *       500:
  *         description: Server error
  */
-router.post("/refresh-token", refreshAccessToken);
+router.post("/refresh-token", refreshTokenHandler);
 
 /**
  * @swagger
@@ -292,6 +303,6 @@ router.post("/refresh-token", refreshAccessToken);
  *       500:
  *         description: Server error
  */
-router.post("/logout", logout);
+router.post("/logout", logoutHandler);
 
 export default router;
