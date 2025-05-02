@@ -13,12 +13,12 @@ export enum AppointmentStatus {
 
 export interface IAppointment extends Document {
   date: Date;
-  clientId: string;
-  veterinaireId: string;
+  clientId: mongoose.Types.ObjectId;     // modifié
+  veterinaireId: mongoose.Types.ObjectId; // modifié
   animalType: string;
   type: AppointmentType;
   status: AppointmentStatus;
-  services?: string[];          // services associés au rendez-vous
+  services?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -26,8 +26,8 @@ export interface IAppointment extends Document {
 const AppointmentSchema: Schema = new Schema(
   {
     date: { type: Date, required: true },
-    clientId: { type: String, required: true },
-    veterinaireId: { type: String, required: true },
+    clientId: { type: Schema.Types.ObjectId, ref: "User", required: true },         // modifié
+    veterinaireId: { type: Schema.Types.ObjectId, ref: "User", required: true },    // modifié
     animalType: { type: String, required: true },
     type: {
       type: String,

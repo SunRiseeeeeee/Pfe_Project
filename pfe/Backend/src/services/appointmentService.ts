@@ -20,26 +20,29 @@ export const createAppointment = async (appointmentData: Partial<IAppointment>) 
  * @returns Le rendez-vous correspondant ou null
  */
 export const getAppointmentById = async (id: string) => {
-  return await Appointment.findById(id);
+  return await Appointment.findById(id)
+    .populate("veterinaireId", "-password -refreshToken")  // Exclure les champs sensibles du vétérinaire
+    .populate("clientId", "-password -refreshToken");      // Exclure les champs sensibles du client
 };
 
 /**
  * Récupérer tous les rendez-vous d'un client spécifique
  * @param clientId - ID du client
- * @returns Liste des rendez-vous du client
+ * @returns Liste des rendez-vous du client avec infos vétérinaire
  */
 export const getAppointmentsByClient = async (clientId: string) => {
-  return await Appointment.find({ clientId });
+  return await Appointment.find({ clientId }).populate("veterinaireId", "-password -refreshToken");
 };
 
 /**
- * Récupérer tous les rendez-vous d'un vétérinaire spécifique
+ * Récupérer tous les rendez-vous d'un vétérinaire spécifique (statut PENDING uniquement)
  * @param veterinaireId - ID du vétérinaire
- * @returns Liste des rendez-vous des clients du vétérinaire
+ * @returns Liste des rendez-vous en attente avec infos du client
  */
 export const getAppointmentsByVeterinaire = async (veterinaireId: string) => {
-  return await Appointment.find({ veterinaireId });
+  return await Appointment.find({ veterinaireId, status: "PENDING" }).populate("clientId", "-password -refreshToken");
 };
+
 
 /**
  * Mettre à jour un rendez-vous
