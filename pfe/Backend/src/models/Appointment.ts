@@ -23,7 +23,6 @@ export interface IAppointment extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
-
 const AppointmentSchema: Schema<IAppointment> = new Schema(
   {
     date: { type: Date, required: true },
