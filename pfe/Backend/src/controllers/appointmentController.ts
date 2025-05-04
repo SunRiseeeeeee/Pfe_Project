@@ -27,8 +27,7 @@ export const createAppointment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    
-    const { date, animalType, type, services, veterinaireId } = req.body;
+    const { date, animalId, type, services, veterinaireId, caseDescription } = req.body;
     const user = req.user;
 
     // Vérification de l'autorisation
@@ -196,45 +195,19 @@ export const getAppointmentForClientById = async (
 };
 
 
-export const getAppointmentsByClient: RequestHandler<{ clientId: string }> =
-  async (req, res, next) => {
-    try {
-      const { clientId } = req.params;
-
-      // 1) Validation de l'ID client
-      if (!mongoose.Types.ObjectId.isValid(clientId)) {
-        res.status(400).json({ message: "Format d'ID client invalide" });
-        return;
-      }
-
-      // 2) Vérification que le client existe
-      const client = await User.findOne({ _id: clientId, role: "client" }).select("_id");
-      if (!client) {
-        res.status(404).json({ message: "Client non trouvé" });
-        return;
-      }
-
-      // 3) Récupération des rendez-vous
-      const appointments = await Appointment.find({ clientId })
-        .populate({
-          path: "veterinaireId",
-          select: "firstName lastName specialty -_id"
-        })
-        .populate({
-          path: "animalId",
-          select: "name breed -_id"
-        })
-        .select("-__v -createdAt -updatedAt")
-        .sort({ date: -1 })
-        .lean();
-
-      // 4) Envoi de la réponse
-      res.status(200).json(appointments);
-    } catch (error: unknown) {
-      console.error("[getAppointmentsByClient] Error:", error);
-      next(error instanceof Error ? error : new Error("Erreur serveur"));
+export const getAppointmentsByClient = async (req: Request, res: Response) => {
+  const { clientId } = req.params;
+  try {
+    const appointments = await Appointment.find({ clientId });
+    if (!appointments) {
+      return res.status(404).json({ message: "Aucun rendez-vous trouvé pour ce client." });
     }
-  };
+    return res.status(200).json(appointments);
+  } catch (error) {
+    return res.status(500).json({ message: "Erreur interne du serveur." });
+  }
+};
+
 export const getAppointmentsByVeterinaire: RequestHandler<{ veterinaire: string }> =
   async (req, res, next) => {
     try {
@@ -447,4 +420,3 @@ export const updateAppointment = async (
     next(error);
   }
 };
-
