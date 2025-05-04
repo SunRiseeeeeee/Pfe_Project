@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:vetapp_v1/models/veterinarian.dart';
+import 'package:vetapp_v1/services/pet_service.dart';
 import 'package:vetapp_v1/services/appointment_service.dart';
 import 'package:dio/dio.dart';
+import 'package:vetapp_v1/models/veterinarian.dart';
 
 class AppointmentsScreen extends StatefulWidget {
   final Veterinarian vet;
@@ -17,13 +18,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   TimeOfDay? selectedTime;
   String? selectedVetType;
   String? selectedService;
-
-  final List<String> petTypes = ['Dog', 'Cat', 'Bird', 'Fish'];
-  final List<String> vetTypes = ['domicile', 'cabinet'];
-  final List<String> services = ['Consultation', 'Vaccination'];
+  List<String> petTypes = [];  // This will hold the fetched pet names
 
   bool _isLoading = false;
   late final AppointmentService _appointmentService;
+  late final PetService _petService;
 
   @override
   void initState() {
@@ -31,24 +30,38 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     _appointmentService = AppointmentService(
       dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api')),
     );
+    _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api')));
+
+    // Fetch the pets for the user
+    _fetchPets();
   }
 
-  void _resetForm() {
+  Future<void> _fetchPets() async {
     setState(() {
-      selectedPetType = null;
-      selectedDate = null;
-      selectedTime = null;
-      selectedVetType = null;
-      selectedService = null;
+      _isLoading = true;
     });
+
+    try {
+      final userId = "USER_ID_HERE";  // Get the actual userId from your authentication system
+      final pets = await _petService.getUserPets(userId);
+
+      setState(() {
+        petTypes = pets;
+      });
+    } catch (e) {
+      print('Error fetching pets: $e');
+      setState(() {
+        petTypes = []; // Empty list if there was an error
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _createAppointment() async {
-    if (selectedPetType == null ||
-        selectedDate == null ||
-        selectedTime == null ||
-        selectedVetType == null ||
-        selectedService == null) {
+    if (selectedPetType == null || selectedDate == null || selectedTime == null || selectedVetType == null || selectedService == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill all fields")),
       );
@@ -69,17 +82,17 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       );
 
       final result = await _appointmentService.createAppointment(
-        veterinaireId: widget.vet.id, // Ensure this is a valid ObjectId string
+        veterinaireId: widget.vet.id,  // Make sure the veterinarian ID is correct
         date: appointmentDateTime,
         animalType: selectedPetType!,
         type: selectedVetType!,
         services: [selectedService!],
       );
+
       if (result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Appointment created successfully!")),
         );
-        _resetForm();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result['message'] ?? 'Error creating appointment')),
@@ -96,138 +109,23 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     }
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked != null) {
-      setState(() => selectedDate = picked);
-    }
-  }
-
-  Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-    if (picked != null) {
-      setState(() => selectedTime = picked);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         title: const Text('Appointments'),
-        leading: const BackButton(color: Colors.black),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.black,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSectionTitle('Choose your pet'),
-              const SizedBox(height: 12),
-              _buildPetSelector(),
-
-              const SizedBox(height: 20),
-              _buildSectionTitle('Select appointment type'),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: selectedVetType,
-                items: vetTypes.map((type) {
-                  return DropdownMenuItem(
-                    value: type,
-                    child: Text(type[0] + type.substring(1).toLowerCase()),
-                  );
-                }).toList(),
-                onChanged: (value) => setState(() => selectedVetType = value),
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Type',
-                ),
-              ),
-
-              const SizedBox(height: 20),
-              _buildSectionTitle('Select service'),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: selectedService,
-                items: services.map((service) {
-                  return DropdownMenuItem(
-                    value: service,
-                    child: Text(service),
-                  );
-                }).toList(),
-                onChanged: (value) => setState(() => selectedService = value),
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Service',
-                ),
-              ),
-
-              const SizedBox(height: 20),
-              _buildSectionTitle('Select date and time'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.calendar_today),
-                      label: Text(selectedDate == null
-                          ? 'Pick date'
-                          : '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}'),
-                      onPressed: _pickDate,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.access_time),
-                      label: Text(selectedTime == null
-                          ? 'Pick time'
-                          : '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}'),
-                      onPressed: _pickTime,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 30),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _createAppointment,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepPurple,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                    'Book Appointment',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
+              // Pet Selector
+              _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : petTypes.isEmpty
+                  ? const Center(child: Text('No pets found'))
+                  : _buildPetSelector(),
             ],
           ),
         ),
@@ -235,71 +133,32 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold));
-  }
-
+  // This widget will allow the user to choose from the fetched pets
   Widget _buildPetSelector() {
-    final petImageMap = {
-      'Dog': 'assets/images/pet2.jpg',
-      'Cat': 'assets/images/pet3.jpg',
-      'Bird': 'assets/images/pet4.jpg',
-      'Fish': 'assets/images/pet5.jpg',
-    };
-
-    return SizedBox(
-      height: 55,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: petTypes.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 15),
-        itemBuilder: (context, index) {
-          final pet = petTypes[index];
-          final isSelected = pet == selectedPetType;
-          final petImage = petImageMap[pet];
-
-          return GestureDetector(
-            onTap: () => setState(() => selectedPetType = pet),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isSelected ? Colors.deepPurple : Colors.grey[300]!,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (petImage != null)
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundImage: AssetImage(petImage),
-                      backgroundColor: Colors.transparent,
-                    ),
-                  const SizedBox(width: 8),
-                  Text(
-                    pet,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? Colors.deepPurple : Colors.black,
-                    ),
-                  ),
-                ],
+    return Column(
+      children: petTypes.map((pet) {
+        final isSelected = pet == selectedPetType;
+        return GestureDetector(
+          onTap: () => setState(() => selectedPetType = pet),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected ? Colors.deepPurple : Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: isSelected ? Colors.deepPurple : Colors.grey),
+            ),
+            child: Text(
+              pet,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : Colors.black,
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
