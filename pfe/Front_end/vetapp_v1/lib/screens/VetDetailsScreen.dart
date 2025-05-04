@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
 
+import 'appointment_screen.dart';
 import 'bookAppointment.dart';
 
 class VetDetailsScreen extends StatefulWidget {

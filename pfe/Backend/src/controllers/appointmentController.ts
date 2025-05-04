@@ -26,6 +26,7 @@ export const createAppointment = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    
     const { date, animalType, type, services, veterinaireId } = req.body;
     const user = req.user;
 

@@ -1,8 +1,7 @@
-import 'dart:convert';
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
+import 'package:vetapp_v1/services/appointment_service.dart';
+import 'package:dio/dio.dart';
 
 class AppointmentsScreen extends StatefulWidget {
   final Veterinarian vet;
@@ -18,90 +17,20 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   TimeOfDay? selectedTime;
   String? selectedVetType;
   String? selectedService;
-  String? selectedReason;
 
   final List<String> petTypes = ['Dog', 'Cat', 'Bird', 'Fish'];
-  final List<String> vetTypes = ['General', 'Emergency'];
+  final List<String> vetTypes = ['domicile', 'cabinet'];
   final List<String> services = ['Consultation', 'Vaccination'];
 
-  bool _isLoading = false; // To track loading state during API call
+  bool _isLoading = false;
+  late final AppointmentService _appointmentService;
 
-  Future<void> _createAppointment(String clientId) async {
-    if (selectedPetType == null ||
-        selectedDate == null ||
-        selectedTime == null ||
-        selectedVetType == null ||
-        selectedService == null ||
-        selectedReason == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill all fields")),
-      );
-      return;
-    }
-
-    setState(() {
-      _isLoading = true; // Show loading indicator
-    });
-
-    try {
-      // Combine date and time into a single DateTime object
-      final appointmentDateTime = DateTime(
-        selectedDate!.year,
-        selectedDate!.month,
-        selectedDate!.day,
-        selectedTime!.hour,
-        selectedTime!.minute,
-      );
-
-      // Prepare payload for the API request
-      final payload = {
-        "date": appointmentDateTime.toIso8601String(), // ISO 8601 format
-        "clientId": clientId, // Client ID retrieved from SharedPreferences
-        "veterinaireId": widget.vet.id, // Veterinarian ID from the widget
-        "animalType": selectedPetType!,
-        "type": selectedVetType!.toLowerCase(), // Convert to lowercase to match enum
-        "service": selectedService!,
-        "reason": selectedReason!,
-        "status": "pending", // Default status
-      };
-
-      // Initialize Dio
-      final dio = Dio();
-
-      // Send POST request to create the appointment
-      final response = await dio.post(
-        "http://localhost:3000/api/appointments", // Replace with your API URL
-        data: payload,
-        options: Options(
-          headers: {"Content-Type": "application/json"},
-        ),
-      );
-
-      if (response.statusCode == 201) {
-        // Appointment created successfully
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Appointment created successfully!")),
-        );
-        // Optionally, navigate to another screen or reset the form
-        setState(() {
-          _resetForm();
-        });
-      } else {
-        // Handle API error
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: ${response.data['message']}")),
-        );
-      }
-    } catch (e) {
-      // Handle network or other errors
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("An error occurred. Please try again.")),
-      );
-    } finally {
-      setState(() {
-        _isLoading = false; // Hide loading indicator
-      });
-    }
+  @override
+  void initState() {
+    super.initState();
+    _appointmentService = AppointmentService(
+      dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api')),
+    );
   }
 
   void _resetForm() {
@@ -111,33 +40,91 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       selectedTime = null;
       selectedVetType = null;
       selectedService = null;
-      selectedReason = null;
     });
   }
 
-  Future<void> _onNextButtonPressed() async {
-    // Retrieve the client ID from SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    final clientId = prefs.getString('clientId');
-
-    if (clientId == null || clientId.isEmpty) {
+  Future<void> _createAppointment() async {
+    if (selectedPetType == null ||
+        selectedDate == null ||
+        selectedTime == null ||
+        selectedVetType == null ||
+        selectedService == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Client ID not found. Please log in again.")),
+        const SnackBar(content: Text("Please fill all fields")),
       );
       return;
     }
 
-    // Create the appointment using the retrieved client ID
-    await _createAppointment(clientId);
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final appointmentDateTime = DateTime(
+        selectedDate!.year,
+        selectedDate!.month,
+        selectedDate!.day,
+        selectedTime!.hour,
+        selectedTime!.minute,
+      );
+
+      final result = await _appointmentService.createAppointment(
+        veterinaireId: widget.vet.id, // Ensure this is a valid ObjectId string
+        date: appointmentDateTime,
+        animalType: selectedPetType!,
+        type: selectedVetType!,
+        services: [selectedService!],
+      );
+      if (result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Appointment created successfully!")),
+        );
+        _resetForm();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result['message'] ?? 'Error creating appointment')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("An error occurred. Please try again.")),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => selectedDate = picked);
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (picked != null) {
+      setState(() => selectedTime = picked);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[160], // Darker background
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         title: const Text('Appointments'),
-        leading: BackButton(color: Colors.black),
+        leading: const BackButton(color: Colors.black),
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black,
@@ -148,168 +135,96 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Choose your pet',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              _buildSectionTitle('Choose your pet'),
               const SizedBox(height: 12),
-              SizedBox(
-                height: 55,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: petTypes.length,
-                  separatorBuilder: (context, index) => const SizedBox(width: 15),
-                  itemBuilder: (context, index) {
-                    final pet = petTypes[index];
-                    final isSelected = pet == selectedPetType;
-                    final petImage = {
-                      'Dog': 'assets/images/pet2.jpg',
-                      'Cat': 'assets/images/pet3.jpg',
-                      'Bird': 'assets/images/pet4.jpg',
-                      'Fish': 'assets/images/pet5.jpg',
-                    }[pet];
-                    return GestureDetector(
-                      onTap: () => setState(() => selectedPetType = pet),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white, // White background for all pets
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isSelected ? Colors.deepPurple : Colors.grey[300]!,
-                            width: 2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (petImage != null)
-                              CircleAvatar(
-                                radius: 18,
-                                backgroundImage: AssetImage(petImage),
-                                backgroundColor: Colors.transparent,
-                              ),
-                            const SizedBox(width: 8),
-                            Text(
-                              pet,
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+              _buildPetSelector(),
+
+              const SizedBox(height: 20),
+              _buildSectionTitle('Select appointment type'),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: selectedVetType,
+                items: vetTypes.map((type) {
+                  return DropdownMenuItem(
+                    value: type,
+                    child: Text(type[0] + type.substring(1).toLowerCase()),
+                  );
+                }).toList(),
+                onChanged: (value) => setState(() => selectedVetType = value),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Type',
                 ),
               ),
-              const SizedBox(height: 24),
+
+              const SizedBox(height: 20),
+              _buildSectionTitle('Select service'),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: selectedService,
+                items: services.map((service) {
+                  return DropdownMenuItem(
+                    value: service,
+                    child: Text(service),
+                  );
+                }).toList(),
+                onChanged: (value) => setState(() => selectedService = value),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Service',
+                ),
+              ),
+
+              const SizedBox(height: 20),
+              _buildSectionTitle('Select date and time'),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLabel('Date'),
-                        _buildSelectableBox(
-                          text: selectedDate != null
-                              ? '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'
-                              : 'Select Date',
-                          icon: Icons.calendar_today,
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: DateTime.now(),
-                              firstDate: DateTime.now(),
-                              lastDate: DateTime(DateTime.now().year + 1),
-                            );
-                            if (picked != null) {
-                              setState(() => selectedDate = picked);
-                            }
-                          },
-                        ),
-                      ],
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.calendar_today),
+                      label: Text(selectedDate == null
+                          ? 'Pick date'
+                          : '${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}'),
+                      onPressed: _pickDate,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLabel('Time'), // Add "Time" label here
-                        _buildSelectableBox(
-                          text: selectedTime != null
-                              ? selectedTime!.format(context)
-                              : 'Select Time',
-                          icon: Icons.access_time,
-                          onTap: () async {
-                            final picked = await showTimePicker(
-                              context: context,
-                              initialTime: TimeOfDay.now(),
-                            );
-                            if (picked != null) {
-                              setState(() => selectedTime = picked);
-                            }
-                          },
-                        ),
-                      ],
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.access_time),
+                      label: Text(selectedTime == null
+                          ? 'Pick time'
+                          : '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}'),
+                      onPressed: _pickTime,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        foregroundColor: Colors.white,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-              _buildLabel('Veterinary type'),
-              _buildDropdownWithPlaceholder(
-                vetTypes,
-                selectedVetType,
-                    (val) => setState(() => selectedVetType = val),
-                placeholder: 'Choose Type',
-              ),
-              const SizedBox(height: 24),
-              _buildLabel('Service'),
-              _buildDropdownWithPlaceholder(
-                services,
-                selectedService,
-                    (val) => setState(() => selectedService = val),
-                placeholder: 'Choose Service',
-              ),
-              const SizedBox(height: 24),
-              _buildLabel('Vet'),
-              _buildDropdown(
-                ['Dr. ${widget.vet.firstName} ${widget.vet.lastName}'],
-                'Dr. ${widget.vet.firstName} ${widget.vet.lastName}',
-                null,
-              ),
-              const SizedBox(height: 24),
-              _buildLabel('Reason'),
-              _buildReasonField(),
-              const SizedBox(height: 32),
+
+              const SizedBox(height: 30),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _onNextButtonPressed,
+                  onPressed: _isLoading ? null : _createAppointment,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 50, // Add shadow to the button
-                    shadowColor: Colors.black.withOpacity(0.2), // Shadow color
                   ),
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
-                    'Next',
-                    style: TextStyle(fontSize: 16, color: Colors.white),
+                    'Book Appointment',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -320,177 +235,70 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600));
+  Widget _buildSectionTitle(String title) {
+    return Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold));
   }
 
-  Widget _buildSelectableBox({
-    required String text,
-    required VoidCallback onTap,
-    IconData? icon,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        decoration: BoxDecoration(
-          color: Colors.white, // White background for the box
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.grey[300]!,
-            width: 2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+  Widget _buildPetSelector() {
+    final petImageMap = {
+      'Dog': 'assets/images/pet2.jpg',
+      'Cat': 'assets/images/pet3.jpg',
+      'Bird': 'assets/images/pet4.jpg',
+      'Fish': 'assets/images/pet5.jpg',
+    };
+
+    return SizedBox(
+      height: 55,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: petTypes.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 15),
+        itemBuilder: (context, index) {
+          final pet = petTypes[index];
+          final isSelected = pet == selectedPetType;
+          final petImage = petImageMap[pet];
+
+          return GestureDetector(
+            onTap: () => setState(() => selectedPetType = pet),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isSelected ? Colors.deepPurple : Colors.grey[300]!,
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (petImage != null)
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundImage: AssetImage(petImage),
+                      backgroundColor: Colors.transparent,
+                    ),
+                  const SizedBox(width: 8),
+                  Text(
+                    pet,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.deepPurple : Colors.black,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: Colors.grey[600]),
-              const SizedBox(width: 8),
-            ],
-            Text(text),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdown(List<String> items, String? value, void Function(String?)? onChanged) {
-    return DropdownButtonFormField<String>(
-      value: value,
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: Colors.white, // White background for the dropdown
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        prefixIcon: Icon(Icons.arrow_drop_down, color: Colors.grey),
-        hintStyle: const TextStyle(color: Colors.grey),
-      ),
-      items: items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
-    );
-  }
-
-  Widget _buildDropdownWithPlaceholder(
-      List<String> items,
-      String? value,
-      void Function(String?)? onChanged, {
-        required String placeholder,
-      }) {
-    return DropdownButtonFormField<String>(
-      value: value,
-      hint: Text(
-        placeholder,
-        style: TextStyle(
-          color: Colors.grey,
-          fontSize: 16,
-          fontWeight: FontWeight.normal,
-        ),
-      ),
-      onChanged: onChanged,
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: Colors.white, // White background for the dropdown
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        prefixIcon: Icon(Icons.arrow_drop_down, color: Colors.grey),
-        hintStyle: const TextStyle(color: Colors.grey),
-      ),
-      items: [
-        DropdownMenuItem<String>(value: null, child: Text(placeholder)),
-        ...items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
-      ],
-    );
-  }
-
-  Widget _buildReasonField() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white, // White background for the field
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey[300]!,
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: TextField(
-        decoration: InputDecoration(
-          hintText: 'e.g. Fever',
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          suffixIcon: Icon(Icons.edit, color: Colors.grey),
-          hintStyle: const TextStyle(color: Colors.grey),
-        ),
-        onChanged: (val) => setState(() => selectedReason = val),
+          );
+        },
       ),
     );
   }

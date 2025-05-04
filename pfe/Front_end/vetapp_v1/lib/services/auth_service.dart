@@ -1,50 +1,52 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/token_storage.dart';
+
 class AuthService {
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: "http://192.168.1.18:3000/api/auth", // Base URL for authentication endpoints
+    baseUrl: "http://192.168.1.18:3000/api/auth",
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
   ));
 
-  // Constructor to add interceptors (optional)
   AuthService() {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        print("REQUEST[${options.method}] => PATH: ${options.path}");
+        print("REQUEST[\${options.method}] => PATH: \${options.path}");
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        print("RESPONSE[${response.statusCode}] => PATH: ${response.requestOptions.path}");
+        print("RESPONSE[\${response.statusCode}] => PATH: \${response.requestOptions.path}");
         return handler.next(response);
       },
       onError: (DioException e, handler) {
-        print("ERROR[${e.response?.statusCode}] => PATH: ${e.requestOptions.path}");
+        print("ERROR[\${e.response?.statusCode}] => PATH: \${e.requestOptions.path}");
         return handler.next(e);
       },
     ));
   }
 
-  // Login function
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
       final response = await _dio.post(
         "/login",
         data: {
-          "username": username,
-          "password": password,
+          "username": username.trim().toLowerCase(),
+          "password": password.trim(),
         },
       );
 
       if (response.statusCode == 200) {
-        // Extract the user details from the response
         final userId = response.data["user"]["id"];
         final email = response.data["user"]["email"];
-        final accessToken = response.data["accessToken"];
-        final refreshToken = response.data["refreshToken"];
+        final accessToken = response.data["tokens"]["accessToken"];
+        final refreshToken = response.data["tokens"]["refreshToken"];
 
-        // Return the extracted details
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('accessToken', accessToken);
+        await prefs.setString('refreshToken', refreshToken);
+
         return {
           "success": true,
           "message": "Login successful",
@@ -69,7 +71,6 @@ class AuthService {
     }
   }
 
-  // Register function
   Future<Map<String, dynamic>> register({
     required String firstName,
     required String lastName,
@@ -78,25 +79,27 @@ class AuthService {
     required String password,
     required String phoneNumber,
     String? profilePicture,
-    String? MapsLocation,
-    String? services,
-    String? workingHours,
+    String? mapsLocation,
+    List<String>? services,
+    List<Map<String, String>>? workingHours,
     required String role,
   }) async {
     try {
       final response = await _dio.post(
-        "/signup", // Endpoint for user registration
+        "/signup",
         data: {
-          "firstName": firstName,
-          "lastName": lastName,
-          "username": username,
-          "email": email,
-          "password": password,
-          "phoneNumber": phoneNumber,
+          "firstName": firstName.trim(),
+          "lastName": lastName.trim(),
+          "username": username.trim().toLowerCase(),
+          "email": email.trim().toLowerCase(),
+          "password": password.trim(),
+          "phoneNumber": phoneNumber.trim(),
           "profilePicture": profilePicture,
-          "MapsLocation": MapsLocation,
-          "services": services,
-          "workingHours": workingHours,
+          "mapsLocation": mapsLocation,
+          "details": {
+            "services": services,
+            "workingHours": workingHours,
+          },
           "role": role,
         },
       );
@@ -114,31 +117,25 @@ class AuthService {
     }
   }
 
-  // Logout function
   Future<void> logout() async {
     try {
-      // Retrieve the refresh token from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final refreshToken = prefs.getString('refreshToken');
+      // Clear tokens from SharedPreferences
+      await TokenStorage.clear();
 
-      if (refreshToken == null) {
-        throw Exception("Refresh token not found");
-      }
+      // Optionally, you can send a logout request to your backend if needed
+      // final response = await _dio.post(
+      //   "/logout",
+      //   data: {"refreshToken": refreshToken},
+      //   options: Options(
+      //     headers: {"Authorization": "Bearer $accessToken"},
+      //   ),
+      // );
 
-      // Send the logout request to the backend
-      final response = await _dio.post(
-        "/logout", // Endpoint for logout
-        data: {"refreshToken": refreshToken},
-      );
-
-      if (response.statusCode == 200) {
-        // Clear all stored user data after successful logout
-        await prefs.clear();
-      } else {
-        throw Exception(response.data["message"] ?? "Logout failed");
-      }
+      // If everything is successful, you may want to navigate or show a message
     } catch (e) {
       throw Exception("Logout failed: $e");
     }
   }
+
+
 }
