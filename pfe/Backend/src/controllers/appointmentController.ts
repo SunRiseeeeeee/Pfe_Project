@@ -235,7 +235,7 @@ export const getAppointmentsByClient: RequestHandler<{ clientId: string }> =
       next(error instanceof Error ? error : new Error("Erreur serveur"));
     }
   };
-  export const getAppointmentsByVeterinaire: RequestHandler<{ veterinaire: string }> =
+export const getAppointmentsByVeterinaire: RequestHandler<{ veterinaire: string }> =
   async (req, res, next) => {
     try {
       const veterinaireId = req.params.veterinaire.trim();
