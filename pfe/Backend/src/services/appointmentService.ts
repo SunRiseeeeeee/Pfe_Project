@@ -19,10 +19,18 @@ export const createAppointment = async (appointmentData: Partial<IAppointment>) 
  * @param id - ID du rendez-vous
  * @returns Le rendez-vous correspondant ou null
  */
-export const getAppointmentById = async (id: string) => {
+export const getAppointmentForVeterinaireById = async (id: string) => {
+  return await Appointment.findById(id)
+    .populate("clientId", "-password -refreshToken");      // Exclure les champs sensibles du client
+};
+/**
+ * Récupérer un rendez-vous par ID
+ * @param id - ID du rendez-vous
+ * @returns Le rendez-vous correspondant ou null
+ */
+export const getAppointmentForClientById = async (id: string) => {
   return await Appointment.findById(id)
     .populate("veterinaireId", "-password -refreshToken")  // Exclure les champs sensibles du vétérinaire
-    .populate("clientId", "-password -refreshToken");      // Exclure les champs sensibles du client
 };
 
 /**
@@ -35,15 +43,24 @@ export const getAppointmentsByClient = async (clientId: string) => {
 };
 
 /**
- * Récupérer tous les rendez-vous d'un vétérinaire spécifique (statut PENDING uniquement)
+ * Récupérer tous les rendez-vous d'un vétérinaire spécifique (statuts PENDING et ACCEPTED)
+ * triés du plus ancien au plus récent, avec infos du client et de l'animal.
  * @param veterinaireId - ID du vétérinaire
- * @returns Liste des rendez-vous en attente avec infos du client
+ * @returns Liste des rendez-vous
  */
 export const getAppointmentsByVeterinaire = async (veterinaireId: string) => {
-  return await Appointment.find({ veterinaireId, status: "PENDING" }).populate("clientId", "-password -refreshToken");
+  const appointments = await Appointment.find({
+    veterinaireId,
+    status: { 
+      $in: [AppointmentStatus.PENDING, AppointmentStatus.ACCEPTED] 
+    }
+  })
+    .populate("clientId", "-password -refreshToken")
+    .populate("animalId")  
+    .sort({ date: 1 }); // ascendant : plus ancien d'abord
+
+  return appointments;
 };
-
-
 /**
  * Mettre à jour un rendez-vous
  * @param id - ID du rendez-vous

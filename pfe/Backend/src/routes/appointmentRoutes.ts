@@ -1,9 +1,10 @@
-import express, { Request, Response, NextFunction } from "express";
-import asyncHandler from "express-async-handler"; // Ajout de asyncHandler pour gérer les erreurs asynchrones
+import express from "express";
+import asyncHandler from "express-async-handler";
 import { authenticateToken } from "../middlewares/authMiddleware";
 import {
   createAppointment,
-  getAppointmentById,
+  getAppointmentForVeterinaireById,
+  getAppointmentForClientById,
   getAppointmentsByClient,
   getAppointmentsByVeterinaire,
   updateAppointment,
@@ -12,7 +13,6 @@ import {
   rejectAppointment,
 } from "../controllers/appointmentController";
 
-
 const router = express.Router();
 
 /**
@@ -20,13 +20,21 @@ const router = express.Router();
  * /appointments:
  *   post:
  *     summary: Créer un nouveau rendez-vous
- *     description: Permet à un utilisateur de prendre un rendez-vous
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - clientId
+ *               - veterinaire
+ *               - date
+ *               - animalName
+ *               - type
  *             properties:
  *               clientId:
  *                 type: string
@@ -44,13 +52,14 @@ const router = express.Router();
  *       201:
  *         description: Rendez-vous créé avec succès
  */
-router.post("/", authenticateToken, asyncHandler(createAppointment)); // Création d'un rendez-vous
+router.post("/", authenticateToken, asyncHandler(createAppointment));
 
 /**
  * @swagger
- * /appointments/{id}:
+ * /appointments/veterinaire/{id}:
  *   get:
- *     summary: Obtenir un rendez-vous par ID
+ *     summary: Obtenir un rendez-vous pour un vétérinaire
+ *     tags: [Appointments]
  *     parameters:
  *       - in: path
  *         name: id
@@ -60,60 +69,76 @@ router.post("/", authenticateToken, asyncHandler(createAppointment)); // Créati
  *           type: string
  *     responses:
  *       200:
- *         description: Détails du rendez-vous récupérés avec succès
+ *         description: Détails du rendez-vous pour le vétérinaire
  */
-router.get("/:id", asyncHandler(getAppointmentById)); // Obtenir un rendez-vous par ID
+router.get("/veterinaire/:veterinaireId/:id", getAppointmentForVeterinaireById);
 
 /**
  * @swagger
- * /appointments/client/{clientId}:
+ * /appointments/client/{id}:
  *   get:
- *     summary: Obtenir les rendez-vous d'un client
+ *     summary: Obtenir un rendez-vous pour un client
+ *     tags: [Appointments]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: ID du rendez-vous
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Détails du rendez-vous pour le client
+ */
+router.get("/client/:clientId/:id", getAppointmentForClientById);
+
+/**
+ * @swagger
+ * /appointments/client/history/{clientId}:
+ *   get:
+ *     summary: Obtenir tous les rendez-vous d'un client
+ *     tags: [Appointments]
  *     parameters:
  *       - in: path
  *         name: clientId
  *         required: true
- *         description: ID du client
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Liste des rendez-vous du client récupérée avec succès
  */
-
-router.get(
-  "/client/:clientId",
-  asyncHandler(getAppointmentsByClient)  // plus de authenticateToken ici
-);
+router.get("/client/history/:clientId", getAppointmentsByClient);
 
 /**
  * @swagger
- * /appointments/veterinarian/{veterinaire}:
+ * /appointments/veterinaire/history/{veterinaireId}:
  *   get:
- *     summary: Obtenir les rendez-vous des clients d'un vétérinaire
+ *     summary: Obtenir tous les rendez-vous pour un vétérinaire
+ *     tags: [Appointments]
  *     parameters:
  *       - in: path
- *         name: veterinaire
+ *         name: veterinaireId
  *         required: true
- *         description: ID du vétérinaire
  *         schema:
  *           type: string
  *     responses:
  *       200:
- *         description: Liste des rendez-vous récupérée avec succès
+ *         description: Liste des rendez-vous du vétérinaire récupérée avec succès
  */
-router.get("/veterinarian/:veterinaire",getAppointmentsByVeterinaire); // Obtenir les rendez-vous pour un vétérinaire
+router.get('/veterinaire/history/:veterinaireId', getAppointmentsByVeterinaire);
+
 
 /**
  * @swagger
  * /appointments/{id}:
  *   put:
  *     summary: Mettre à jour un rendez-vous
+ *     tags: [Appointments]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         description: ID du rendez-vous
  *         schema:
  *           type: string
  *     requestBody:
@@ -135,61 +160,60 @@ router.get("/veterinarian/:veterinaire",getAppointmentsByVeterinaire); // Obteni
  *       200:
  *         description: Rendez-vous mis à jour avec succès
  */
-router.put("/:id", updateAppointment);  // Utilisation directe de la fonction
-
+router.put("/:id", updateAppointment);
 
 /**
  * @swagger
  * /appointments/{id}:
  *   delete:
  *     summary: Supprimer un rendez-vous
+ *     tags: [Appointments]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         description: ID du rendez-vous
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Rendez-vous supprimé avec succès
  */
-router.delete("/:id", deleteAppointment); // Suppression d'un rendez-vous
+router.delete("/:id", deleteAppointment);
 
 /**
  * @swagger
  * /appointments/{id}/accept:
  *   put:
  *     summary: Accepter un rendez-vous
+ *     tags: [Appointments]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         description: ID du rendez-vous
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Rendez-vous accepté avec succès
  */
-router.put("/:id/accept", acceptAppointment); // Accepter un rendez-vous
+router.put("/:id/accept", acceptAppointment);
 
 /**
  * @swagger
  * /appointments/{id}/reject:
  *   put:
  *     summary: Refuser un rendez-vous
+ *     tags: [Appointments]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         description: ID du rendez-vous
  *         schema:
  *           type: string
  *     responses:
  *       200:
  *         description: Rendez-vous refusé avec succès
  */
-router.put("/:id/reject",  rejectAppointment); // Refuser un rendez-vous
+router.put("/:id/reject",rejectAppointment);
 
 export default router;

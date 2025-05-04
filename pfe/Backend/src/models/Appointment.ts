@@ -13,22 +13,24 @@ export enum AppointmentStatus {
 
 export interface IAppointment extends Document {
   date: Date;
-  clientId: mongoose.Types.ObjectId;     // modifié
-  veterinaireId: mongoose.Types.ObjectId; // modifié
-  animalType: string;
+  clientId: mongoose.Types.ObjectId;
+  veterinaireId: mongoose.Types.ObjectId;
+  animalId: mongoose.Types.ObjectId;
   type: AppointmentType;
   status: AppointmentStatus;
-  services?: string[];
+  services: string[];
+  caseDescription?: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const AppointmentSchema: Schema = new Schema(
+const AppointmentSchema: Schema<IAppointment> = new Schema(
   {
     date: { type: Date, required: true },
-    clientId: { type: Schema.Types.ObjectId, ref: "User", required: true },         // modifié
-    veterinaireId: { type: Schema.Types.ObjectId, ref: "User", required: true },    // modifié
-    animalType: { type: String, required: true },
+    clientId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    veterinaireId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    animalId: { type: Schema.Types.ObjectId, ref: "Animal", required: true },
+    caseDescription: { type: String, default: "" },
     type: {
       type: String,
       enum: Object.values(AppointmentType),
@@ -42,7 +44,6 @@ const AppointmentSchema: Schema = new Schema(
     services: {
       type: [String],
       default: [],
-      description: "Liste des services demandés lors du rendez-vous",
     },
   },
   {
@@ -50,7 +51,7 @@ const AppointmentSchema: Schema = new Schema(
     toJSON: {
       virtuals: true,
       transform(doc, ret) {
-        ret.id = ret._id;
+        ret.id = ret._id.toString();
         delete ret._id;
         delete ret.__v;
         return ret;
@@ -59,7 +60,7 @@ const AppointmentSchema: Schema = new Schema(
     toObject: {
       virtuals: true,
       transform(doc, ret) {
-        ret.id = ret._id;
+        ret.id = ret._id.toString();
         delete ret._id;
         delete ret.__v;
         return ret;
