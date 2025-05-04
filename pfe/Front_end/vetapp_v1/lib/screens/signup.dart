@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService
 import 'login.dart'; // Import your LoginPage
@@ -15,7 +17,7 @@ class _SignUpPageState extends State<SignUpPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _phoneNumberController = TextEditingController();
-  final TextEditingController _MapsLocationController = TextEditingController();
+  final TextEditingController _mapsLocationController = TextEditingController();
   final TextEditingController _servicesController = TextEditingController();
   final TextEditingController _workingHoursController = TextEditingController();
 
@@ -27,17 +29,18 @@ class _SignUpPageState extends State<SignUpPage> {
 
   // Function to handle sign-up
   Future<void> _signUp() async {
+    // Extract and trim input values
     String firstName = _firstNameController.text.trim();
     String lastName = _lastNameController.text.trim();
     String username = _usernameController.text.trim();
     String email = _emailController.text.trim();
     String password = _passwordController.text.trim();
     String phoneNumber = _phoneNumberController.text.trim();
-    String MapsLocation = _MapsLocationController.text.trim();
-    String services = _servicesController.text.trim();
-    String workingHours = _workingHoursController.text.trim();
+    String mapsLocation = _mapsLocationController.text.trim();
+    String servicesInput = _servicesController.text.trim();
+    String workingHoursInput = _workingHoursController.text.trim();
 
-    // Validate input
+    // Validate required fields
     if (firstName.isEmpty ||
         lastName.isEmpty ||
         username.isEmpty ||
@@ -45,12 +48,27 @@ class _SignUpPageState extends State<SignUpPage> {
         password.isEmpty ||
         phoneNumber.isEmpty) {
       setState(() {
-        _errorMessage = "All fields are required";
+        _errorMessage = "All required fields must be filled.";
       });
       return;
     }
 
     try {
+      // Parse optional fields
+      List<String>? services = servicesInput.isNotEmpty ? servicesInput.split(',').map((s) => s.trim()).toList() : null;
+
+      List<Map<String, String>>? workingHours;
+      if (workingHoursInput.isNotEmpty) {
+        try {
+          workingHours = _parseWorkingHours(workingHoursInput).cast<Map<String, String>>();
+        } catch (e) {
+          setState(() {
+            _errorMessage = "Invalid working hours format. Use JSON format.";
+          });
+          return;
+        }
+      }
+
       // Call the register function with user details
       Map<String, dynamic> response = await _authService.register(
         firstName: firstName,
@@ -60,9 +78,9 @@ class _SignUpPageState extends State<SignUpPage> {
         password: password,
         phoneNumber: phoneNumber,
         profilePicture: "", // Optional field
-        MapsLocation: MapsLocation.isNotEmpty ? MapsLocation : null,
-        services: services.isNotEmpty ? services : null,
-        workingHours: workingHours.isNotEmpty ? workingHours : null,
+        mapsLocation: mapsLocation.isNotEmpty ? mapsLocation : null,
+        services: services,
+        workingHours: workingHours,
         role: "CLIENT", // Default role, or you can make this dynamic
       );
 
@@ -87,6 +105,28 @@ class _SignUpPageState extends State<SignUpPage> {
       setState(() {
         _errorMessage = error.toString(); // Show the actual error message
       });
+    }
+  }
+
+  // Helper function to parse working hours input
+  List<Map<String, dynamic>> _parseWorkingHours(String input) {
+    try {
+      final List<dynamic> parsedList = jsonDecode(input);
+      return parsedList.map((item) {
+        if (item is Map && item.containsKey('day') && item.containsKey('start') && item.containsKey('end')) {
+          return {
+            'day': item['day'],
+            'start': item['start'],
+            'end': item['end'],
+            if (item.containsKey('pauseStart')) 'pauseStart': item['pauseStart'],
+            if (item.containsKey('pauseEnd')) 'pauseEnd': item['pauseEnd'],
+          };
+        } else {
+          throw FormatException("Invalid working hours format.");
+        }
+      }).toList();
+    } catch (e) {
+      throw FormatException("Failed to parse working hours: ${e.toString()}");
     }
   }
 
@@ -119,8 +159,7 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 20),
-
-              // First Name Field
+              // Input fields for first name, last name, username, email, password, phone number, etc.
               TextField(
                 controller: _firstNameController,
                 style: TextStyle(color: Colors.black),
@@ -140,8 +179,6 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // Last Name Field
               TextField(
                 controller: _lastNameController,
                 style: TextStyle(color: Colors.black),
@@ -161,8 +198,6 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // Username Field
               TextField(
                 controller: _usernameController,
                 style: TextStyle(color: Colors.black),
@@ -182,8 +217,6 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // Email Field
               TextField(
                 controller: _emailController,
                 style: TextStyle(color: Colors.black),
@@ -203,8 +236,6 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // Password Field
               TextField(
                 controller: _passwordController,
                 obscureText: true,
@@ -225,8 +256,6 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // Phone Number Field
               TextField(
                 controller: _phoneNumberController,
                 style: TextStyle(color: Colors.black),
@@ -246,15 +275,13 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // MapsLocation Field
               TextField(
-                controller: _MapsLocationController,
+                controller: _mapsLocationController,
                 style: TextStyle(color: Colors.black),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.white,
-                  hintText: 'MapsLocation',
+                  hintText: 'Maps Location (Optional)',
                   hintStyle: TextStyle(color: Colors.grey),
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.grey[300]!),
@@ -267,15 +294,13 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // services Field (Optional)
               TextField(
                 controller: _servicesController,
                 style: TextStyle(color: Colors.black),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.white,
-                  hintText: 'services (Optional)',
+                  hintText: 'Services (Comma-separated, Optional)',
                   hintStyle: TextStyle(color: Colors.grey),
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.grey[300]!),
@@ -288,15 +313,13 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 10),
-
-              // Working Hours Field (Optional)
               TextField(
                 controller: _workingHoursController,
                 style: TextStyle(color: Colors.black),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.white,
-                  hintText: 'Working Hours (Optional)',
+                  hintText: 'Working Hours (JSON format, Optional)',
                   hintStyle: TextStyle(color: Colors.grey),
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.grey[300]!),
@@ -309,7 +332,6 @@ class _SignUpPageState extends State<SignUpPage> {
                 ),
               ),
               SizedBox(height: 20),
-
               // Sign Up Button
               Container(
                 width: 200,
@@ -325,7 +347,6 @@ class _SignUpPageState extends State<SignUpPage> {
                   child: Text('Sign Up', style: TextStyle(fontSize: 18)),
                 ),
               ),
-
               // Error Message
               if (_errorMessage.isNotEmpty)
                 Padding(
@@ -336,7 +357,6 @@ class _SignUpPageState extends State<SignUpPage> {
                   ),
                 ),
               SizedBox(height: 20),
-
               // Login Link
               TextButton(
                 onPressed: () {

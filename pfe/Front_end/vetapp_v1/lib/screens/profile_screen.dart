@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
-import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService
-import 'login.dart'; // Import your LoginPage
+import 'package:vetapp_v1/services/auth_service.dart';
+import 'login.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -120,12 +120,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _buildActionButton(Icons.logout, 'Log Out', () async {
                   try {
                     final authService = AuthService(); // Create an instance of AuthService
-                    await authService.logout(); // Call the logout method on the instance
+
+                    // Call the logout method
+                    await authService.logout();
+
                     // Navigate to the LoginPage and clear the stack
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(builder: (context) => LoginPage()),
                           (route) => false, // Remove all previous routes
+                    );
+
+                    // Show success message
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Logged out successfully")),
                     );
                   } catch (e) {
                     // Show an error message if logout fails
