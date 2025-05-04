@@ -1,8 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
 import mongoose from "mongoose";
-import Appointment, { AppointmentStatus, AppointmentType } from "../models/Appointment";
+import Appointment, { AppointmentStatus, AppointmentType, IAppointment } from "../models/Appointment";
 import User, { UserRole } from "../models/User";
-
 import { UserTokenPayload } from "../middlewares/authMiddleware";
 import Animal from "../models/Animal";
 
@@ -140,15 +139,6 @@ export const getAppointmentForVeterinaireById = async (
       res.status(404).json({ message: "Rendez-vous non trouvé" });
       return;
     }
-
-    // Vérifie si le vétérinaire connecté est bien celui assigné au rendez-vous
-    // Cette vérification peut être supprimée si le vétérinaire n'a pas besoin d'être authentifié
-    // if (appointment.veterinaireId.toString() !== user.id) {
-    //   res.status(403).json({ message: "Accès interdit : vous n’êtes pas le vétérinaire assigné." });
-    //   return;
-    // }
-
-    // Si tout est ok, retourne les informations du rendez-vous
     res.status(200).json({ appointment });
   } catch (error) {
     // En cas d'erreur, log l'erreur et passe au middleware suivant
@@ -194,97 +184,100 @@ export const getAppointmentForClientById = async (
   }
 };
 
-
+// Récupérer les rendez-vous d'un client
 export const getAppointmentsByClient: RequestHandler<{ clientId: string }> =
   async (req, res, next) => {
-    try {
-      const { clientId } = req.params;
+    const { clientId } = req.params;
 
-      // 1) Validation de l'ID client
-      if (!mongoose.Types.ObjectId.isValid(clientId)) {
-        res.status(400).json({ message: "Format d'ID client invalide" });
+    // 1) Validation de l'ID client
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      res.status(400).json({ message: "ID de client invalide." });
+      return;
+    }
+
+    try {
+      // 2) Vérifier que le client existe
+      const exists = await User.exists({ _id: clientId, role: UserRole.CLIENT });
+      if (!exists) {
+        res.status(404).json({ message: "Client non trouvé." });
         return;
       }
 
-      // 2) Vérification que le client existe
-      const client = await User.findOne({ _id: clientId, role: "client" }).select("_id");
-      if (!client) {
-        res.status(404).json({ message: "Client non trouvé" });
+      // 3) Récupérer les rendez-vous et populater vétérinaire + animal
+      const appointments = await Appointment.find({ clientId })
+        .populate("veterinaireId", "-password -refreshToken")
+        .populate("animalId")
+        .lean<IAppointment[]>();
+
+      // 4) Aucun rendez-vous trouvé
+      if (!appointments.length) {
+        res.status(404).json({ message: "Aucun rendez-vous trouvé pour ce client." });
+        return;
+      }
+
+      // 5) Répondre avec les rendez-vous
+      res.status(200).json({ appointments });
+    } catch (err) {
+      console.error("Erreur getAppointmentsByClient:", err);
+      next(err);
+    }
+  };
+
+
+export const getAppointmentsByVeterinaire: RequestHandler<{ veterinaireId: string }> =
+  async (req, res, next) => {
+    const { veterinaireId } = req.params;  // <-- lire veterinaireId, pas "veterinaire"
+
+    // 1) Validation de l'ID vétérinaire
+    if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+      res.status(400).json({ message: "ID vétérinaire invalide." });
+      return;
+    }
+
+    try {
+      // 2) Vérification que le vétérinaire existe
+      const exists = await User.exists({ _id: veterinaireId });
+      if (!exists) {
+        res.status(404).json({ message: "Vétérinaire non trouvé." });
         return;
       }
 
       // 3) Récupération des rendez-vous
-      const appointments = await Appointment.find({ clientId })
-        .populate({
-          path: "veterinaireId",
-          select: "firstName lastName specialty -_id"
-        })
-        .populate({
-          path: "animalId",
-          select: "name breed -_id"
-        })
-        .select("-__v -createdAt -updatedAt")
-        .sort({ date: -1 })
-        .lean();
-
-      // 4) Envoi de la réponse
-      res.status(200).json(appointments);
-    } catch (error: unknown) {
-      console.error("[getAppointmentsByClient] Error:", error);
-      next(error instanceof Error ? error : new Error("Erreur serveur"));
-    }
-  };
-export const getAppointmentsByVeterinaire: RequestHandler<{ veterinaire: string }> =
-  async (req, res, next) => {
-    try {
-      const veterinaireId = req.params.veterinaire.trim();
-
-      // 1) Validation de l'ID vétérinaire
-      if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
-        res.status(400).json({ message: "ID vétérinaire invalide" });
-        return;
-      }
-
-      // 2) Vérification que le vétérinaire existe
-      const veterinaire = await User.findById(veterinaireId);
-      if (!veterinaire) {
-        res.status(404).json({ message: "Vétérinaire non trouvé" });
-        return;
-      }
-
-      // 3) Récupère tous les rendez-vous
       const allAppointments = await Appointment.find({ veterinaireId })
         .populate("clientId", "-password -refreshToken")
-        .populate("animalId");
+        .populate("animalId")
+        .lean<IAppointment[]>();
 
-      console.log(`[DEBUG] Total appts for vet ${veterinaireId}:`, allAppointments.length);
-      console.log(`[DEBUG] Statuts bruts:`, allAppointments.map(a => a.status));
-
-      // 4) Nettoie et filtre en mémoire
+      // 4) Nettoyage et filtrage
       const filtered = allAppointments
-        .map(a => {
-          const statusClean = a.status.trim().replace(/,$/, "");
-          return { ...a.toObject(), status: statusClean };
-        })
-        .filter(a => a.status === "pending" || a.status === "accepted");
+        .map(a => ({ 
+          ...a, 
+          status: (a.status as string).trim().replace(/,$/, "") 
+        }))
+        .filter(a => 
+          a.status === AppointmentStatus.PENDING ||
+          a.status === AppointmentStatus.ACCEPTED
+        );
 
-      // 5) Trie par date ascendant
+      // 5) Tri par date croissante
       filtered.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+      // 6) Aucun rendez-vous trouvé ?
       if (filtered.length === 0) {
-        res.status(404).json({ message: "Aucun rendez-vous pending/accepted trouvé pour ce vétérinaire" });
+        res.status(404).json({
+          message: "Aucun rendez-vous pending/accepted trouvé pour ce vétérinaire."
+        });
         return;
       }
 
-      console.log(`[DEBUG] Rendez-vous renvoyés (triés) :`, filtered);
-
-      // 6) Envoi de la réponse
+      // 7) Réponse OK
       res.status(200).json({ appointments: filtered });
-    } catch (error: unknown) {
-      console.error("[getAppointmentsByVeterinaire] Error:", error);
-      next(error instanceof Error ? error : new Error("Erreur serveur"));
+    } catch (err) {
+      console.error("[getAppointmentsByVeterinaire] Error:", err);
+      next(err);
     }
   };
+
 export const acceptAppointment = async (
   req: Request,
   res: Response,
@@ -446,4 +439,8 @@ export const updateAppointment = async (
     next(error);
   }
 };
+
+function asyncHandler(arg0: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
+  throw new Error("Function not implemented.");
+}
 

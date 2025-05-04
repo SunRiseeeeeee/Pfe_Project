@@ -71,7 +71,7 @@ router.post("/", authenticateToken, asyncHandler(createAppointment));
  *       200:
  *         description: Détails du rendez-vous pour le vétérinaire
  */
-router.get("/veterinaire/:veterinaireId/:id", getAppointmentForVeterinaireById);
+router.get("/veterinarian/:veterinarianId/:id", getAppointmentForVeterinaireById);
 
 /**
  * @swagger
@@ -90,7 +90,8 @@ router.get("/veterinaire/:veterinaireId/:id", getAppointmentForVeterinaireById);
  *       200:
  *         description: Détails du rendez-vous pour le client
  */
-router.get("/client/:clientId/:id", getAppointmentForClientById);
+router.get("/client/appointment/:clientId/:id", getAppointmentForClientById);
+
 
 /**
  * @swagger
@@ -108,7 +109,7 @@ router.get("/client/:clientId/:id", getAppointmentForClientById);
  *       200:
  *         description: Liste des rendez-vous du client récupérée avec succès
  */
-router.get("/client/history/:clientId", getAppointmentsByClient);
+router.get('/client/history/:clientId',getAppointmentsByClient);
 
 /**
  * @swagger
