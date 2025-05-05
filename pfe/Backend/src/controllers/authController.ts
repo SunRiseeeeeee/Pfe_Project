@@ -5,6 +5,7 @@ import { AuthService, UserService } from "../services/userService";
 import { UserRole } from "../types";
 import User, { IUser } from "../models/User";
 import bcrypt from "bcryptjs";
+import { upload } from "../services/multerConfig";
 
 //#region Interfaces et Types
 interface WorkingHours {
@@ -279,33 +280,37 @@ const handleControllerError = (error: unknown): ErrorResponse => {
 //#endregion
 
 //#region Controller Handlers
-export const signupSecretaire: RequestHandler = async (req, res, next) => {
+export const signupSecretaire: RequestHandler = async (req, res, next): Promise<void> => {
   try {
     const { firstName, lastName, username, email, password, phoneNumber } = req.body;
     const { veterinaireId } = req.params;
 
-    // 1) Vérifier l'ID du vétérinaire
+    // Validation de l'ID du vétérinaire
     if (!veterinaireId) {
       res.status(400).json({ message: "L'ID du vétérinaire est requis." });
       return;
     }
+
     const veterinaire = await User.findById(veterinaireId);
     if (!veterinaire || veterinaire.role !== UserRole.VETERINAIRE) {
       res.status(400).json({ message: "Vétérinaire introuvable ou rôle invalide." });
       return;
     }
 
-    // 2) Vérifier doublons
+    // Vérification de l'unicité de l'email et du username
     const exists = await User.findOne({ $or: [{ username }, { email }] });
     if (exists) {
       res.status(409).json({ message: "Username ou email déjà utilisé." });
       return;
     }
 
-    // 3) Hasher le mot de passe
+    // Hashage du mot de passe
     const hashed = await bcrypt.hash(password, 12);
 
-    // 4) Créer et sauver la secrétaire
+    // Gestion de l'image (si présente)
+    const profilePicture = req.file ? `uploads/users/${req.file.filename}` : undefined;
+
+    // Création du nouveau secrétaire
     const newSecretaire = new User({
       firstName,
       lastName,
@@ -315,10 +320,11 @@ export const signupSecretaire: RequestHandler = async (req, res, next) => {
       phoneNumber,
       role: UserRole.SECRETAIRE,
       veterinaireId,
+      ...(profilePicture && { profilePicture })
     });
+
     await newSecretaire.save();
 
-    // 5) Répondre sans `return res...`
     res.status(201).json({
       message: "Secrétaire créée avec succès.",
       user: {
@@ -328,148 +334,112 @@ export const signupSecretaire: RequestHandler = async (req, res, next) => {
         username: newSecretaire.username,
         email: newSecretaire.email,
         phoneNumber: newSecretaire.phoneNumber,
+        ...(newSecretaire.profilePicture && { profilePicture: newSecretaire.profilePicture })
       },
     });
-    return;  
   } catch (err) {
     next(err);
   }
 };
+
 export const signupHandler = (role: UserRole): RequestHandler => {
   const handler: RequestHandler = async (req, res, next) => {
     try {
-      // 1. Validation des champs obligatoires avec vérification de type
-      const body = req.body as SignupRequest;
-      
-      const requiredFields = {
-        firstName: body.firstName,
-        lastName: body.lastName,
-        username: body.username,
-        email: body.email,
-        password: body.password,
-        phoneNumber: body.phoneNumber
-      };
+      const { firstName, lastName, username, email, password, phoneNumber } = req.body;
 
-      // Validation et nettoyage des champs
-      const validated = {
-        firstName: validateRequiredString(body.firstName, "firstName"),
-        lastName: validateRequiredString(body.lastName, "lastName"),
-        username: validateRequiredString(body.username, "username").toLowerCase(),
-        email: validateRequiredString(body.email, "email").toLowerCase(),
-        password: validateRequiredString(body.password, "password"),
-        phoneNumber: validateRequiredString(body.phoneNumber, "phoneNumber")
-      };
+      // Validation des champs
+      if (!firstName || !lastName || !username || !email || !password || !phoneNumber) {
+        res.status(400).json({ message: "Tous les champs sont requis." });
+        return;
+      }
 
       // Validation des formats
-      validateUsernameFormat(validated.username);
-      validateEmailFormat(validated.email);
-      validatePhoneFormat(validated.phoneNumber);
+      validateUsernameFormat(username);
+      validateEmailFormat(email);
+      validatePhoneFormat(phoneNumber);
 
-      // 2. Préparation des données optionnelles
-      const extraDetails = buildExtraDetails(role, body);
-
-      // 3. Création de l'utilisateur avec les données validées
-      const user = await UserService.createUser(
-        { 
-          ...validated,
-          role
-        },
-        extraDetails
-      );
-
-      // 4. Vérification améliorée de la création
-      if (!user || !user._id) {
-        console.error('Erreur de création - Objet utilisateur:', user);
-        throw new Error("SERVER_ERROR: Échec de la création de l'utilisateur");
+      // Gestion de l'image de profil
+      let profilePicture: string | undefined = undefined;
+      if (req.file) {
+        profilePicture = `uploads/users/${req.file.filename}`;
       }
 
-      // 5. Conversion explicite de l'ID
-      const userId = user._id.toString();
-      if (!userId) {
-        throw new Error("SERVER_ERROR: Conversion d'ID échouée");
+      // Création de l'utilisateur
+      const extraDetails = buildExtraDetails(role, req.body);
+      const newUser = await UserService.createUser({
+        firstName,
+        lastName,
+        username,
+        email,
+        password,
+        phoneNumber,
+        role,
+        ...(profilePicture && { profilePicture }),
+      }, extraDetails);
+
+      // Vérification de la création de l'utilisateur
+      if (!newUser || !newUser._id) {
+        throw new Error("Erreur de création de l'utilisateur.");
       }
 
-      // 6. Formatage de la réponse
       const userResponse: SafeUserInfo = {
-        id: userId,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        username: user.username,
-        phoneNumber: user.phoneNumber,
-        ...(user.profilePicture && { profilePicture: user.profilePicture }),
-        ...(user.address && { address: user.address }),
-        ...(user.details && { details: user.details }),
-        ...(user.mapsLocation && { mapsLocation: user.mapsLocation }),
-        ...(user.description && { description: user.description }),
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        id: newUser._id.toString(),
+        role: newUser.role,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        email: newUser.email,
+        username: newUser.username,
+        phoneNumber: newUser.phoneNumber,
+        ...(newUser.profilePicture && { profilePicture: newUser.profilePicture }),
+        createdAt: newUser.createdAt,
+        updatedAt: newUser.updatedAt
       };
-
-      // 7. Réponse réussie avec vérification finale
-      if (!userResponse.id) {
-        throw new Error("SERVER_ERROR: Formatage de réponse échoué");
-      }
 
       res.status(201).json({
         success: true,
         message: `${role} inscrit avec succès`,
         user: userResponse
       });
-
-    } catch (error: unknown) {
-      // Gestion d'erreur améliorée avec plus de détails
+    } catch (error) {
+      // Gestion des erreurs
       let status = 500;
-      let code = "SERVER_ERROR";
       let errorMessage = "Erreur serveur";
 
       if (error instanceof mongoose.Error.ValidationError) {
         status = 400;
-        code = "VALIDATION_ERROR";
         errorMessage = error.message;
       } else if (error instanceof Error) {
-        if (error.message.includes('VALIDATION_ERROR')) {
-          status = 400;
-          code = "VALIDATION_ERROR";
-          errorMessage = error.message.replace('VALIDATION_ERROR: ', '');
-        } else if (error.message.includes('DUPLICATE_USER')) {
+        if (error.message.includes('DUPLICATE_USER')) {
           status = 409;
-          code = "DUPLICATE_USER";
-          errorMessage = "Un utilisateur avec ces informations existe déjà";
-        } else if (error.message.includes('SERVER_ERROR')) {
-          // Ajout de logs pour les erreurs serveur
+          errorMessage = "Un utilisateur avec ces informations existe déjà.";
+        } else {
           console.error('Erreur serveur détaillée:', {
             message: error.message,
             stack: error.stack,
             timestamp: new Date().toISOString()
           });
-          errorMessage = "Problème lors de la création du compte";
         }
       }
 
       const response: AuthResponse = {
         success: false,
         message: errorMessage,
-        error: code,
-        ...(process.env.NODE_ENV === 'development' && {
-          debug: {
-            stack: error instanceof Error ? error.stack : undefined,
-            ...(error instanceof mongoose.Error.ValidationError && { 
-              errors: (error as any).errors 
-            }),
-            // Ajout d'informations supplémentaires en développement
-            timestamp: new Date().toISOString(),
-            receivedData: process.env.NODE_ENV === 'development' ? req.body : undefined
-          }
-        })
+        error: "SERVER_ERROR",
+        debug: process.env.NODE_ENV === 'development' ? {
+          stack: error instanceof Error ? error.stack : undefined,
+          timestamp: new Date().toISOString(),
+          receivedData: req.body
+        } : undefined
       };
 
       res.status(status).json(response);
     }
   };
+
   return handler;
 };
+
+
 export const loginHandler: RequestHandler = async (req, res, next) => {
   try {
     const { username, password } = req.body as LoginRequest;
