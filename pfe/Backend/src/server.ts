@@ -1,6 +1,7 @@
 // src/server.ts
 import express from "express";
 import dotenv from "dotenv";
+import path from "path";
 import cors from "cors";
 import connectDB from "./config/db";
 import authRoutes from "./routes/authRoutes";
@@ -26,6 +27,8 @@ connectDB()
   .catch(err => console.error("❌ Erreur de connexion MongoDB :", err));
 
 // Montée des routes
+app.use('/uploads', express.static(path.join(__dirname, 'services', 'uploads')));
+
 app.use("/api/auth", authRoutes);
 app.use("/api/users", crudRoutes);
 app.use("/api/animals", animalRoutes);          // Routes pour animaux corrigées

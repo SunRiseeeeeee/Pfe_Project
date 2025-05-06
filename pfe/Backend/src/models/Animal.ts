@@ -3,11 +3,12 @@ import mongoose, { Schema, Document } from "mongoose";
 // Interface TypeScript pour un Animal
 export interface IAnimal extends Document {
   name: string;
-  picture?: string;
+  picture?: string | null; // Correction : Renommer "cture" en "picture" pour correspondre à la propriété correcte
   breed?: string;
   gender?: "Male" | "Female";
   birthDate?: Date;
   owner: mongoose.Schema.Types.ObjectId;
+  species?: string;
 }
 
 // Définition du schéma Mongoose
@@ -26,9 +27,10 @@ const AnimalSchema: Schema = new Schema({
     ref: "User",
     required: true,
   },
+  species: { type: String },
 });
 
-// ✅ Champ virtuel pour l'âge (en années et mois)
+// Champ virtuel pour l'âge
 AnimalSchema.virtual("age").get(function (this: IAnimal) {
   if (!this.birthDate) return null;
 
@@ -46,7 +48,7 @@ AnimalSchema.virtual("age").get(function (this: IAnimal) {
   return { years, months };
 });
 
-// ✅ Inclure les champs virtuels dans le JSON
+// Inclure les champs virtuels dans le JSON
 AnimalSchema.set("toJSON", { virtuals: true });
 AnimalSchema.set("toObject", { virtuals: true });
 
