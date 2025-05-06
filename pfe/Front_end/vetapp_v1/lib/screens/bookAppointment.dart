@@ -34,7 +34,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   void initState() {
     super.initState();
     final dio = Dio(BaseOptions(
-      baseUrl: 'http://192.168.1.18:3000/api',
+      baseUrl: 'http://192.168.1.24:3000/api',
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',

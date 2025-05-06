@@ -8,6 +8,8 @@ import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
 import 'package:vetapp_v1/services/vet_service.dart';
 import 'package:vetapp_v1/screens/MyPetsScreen.dart';
 
+import '../models/token_storage.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,9 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _screens = const [
     HomeContent(),           // 0 - Home
-    AppointmentScreen(),     // 1 - Appointment
-    MessageScreen(),        // 2 - Message
-    PetsScreen(),           // 3 - Pets
+    AppointmentScreen(),     // 1 - Appointment/
+    PetsScreen(),             // 3 - Pets
+    MessageScreen(),         // 2 - Message
     ProfileScreen(),
   ];
 
@@ -149,6 +151,7 @@ class _HomeContentState extends State<HomeContent> {
   int limit = 10;
   String sort = "desc";
   late Future<Map<String, dynamic>> veterinariansFuture;
+  String? username; // Variable to store the username
 
   @override
   void initState() {
@@ -161,7 +164,37 @@ class _HomeContentState extends State<HomeContent> {
       limit: limit,
       sort: sort,
     );
+    // Fetch the username from TokenStorage
+    _loadUsername();
   }
+
+  // Method to load the username from TokenStorage
+  Future<void> _loadUsername() async {
+    final tokenStorage = TokenStorage();
+    setState(() {
+      // Optional: Set a temporary state to indicate loading
+      username = "";
+    });
+
+    try {
+      final fetchedUsername = await TokenStorage.getUsernameFromToken(); // Fetching username from SharedPreferences
+      if (fetchedUsername != null) {
+        setState(() {
+          username = fetchedUsername; // Store the username once fetched
+        });
+      } else {
+        setState(() {
+          username = "Username not found"; // Handle the case where username is null
+        });
+      }
+    } catch (e) {
+      setState(() {
+        username = "Error loading username"; // Error handling in case of any issue
+      });
+      print("Error fetching username: $e");
+    }
+  }
+
 
   // Method to refresh the future when navigating pages
   void _refreshVeterinarians(int newPage) {
@@ -191,9 +224,16 @@ class _HomeContentState extends State<HomeContent> {
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text("Welcome,", style: TextStyle(fontSize: 14, color: Colors.grey, fontFamily: 'Poppins')),
-                    Text("Wade Warren", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Poppins')),
+                  children: [
+                    const Text(
+                      "Welcome,",
+                      style: TextStyle(fontSize: 14, color: Colors.grey, fontFamily: 'Poppins'),
+                    ),
+                    // Display the username dynamically here
+                    Text(
+                      username ?? 'Loading...',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
+                    ),
                   ],
                 ),
                 Row(
@@ -415,6 +455,7 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 }
+
 
 class AutoSlidingPageView extends StatefulWidget {
   const AutoSlidingPageView({super.key});
