@@ -142,6 +142,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
           onPressed: () {
+            print('Navigating with vet ID: ${widget.vet.id}');
             Navigator.push(
               context,
               MaterialPageRoute(

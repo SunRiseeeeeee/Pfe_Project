@@ -161,7 +161,7 @@ router.get('/veterinaire/history/:veterinaireId', getAppointmentsByVeterinaire);
  *       200:
  *         description: Rendez-vous mis à jour avec succès
  */
-router.put("/:id", updateAppointment);
+router.put("/:id", authenticateToken, asyncHandler(updateAppointment));
 
 /**
  * @swagger

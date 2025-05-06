@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:vetapp_v1/models/veterinarian.dart';
 
 class VetService {
   static const String baseUrl = "http://192.168.1.18:3000/api/users/veterinarians";
@@ -15,26 +14,21 @@ class VetService {
   }) async {
     try {
       final queryParams = {
-        if (rating != null && rating
-            .trim()
-            .isNotEmpty) 'rating': rating.trim(),
-        if (location != null && location
-            .trim()
-            .isNotEmpty) 'location': location.trim(),
-        if (services != null && services.isNotEmpty) 'services': services.join(
-            ","),
+        if (rating != null && rating.trim().isNotEmpty) 'rating': rating.trim(),
+        if (location != null && location.trim().isNotEmpty) 'location': location.trim(),
+        if (services != null && services.isNotEmpty) 'services': services.join(","),
         'page': page.toString(),
         'limit': limit.toString(),
         'sort': sort,
       };
 
       final response = await _dio.get(baseUrl, queryParameters: queryParams);
+      print('Response from API: ${response.data}');
 
       if (response.statusCode == 200) {
-        return response.data; // ← Return raw API response
+        return response.data; // contains 'data': [...vets...]
       } else {
-        throw Exception('Failed to load veterinarians. Status Code: ${response
-            .statusCode}');
+        throw Exception('Failed to load veterinarians. Status Code: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching veterinarians: $e');

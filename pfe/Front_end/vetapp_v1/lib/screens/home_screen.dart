@@ -6,6 +6,8 @@ import 'package:vetapp_v1/screens/message_screen.dart';
 import 'package:vetapp_v1/screens/profile_screen.dart';
 import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
 import 'package:vetapp_v1/services/vet_service.dart';
+import 'package:vetapp_v1/screens/MyPetsScreen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,9 +20,10 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = const [
-    HomeContent(), // The content of the home screen
-    AppointmentScreen(),
-    MessageScreen(),
+    HomeContent(),           // 0 - Home
+    AppointmentScreen(),     // 1 - Appointment
+    MessageScreen(),        // 2 - Message
+    PetsScreen(),           // 3 - Pets
     ProfileScreen(),
   ];
 
@@ -61,31 +64,35 @@ class _HomeScreenState extends State<HomeScreen> {
           topRight: Radius.circular(20),
         ),
         child: BottomNavigationBar(
-          backgroundColor: Colors.white, // Base color
-          selectedItemColor: Colors.deepPurple, // Active item color
-          unselectedItemColor: Colors.grey, // Inactive item color
+          backgroundColor: Colors.white,
+          selectedItemColor: Colors.deepPurple,
+          unselectedItemColor: Colors.grey,
           currentIndex: _selectedIndex,
           type: BottomNavigationBarType.fixed,
           onTap: _onItemTapped,
-          elevation: 0, // Remove default elevation
+          elevation: 0,
           selectedFontSize: 12,
           unselectedFontSize: 10,
           showSelectedLabels: true,
           showUnselectedLabels: true,
-          items: const [
-            BottomNavigationBarItem(
+          items: [
+            BottomNavigationBarItem(  // 0 - Home
               icon: Icon(Icons.home, size: 28),
               label: 'Home',
             ),
-            BottomNavigationBarItem(
+            BottomNavigationBarItem(  // 1 - Appointment
               icon: Icon(Icons.calendar_today, size: 28),
               label: 'Appointment',
             ),
-            BottomNavigationBarItem(
+            BottomNavigationBarItem(  // 2 - Pets (special)
+              icon: _BigPawIcon(isSelected: _selectedIndex == 2),
+              label: 'Pets',
+            ),
+            BottomNavigationBarItem(  // 3 - Message
               icon: Icon(Icons.message, size: 28),
               label: 'Message',
             ),
-            BottomNavigationBarItem(
+            BottomNavigationBarItem(  // 4 - Profile
               icon: Icon(Icons.person, size: 28),
               label: 'Profile',
             ),
@@ -94,8 +101,39 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-}
 
+
+
+}
+class _BigPawIcon extends StatelessWidget {
+  final bool isSelected;
+
+  const _BigPawIcon({required this.isSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // Background circle (slightly larger than normal icons)
+        Container(
+          width: 40,  // Bigger than other icons (28)
+          height: 40,
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.deepPurple.withOpacity(0.1) : Colors.transparent,
+            shape: BoxShape.circle,
+          ),
+        ),
+        // Paw icon with fingers extending beyond
+        Icon(
+          Icons.pets,
+          size: 36,  // Larger than other icons
+          color: isSelected ? Colors.deepPurple : Colors.grey,
+        ),
+      ],
+    );
+  }
+}
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
 
