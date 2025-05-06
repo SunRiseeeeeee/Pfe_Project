@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 
 // Créer le dossier s'il n'existe pas
-const uploadDir = path.join(__dirname, 'uploads', 'animals','users');
+const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }

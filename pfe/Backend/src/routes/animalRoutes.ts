@@ -12,13 +12,6 @@ const router = express.Router();
 
 /**
  * @swagger
- * tags:
- *   name: Animals
- *   description: Gestion des animaux
- */
-
-/**
- * @swagger
  * /users/{userId}/animals:
  *   post:
  *     summary: Créer un nouvel animal

@@ -27,7 +27,8 @@ connectDB()
   .catch(err => console.error("❌ Erreur de connexion MongoDB :", err));
 
 // Montée des routes
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use('/uploads', express.static(path.join(__dirname, 'services', 'uploads')));
+
 app.use("/api/auth", authRoutes);
 app.use("/api/users", crudRoutes);
 app.use("/api/animals", animalRoutes);          // Routes pour animaux corrigées

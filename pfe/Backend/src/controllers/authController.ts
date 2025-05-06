@@ -116,7 +116,7 @@ const EMAIL_REGEX = /^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/;
 const PHONE_REGEX = /^[0-9]{8,15}$/;
 
 const ERROR_MESSAGES: ErrorMessages = {
-  MISSING_FIELD: (field?: string) => `Le champ ${field ? `'${field}'` : ''} est requis.`,
+  MISSING_FIELD: (field?: string) => `Le champ ${field ? '${field}' : ''} est requis.`,
   INVALID_EMAIL: "L'email est invalide.",
   INVALID_USERNAME: "Le nom d'utilisateur est invalide (caractères alphanumériques et _ uniquement).",
   INVALID_PHONE: "Le numéro de téléphone doit contenir 8 à 15 chiffres.",
@@ -280,7 +280,8 @@ const handleControllerError = (error: unknown): ErrorResponse => {
 //#endregion
 
 //#region Controller Handlers
-export const signupSecretaire: RequestHandler = async (req, res, next): Promise<void> => {
+
+export const signupSecretaire: RequestHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { firstName, lastName, username, email, password, phoneNumber } = req.body;
     const { veterinaireId } = req.params;
@@ -308,7 +309,7 @@ export const signupSecretaire: RequestHandler = async (req, res, next): Promise<
     const hashed = await bcrypt.hash(password, 12);
 
     // Gestion de l'image (si présente)
-    const profilePicture = req.file ? `uploads/users/${req.file.filename}` : undefined;
+    const profilePicture = req.file ? `uploads/${req.file.filename}` : undefined;
 
     // Création du nouveau secrétaire
     const newSecretaire = new User({
@@ -320,11 +321,12 @@ export const signupSecretaire: RequestHandler = async (req, res, next): Promise<
       phoneNumber,
       role: UserRole.SECRETAIRE,
       veterinaireId,
-      ...(profilePicture && { profilePicture })
+      ...(profilePicture && { profilePicture }), // Ajouter l'image si présente
     });
 
     await newSecretaire.save();
 
+    // Réponse après la création
     res.status(201).json({
       message: "Secrétaire créée avec succès.",
       user: {
@@ -334,111 +336,139 @@ export const signupSecretaire: RequestHandler = async (req, res, next): Promise<
         username: newSecretaire.username,
         email: newSecretaire.email,
         phoneNumber: newSecretaire.phoneNumber,
-        ...(newSecretaire.profilePicture && { profilePicture: newSecretaire.profilePicture })
+        ...(newSecretaire.profilePicture && { profilePicture: newSecretaire.profilePicture }),
       },
     });
   } catch (err) {
-    next(err);
+    next(err); // Passer l'erreur au middleware d'erreur
   }
 };
 
-export const signupHandler = (role: UserRole): RequestHandler => {
-  const handler: RequestHandler = async (req, res, next) => {
+export const signupHandler = async (req: Request, res: Response, next: NextFunction, role: UserRole): Promise<Response> => {
+  try {
+    // Extraction des champs du corps de la requête
+    const { firstName, lastName, username, email, password, phoneNumber } = req.body;
+
+    // Validation des champs obligatoires
+    const requiredFields = { firstName, lastName, username, email, password, phoneNumber };
+    const missingFields = Object.entries(requiredFields)
+      .filter(([_, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Champs obligatoires manquants: ${missingFields.join(', ')}`,
+        error: 'MISSING_FIELDS',
+      });
+    }
+
+    // Validation des formats des champs (username, email, phoneNumber)
     try {
-      const { firstName, lastName, username, email, password, phoneNumber } = req.body;
-
-      // Validation des champs
-      if (!firstName || !lastName || !username || !email || !password || !phoneNumber) {
-        res.status(400).json({ message: "Tous les champs sont requis." });
-        return;
-      }
-
-      // Validation des formats
       validateUsernameFormat(username);
       validateEmailFormat(email);
       validatePhoneFormat(phoneNumber);
-
-      // Gestion de l'image de profil
-      let profilePicture: string | undefined = undefined;
-      if (req.file) {
-        profilePicture = `uploads/users/${req.file.filename}`;
-      }
-
-      // Création de l'utilisateur
-      const extraDetails = buildExtraDetails(role, req.body);
-      const newUser = await UserService.createUser({
-        firstName,
-        lastName,
-        username,
-        email,
-        password,
-        phoneNumber,
-        role,
-        ...(profilePicture && { profilePicture }),
-      }, extraDetails);
-
-      // Vérification de la création de l'utilisateur
-      if (!newUser || !newUser._id) {
-        throw new Error("Erreur de création de l'utilisateur.");
-      }
-
-      const userResponse: SafeUserInfo = {
-        id: newUser._id.toString(),
-        role: newUser.role,
-        firstName: newUser.firstName,
-        lastName: newUser.lastName,
-        email: newUser.email,
-        username: newUser.username,
-        phoneNumber: newUser.phoneNumber,
-        ...(newUser.profilePicture && { profilePicture: newUser.profilePicture }),
-        createdAt: newUser.createdAt,
-        updatedAt: newUser.updatedAt
-      };
-
-      res.status(201).json({
-        success: true,
-        message: `${role} inscrit avec succès`,
-        user: userResponse
-      });
-    } catch (error) {
-      // Gestion des erreurs
-      let status = 500;
-      let errorMessage = "Erreur serveur";
-
-      if (error instanceof mongoose.Error.ValidationError) {
-        status = 400;
-        errorMessage = error.message;
-      } else if (error instanceof Error) {
-        if (error.message.includes('DUPLICATE_USER')) {
-          status = 409;
-          errorMessage = "Un utilisateur avec ces informations existe déjà.";
-        } else {
-          console.error('Erreur serveur détaillée:', {
-            message: error.message,
-            stack: error.stack,
-            timestamp: new Date().toISOString()
-          });
-        }
-      }
-
-      const response: AuthResponse = {
+    } catch (validationError) {
+      return res.status(400).json({
         success: false,
-        message: errorMessage,
-        error: "SERVER_ERROR",
-        debug: process.env.NODE_ENV === 'development' ? {
-          stack: error instanceof Error ? error.stack : undefined,
-          timestamp: new Date().toISOString(),
-          receivedData: req.body
-        } : undefined
-      };
-
-      res.status(status).json(response);
+        message: validationError instanceof Error ? validationError.message : 'Format de données invalide',
+        error: 'VALIDATION_ERROR',
+      });
     }
-  };
 
-  return handler;
+    // Gestion de l'image (si présente)
+    const profilePicture = req.file ? `uploads/${req.file.filename}` : undefined; // image est optionnelle
+
+    // Construction des données utilisateur
+    const userData = {
+      firstName,
+      lastName,
+      username,
+      email,
+      password,
+      phoneNumber,
+      role,
+      ...(profilePicture && { profilePicture }), // Si profilePicture existe, l'ajouter
+    };
+
+    // Ajouter les détails spécifiques au rôle (ex: secrétaire, vétérinaire, etc.)
+    const extraDetails = buildExtraDetails(role, req.body);
+
+    // Création de l'utilisateur via le service
+    const newUser = await UserService.createUser(userData, extraDetails);
+
+    if (!newUser?._id) {
+      throw new Error("USER_CREATION_FAILED");
+    }
+
+    // Réponse après l'inscription réussie
+    const userResponse = {
+      id: newUser._id.toString(),
+      role: newUser.role,
+      firstName: newUser.firstName,
+      lastName: newUser.lastName,
+      email: newUser.email,
+      username: newUser.username,
+      phoneNumber: newUser.phoneNumber,
+      createdAt: newUser.createdAt,
+      updatedAt: newUser.updatedAt,
+      ...(newUser.profilePicture && { profilePicture: newUser.profilePicture }),
+    };
+
+    return res.status(201).json({
+      success: true,
+      message: `${role} inscrit avec succès`,
+      user: userResponse,
+    });
+
+  } catch (error) {
+    // Gestion des erreurs connues
+    if (error instanceof mongoose.Error.ValidationError) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+        error: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (error instanceof Error && error.message.includes('DUPLICATE_USER')) {
+      return res.status(409).json({
+        success: false,
+        message: 'Un utilisateur avec ces informations existe déjà',
+        error: 'DUPLICATE_USER',
+      });
+    }
+
+    // Gestion des autres erreurs générales
+    console.error(`[${new Date().toISOString()}] Signup Error:`, error);
+
+    const errorResponse = {
+      success: false,
+      message: 'Erreur lors de la création du compte',
+      error: 'SERVER_ERROR',
+      ...(process.env.NODE_ENV === 'development' && {
+        debug: {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+      }),
+    };
+
+    return res.status(500).json(errorResponse);
+  }
 };
 
+export const signupClient: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
+  await signupHandler(req, res, next, UserRole.CLIENT);
+};
+
+export const signupVeterinaire: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
+  await signupHandler(req, res, next, UserRole.VETERINAIRE);
+};
+
+export const signupAdmin: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
+  await signupHandler(req, res, next, UserRole.ADMIN);
+};
 
 export const loginHandler: RequestHandler = async (req, res, next) => {
   try {
@@ -551,6 +581,7 @@ export const logoutHandler: RequestHandler = async (req, res, next) => {
     });
   }
 };
+
 export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   const { status, code, message } = handleControllerError(err);
   res.status(status).json({
@@ -566,6 +597,3 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   });
 };
 //#endregion
-export const signupClient = signupHandler(UserRole.CLIENT);
-export const signupVeterinaire = signupHandler(UserRole.VETERINAIRE);
-export const signupAdmin = signupHandler(UserRole.ADMIN);

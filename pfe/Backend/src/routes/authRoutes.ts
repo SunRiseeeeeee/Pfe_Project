@@ -7,7 +7,6 @@ import {
   refreshTokenHandler,
   logoutHandler,
 } from "../controllers/authController";
-import { uploadUserPicture } from '../middlewares/uploadMiddleware';
 import { signupSecretaire } from "../controllers/authController"; // adapte le chemin si besoin
 
 
@@ -117,7 +116,7 @@ const router = Router();
  *       500:
  *         description: Server error
  */
-router.post("/signup/client",uploadUserPicture, signupClient);
+router.post("/signup/client", signupClient);
 
 /**
  * @swagger
@@ -152,7 +151,7 @@ router.post("/signup/client",uploadUserPicture, signupClient);
  *       500:
  *         description: Server error
  */
-router.post("/signup/secretaire/:veterinaireId", uploadUserPicture,signupSecretaire);
+router.post("/signup/secretaire/:veterinaireId", signupSecretaire);
 
 
 /**
@@ -197,7 +196,7 @@ router.post("/signup/secretaire/:veterinaireId", uploadUserPicture,signupSecreta
  *       500:
  *         description: Server error
  */
-router.post("/signup/veterinaire",uploadUserPicture, signupVeterinaire);
+router.post("/signup/veterinaire", signupVeterinaire);
 
 /**
  * @swagger
@@ -225,7 +224,7 @@ router.post("/signup/veterinaire",uploadUserPicture, signupVeterinaire);
  *       500:
  *         description: Server error
  */
-router.post("/signup/admin",uploadUserPicture, signupAdmin);
+router.post("/signup/admin", signupAdmin);
 
 /**
  * @swagger
