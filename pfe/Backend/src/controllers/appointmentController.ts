@@ -312,24 +312,37 @@ export const updateAppointment = async (req: Request, res: Response, next: NextF
     const updatedData = { ...req.body };
     const user = req.user;
 
+    // Vérifications initiales
     if (!user) {
       return sendResponse(res, 401, {}, "Utilisateur non authentifié");
     }
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return sendResponse(res, 400, {}, "ID de rendez-vous invalide");
     }
+
+    // Récupération du rendez-vous
     const appointment = await Appointment.findById(id);
     if (!appointment) {
       return sendResponse(res, 404, {}, "Rendez-vous non trouvé");
     }
+
+    // Vérification des autorisations
     if (user.role !== UserRole.CLIENT || appointment.clientId.toString() !== user.id) {
       return sendResponse(res, 403, {}, "Accès interdit : vous ne pouvez pas modifier ce rendez-vous.");
     }
+
+    // Vérification du statut
     if (appointment.status !== AppointmentStatus.PENDING) {
       return sendResponse(res, 403, {}, "Modification interdite : Le statut du rendez-vous n'est pas 'pending'.");
     }
-    const protectedFields = ["clientId","veterinaireId","createdAt","updatedAt","_id","__v"];
-    for (const field of protectedFields) delete updatedData[field];
+
+    // Protection des champs sensibles
+    const protectedFields = ["clientId", "veterinaireId", "createdAt", "updatedAt", "_id", "__v"];
+    for (const field of protectedFields) {
+      delete updatedData[field];
+    }
+
+    // Vérification de l'animal
     if (updatedData.animalId) {
       if (!mongoose.Types.ObjectId.isValid(updatedData.animalId)) {
         return sendResponse(res, 400, {}, "ID de l'animal invalide.");
@@ -339,10 +352,52 @@ export const updateAppointment = async (req: Request, res: Response, next: NextF
         return sendResponse(res, 403, {}, "Cet animal n'existe pas ou ne vous appartient pas.");
       }
     }
-    const updatedAppointment = await Appointment.findByIdAndUpdate(id, updatedData, { new: true, runValidators: true });
+
+    // Vérification des conflits de rendez-vous (nouvelle implémentation)
+    if (updatedData.date) {
+      const newDate = new Date(updatedData.date);
+      const minEndTime = new Date(newDate.getTime() + 20 * 60000); // +20 minutes
+      
+      const conflicting = await Appointment.find({
+        _id: { $ne: id }, // Exclure le rendez-vous actuel
+        $or: [
+          { 
+            date: { 
+              $gte: newDate, 
+              $lt: minEndTime 
+            } 
+          },
+          {
+            date: { 
+              $lt: newDate, 
+              $gte: new Date(newDate.getTime() - 20 * 60000) 
+            }
+          }
+        ]
+      });
+
+      if (conflicting.length > 0) {
+        return sendResponse(
+          res,
+          400,
+          {},
+          "Créneau indisponible. Il doit y avoir au moins 20 minutes entre deux rendez-vous."
+        );
+      }
+    }
+
+    // Mise à jour du rendez-vous
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      id, 
+      updatedData, 
+      { new: true, runValidators: true }
+    );
+
     if (!updatedAppointment) {
       return sendResponse(res, 500, {}, "Erreur lors de la mise à jour.");
     }
+
+    // Réponse réussie
     sendResponse(res, 200, {
       id: updatedAppointment._id,
       date: updatedAppointment.date,
@@ -352,6 +407,7 @@ export const updateAppointment = async (req: Request, res: Response, next: NextF
       services: updatedAppointment.services,
       caseDescription: updatedAppointment.caseDescription
     }, "Rendez-vous mis à jour avec succès.");
+
   } catch (error) {
     console.error("[updateAppointment] Error:", error);
     next(error);

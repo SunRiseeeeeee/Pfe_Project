@@ -100,6 +100,13 @@ export const updateAnimal = async (req: Request, res: Response): Promise<void> =
       const { userId, animalId } = req.params;
       const { name, species, breed, gender, birthDate } = req.body;
 
+      // Vérifier si l'animal existe déjà pour cet utilisateur
+      const existingAnimal = await animalService.getAnimalByName(userId, name);
+      if (existingAnimal) {
+        return res.status(400).json({
+          message: `Un animal nommé "${name}" existe déjà pour cet utilisateur.`,
+        });
+      }
 
 
       // Vérification de la validité de birthDate si elle est fournie
