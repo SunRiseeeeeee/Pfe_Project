@@ -34,8 +34,8 @@ export const createAnimal = async (req: Request, res: Response): Promise<void> =
 
       // Construction de l'URL de l'image si présente
       const imageUrl = req.file
-        ? `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
-        : null; // Assurez-vous que la photo peut être nulle
+        ? `${req.protocol}://${req.get('host')}/uploads/animals/${req.file.filename}`
+        : null; 
 
       // Création de l'animal
       const newAnimal = await animalService.createAnimal(userId, {
@@ -119,7 +119,7 @@ export const updateAnimal = async (req: Request, res: Response): Promise<void> =
       // Si une image est uploadée, construire l'URL de l'image
       if (req.file) {
         const filename = req.file.filename;
-        updatedData.picture = `${req.protocol}://${req.get('host')}/uploads/${filename}`;
+        updatedData.picture = `${req.protocol}://${req.get('host')}/uploads/animals/${filename}`;
       }
 
       // Mettre à jour l'animal dans la base de données

@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { JwtPayload } from "../middlewares/authMiddleware";
 import mongoose, { Document, Types } from "mongoose";
 import User, { IUser, UserRole } from "../models/User";
-
+import nodemailer from 'nodemailer';
 //#region Type Definitions
 interface Address {
   street?: string;
@@ -29,7 +29,8 @@ interface UserDetails {
 }
 
 interface ExtraDetails {
-  profilePicture?: string;
+ 
+  
   mapsLocation?: string;
   description?: string;
   details?: UserDetails;
@@ -37,6 +38,20 @@ interface ExtraDetails {
   rating?: number;
   address?: Address;
   isActive?: boolean;
+}
+export interface UserCreateData {
+  firstName: string;
+  lastName: string;
+  username: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  role: UserRole;
+  profilePicture?: string;
+  mapsLocation?: string;        // <-- Ajoute ceci
+  description?: string;         // <-- Et ça
+  address?: Address;            // <-- Et ça si besoin
+  details?: UserDetails;        // <-- Et ça aussi
 }
 
 interface AuthTokens {
@@ -62,15 +77,7 @@ interface LoginCredentials {
   password: string;
 }
 
-interface UserCreateData {
-  firstName: string;
-  lastName: string;
-  username: string;
-  email: string;
-  password: string;
-  phoneNumber: string;
-  role: UserRole;
-}
+
 
 interface TokenResponse {
   accessToken: string;
@@ -106,6 +113,47 @@ const ErrorMessages = {
 
 export class AuthService {
   //#region Authentication
+  static async forgetPassword(email: string): Promise<void> {
+    if (!email) {
+      throw new Error("Email is required");
+    }
+  
+    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+    if (!user) {
+      throw new Error("No active account found with this email");
+    }
+  
+    // Générer un code de vérification à 6 chiffres
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+  
+    // Facultatif : Ajouter une date d'expiration (15 minutes par exemple)
+    const expiration = new Date(Date.now() + 15 * 60 * 1000);
+  
+    // Sauvegarder le code et son expiration dans la base
+    user.verificationCode = code;
+    user.verificationCodeExpires = expiration;
+    await user.save();
+  
+    // Configurer le transporteur SMTP (exemple avec Gmail, remplace par tes valeurs)
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.SMTP_USER!,
+        pass: process.env.SMTP_PASS!,
+      },
+    });
+  
+    // Contenu de l'email
+    const mailOptions = {
+      from: process.env.SMTP_USER!,
+      to: user.email,
+      subject: 'Code de réinitialisation du mot de passe',
+      text: `Bonjour ${user.firstName},\n\nVotre code de vérification est : ${code}\n\nCe code expire dans 15 minutes.`,
+    };
+  
+    // Envoi de l'email
+    await transporter.sendMail(mailOptions);
+  }
   static async authenticate(credentials: LoginCredentials): Promise<AuthTokens> {
     try {
       const { username, password } = credentials;
@@ -180,13 +228,12 @@ export class AuthService {
   //#endregion
 
   //#region Token Management
-  private static async generateTokens(user: IUser): Promise<TokenResponse> {
+  public static async generateTokens(user: IUser): Promise<TokenResponse> {
     const tokens = this.createTokens(user);
     await this.saveRefreshToken(user._id, tokens.refreshToken);
     await this.resetSecurityFields(user._id);
     return tokens;
   }
-
   private static createTokens(user: IUser): TokenResponse {
     this.validateJwtConfig();
   
@@ -381,6 +428,25 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
       throw new Error(`SERVER_ERROR: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
   }
 }
+private static async saveUser(
+  userData: UserCreateData,
+  extraDetails: ExtraDetails,
+  hashedPassword: string
+): Promise<IUser & Document> {
+  const newUser = new User({
+    ...userData,
+    email: userData.email.toLowerCase(),
+    username: userData.username.toLowerCase(),
+    password: hashedPassword,
+    ...extraDetails,
+    isActive: true,
+    loginAttempts: 0,
+    refreshToken: null
+  });
+
+  await newUser.save();
+  return newUser;
+}
   static async getUserById(userId: string): Promise<IUser> {
     this.validateUserId(userId);   
     return await User.findById(new Types.ObjectId(userId))
@@ -450,25 +516,7 @@ static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {
     }
   }
 
-  private static async saveUser(
-    userData: UserCreateData,
-    extraDetails: ExtraDetails,
-    hashedPassword: string
-  ): Promise<IUser & Document> {
-    const newUser = new User({
-      ...userData,
-      email: userData.email.toLowerCase(),
-      username: userData.username.toLowerCase(),
-      password: hashedPassword,
-      ...extraDetails,
-      isActive: true,
-      loginAttempts: 0,
-      refreshToken: null
-    });
 
-    await newUser.save();
-    return newUser;
-  }
 
   private static validateUpdateData(updateData: Partial<IUser>): void {
     if ('role' in updateData) {
