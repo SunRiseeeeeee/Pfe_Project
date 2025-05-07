@@ -3,9 +3,11 @@ import path from 'path';
 import fs from 'fs';
 
 // 📌 Chemin vers le dossier d'upload des utilisateurs
-const usersUploadDir = path.join(__dirname, '..', 'services', 'uploads', 'users');
+const usersUploadDir = path.join(__dirname, '..','services', 'uploads', 'users');
 // 📌 Chemin vers le dossier d'upload des animaux
 const animalsUploadDir = path.join(__dirname, '..', 'services', 'uploads', 'animals');
+// 📌 Chemin vers le dossier d'upload des services
+const servicesUploadDir = path.join(__dirname, '..', 'services', 'uploads', 'services');
 
 // 📌 Créer les dossiers s'ils n'existent pas
 if (!fs.existsSync(usersUploadDir)) {
@@ -13,6 +15,9 @@ if (!fs.existsSync(usersUploadDir)) {
 }
 if (!fs.existsSync(animalsUploadDir)) {
   fs.mkdirSync(animalsUploadDir, { recursive: true });
+}
+if (!fs.existsSync(servicesUploadDir)) {
+  fs.mkdirSync(servicesUploadDir, { recursive: true });
 }
 
 // 📌 Configuration du stockage pour les utilisateurs
@@ -33,6 +38,17 @@ const animalsStorage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const filename = `animal-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(file.originalname)}`;
+    cb(null, filename);
+  },
+});
+
+// 📌 Configuration du stockage pour les services
+const servicesStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, servicesUploadDir);
+  },
+  filename: (req, file, cb) => {
+    const filename = `service-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(file.originalname)}`;
     cb(null, filename);
   },
 });
@@ -60,4 +76,11 @@ const animalUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max
 }).single('image'); // Le champ de formulaire s'appelle 'image'
 
-export { userUpload, animalUpload };
+// 📌 Configuration de multer pour les services
+const serviceUpload = multer({
+  storage: servicesStorage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max
+}).single('image'); // Le champ de formulaire s'appelle 'image'
+
+export { userUpload, animalUpload, serviceUpload };

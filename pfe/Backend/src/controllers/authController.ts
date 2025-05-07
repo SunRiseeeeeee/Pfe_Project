@@ -5,7 +5,7 @@ import { AuthService, UserService } from "../services/userService";
 import { UserRole } from "../types";
 import User, { IUser, IUserDetails } from "../models/User";
 import bcrypt from "bcryptjs";
-import { upload } from "../services/multerConfig";
+import { upload } from "../services/animalMulterConfig";
 import nodemailer from "nodemailer"; 
 import crypto from 'crypto';  // Utilise cette importation pour accéder à 'randomBytes'
 import { userUpload } from '../services/userMulterConfig';

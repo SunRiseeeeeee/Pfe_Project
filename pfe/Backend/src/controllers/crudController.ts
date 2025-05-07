@@ -178,22 +178,48 @@ export const deleteUser: ExpressController = async (req, res) => {
     const { userId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      sendJsonResponse(res, 400, { message: "ID utilisateur invalide" });
+      res.status(400).json({ message: "ID utilisateur invalide" });
       return;
     }
 
+    // 1. Récupérer l'utilisateur pour vérifier l'image
+    const user = await UserService.getUserById(userId);
+    if (!user) {
+      res.status(404).json({ message: "Utilisateur non trouvé" });
+      return;
+    }
+
+    // 2. Supprimer l'utilisateur
     const deletedUser = await UserService.deleteUser(userId);
     if (!deletedUser) {
-      sendJsonResponse(res, 404, { message: "Utilisateur non trouvé" });
+      res.status(500).json({ message: "Échec de la suppression" });
       return;
     }
 
-    sendJsonResponse(res, 200, { message: "Utilisateur supprimé définitivement avec succès" });
+    // 3. Supprimer l'image si elle existe
+    if (user.profilePicture) {
+      const filename = user.profilePicture.split('/').pop();
+      if (filename) {
+        const filePath = path.join(__dirname, '..', 'uploads', 'users', filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+    }
+
+    // Envoyer la réponse sans retourner
+    res.status(200).json({ 
+      message: "Utilisateur supprimé avec succès",
+      deletedUserId: userId
+    });
+
   } catch (error) {
-    console.error("Erreur deleteUser:", error);
-    sendJsonResponse(res, 500, {
-      message: "Erreur lors de la suppression de l'utilisateur",
-      error: error instanceof Error ? error.message : "Erreur inconnue",
+    console.error("Erreur:", error);
+    res.status(500).json({
+      message: "Erreur serveur",
+      error: process.env.NODE_ENV === 'development' 
+        ? error instanceof Error ? error.message : "Erreur inconnue"
+        : undefined
     });
   }
 };
