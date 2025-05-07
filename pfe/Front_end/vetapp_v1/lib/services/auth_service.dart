@@ -5,7 +5,7 @@ import '../models/token_storage.dart';
 
 class AuthService {
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: "http://192.168.1.18:3000/api/auth",
+    baseUrl: "http://192.168.1.24:3000/api/auth",
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
   ));
@@ -29,6 +29,8 @@ class AuthService {
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
+      print("Starting login process..."); // Debug print statement
+
       final response = await _dio.post(
         "/login",
         data: {
@@ -42,10 +44,16 @@ class AuthService {
         final email = response.data["user"]["email"];
         final accessToken = response.data["tokens"]["accessToken"];
         final refreshToken = response.data["tokens"]["refreshToken"];
+        // Print the access token
+        print("Access Token: $accessToken");
+        print("Refresh Token: $refreshToken");
+        print("User ID: $userId");
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('accessToken', accessToken);
         await prefs.setString('refreshToken', refreshToken);
+
+
 
         return {
           "success": true,
@@ -70,6 +78,7 @@ class AuthService {
       };
     }
   }
+
 
   Future<Map<String, dynamic>> register({
     required String firstName,

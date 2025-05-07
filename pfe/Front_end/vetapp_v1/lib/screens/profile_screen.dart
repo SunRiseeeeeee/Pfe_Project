@@ -19,7 +19,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // Fetch user details from the API using the stored userId
   Future<void> fetchUserDetails(String userId) async {
-    final url = Uri.parse('http://192.168.1.18:3000/api/users/$userId');
+    final url = Uri.parse('http://192.168.1.24:3000/api/users/$userId');
     try {
       final response = await Dio().get(url.toString());
 

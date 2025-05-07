@@ -13,64 +13,97 @@ class AppointmentsScreen extends StatefulWidget {
 }
 
 class _AppointmentsScreenState extends State<AppointmentsScreen> {
-  String? selectedPetType;
+  String? selectedPetId;
   DateTime? selectedDate;
   TimeOfDay? selectedTime;
-  String? selectedVetType;
+  String? selectedAppointmentType;
   String? selectedService;
-  List<String> petTypes = [];  // This will hold the fetched pet names
+  String? caseDescription;
+
+  List<Map<String, dynamic>> pets = [];
+  final List<String> appointmentTypes = ['domicile', 'cabinet'];
+  final List<String> services = ['Consultation', 'Vaccination', 'Surgery', 'Grooming'];
 
   bool _isLoading = false;
+  bool _isSubmitting = false;
   late final AppointmentService _appointmentService;
   late final PetService _petService;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _appointmentService = AppointmentService(
-      dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api')),
-    );
-    _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api')));
-
-    // Fetch the pets for the user
-    _fetchPets();
+    final dio = Dio(BaseOptions(
+      baseUrl: 'http://192.168.1.24:3000/api',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    ));
+    _appointmentService = AppointmentService(dio: dio);
+    _petService = PetService(dio: dio);
+    _initializeUserAndPets();
   }
 
-  Future<void> _fetchPets() async {
+  Future<void> _initializeUserAndPets() async {
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
-      final userId = "USER_ID_HERE";  // Get the actual userId from your authentication system
-      final pets = await _petService.getUserPets(userId);
-
-      setState(() {
-        petTypes = pets;
-      });
+      await _fetchPets();
     } catch (e) {
-      print('Error fetching pets: $e');
-      setState(() {
-        petTypes = []; // Empty list if there was an error
-      });
+      setState(() => _errorMessage = e.toString());
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchPets() async {
+    try {
+      final fetchedPets = await _petService.getUserPets();
+      setState(() => pets = fetchedPets);
+    } catch (e) {
+      setState(() => _errorMessage = 'Failed to load pets: ${e.toString()}');
+    }
+  }
+
+  Future<void> _selectDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null) {
+      setState(() => selectedDate = picked);
+    }
+  }
+
+  Future<void> _selectTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+    if (picked != null) {
+      setState(() => selectedTime = picked);
     }
   }
 
   Future<void> _createAppointment() async {
-    if (selectedPetType == null || selectedDate == null || selectedTime == null || selectedVetType == null || selectedService == null) {
+    if (selectedPetId == null ||
+        selectedDate == null ||
+        selectedTime == null ||
+        selectedAppointmentType == null ||
+        selectedService == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill all fields")),
+        const SnackBar(content: Text("Please fill all required fields")),
       );
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isSubmitting = true);
 
     try {
       final appointmentDateTime = DateTime(
@@ -80,19 +113,22 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         selectedTime!.hour,
         selectedTime!.minute,
       );
+      print('Veterinaire ID: ${widget.vet.id}');
 
       final result = await _appointmentService.createAppointment(
-        veterinaireId: widget.vet.id,  // Make sure the veterinarian ID is correct
+        veterinaireId: widget.vet.id,
         date: appointmentDateTime,
-        animalType: selectedPetType!,
-        type: selectedVetType!,
+        animalId: selectedPetId!,
+        type: selectedAppointmentType!,
         services: [selectedService!],
+        caseDescription: caseDescription,
       );
 
       if (result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Appointment created successfully!")),
         );
+        Navigator.pop(context, true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result['message'] ?? 'Error creating appointment')),
@@ -100,12 +136,10 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("An error occurred. Please try again.")),
+        SnackBar(content: Text("Error: ${e.toString()}")),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isSubmitting = false);
     }
   }
 
@@ -113,52 +147,169 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Appointments'),
+        title: const Text('Book Appointment'),
+        elevation: 0,
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+          ? Center(child: Text(_errorMessage!))
+          : _buildAppointmentForm(),
+    );
+  }
+
+  Widget _buildAppointmentForm() {
+    final localizations = MaterialLocalizations.of(context);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("1. Select Your Pet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          if (pets.isEmpty)
+            const Text('No pets found. Please add a pet first.', style: TextStyle(color: Colors.red)),
+          if (pets.isNotEmpty) _buildPetSelector(),
+          const SizedBox(height: 24),
+
+          const Text("2. Select Date & Time", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Row(
             children: [
-              // Pet Selector
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : petTypes.isEmpty
-                  ? const Center(child: Text('No pets found'))
-                  : _buildPetSelector(),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _selectDate,
+                  child: Text(
+                    selectedDate == null
+                        ? 'Select Date'
+                        : '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _selectTime,
+                  child: Text(
+                    selectedTime == null
+                        ? 'Select Time'
+                        : localizations.formatTimeOfDay(selectedTime!),
+                  ),
+                ),
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 24),
+
+          const Text("3. Appointment Type", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: selectedAppointmentType,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'Select type',
+            ),
+            items: appointmentTypes.map((type) {
+              return DropdownMenuItem(
+                value: type,
+                child: Text(type[0].toUpperCase() + type.substring(1)),
+              );
+            }).toList(),
+            onChanged: (value) => setState(() => selectedAppointmentType = value),
+          ),
+          const SizedBox(height: 24),
+
+          const Text("4. Service Needed", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: selectedService,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'Select service',
+            ),
+            items: services.map((service) {
+              return DropdownMenuItem(
+                value: service,
+                child: Text(service),
+              );
+            }).toList(),
+            onChanged: (value) => setState(() => selectedService = value),
+          ),
+          const SizedBox(height: 24),
+
+          const Text("5. Case Description (Optional)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          TextField(
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'Describe your pet\'s condition...',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) => caseDescription = value,
+          ),
+          const SizedBox(height: 32),
+
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
+              onPressed: _isSubmitting ? null : _createAppointment,
+              child: _isSubmitting
+                  ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 3,
+                ),
+              )
+                  : const Text('BOOK APPOINTMENT', style: TextStyle(fontSize: 16)),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // This widget will allow the user to choose from the fetched pets
   Widget _buildPetSelector() {
     return Column(
-      children: petTypes.map((pet) {
-        final isSelected = pet == selectedPetType;
-        return GestureDetector(
-          onTap: () => setState(() => selectedPetType = pet),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: isSelected ? Colors.deepPurple : Colors.grey[200],
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: isSelected ? Colors.deepPurple : Colors.grey),
+      children: pets.map((pet) {
+        final isSelected = pet['_id'] == selectedPetId;
+        final String name = pet['name']?.toString() ?? 'Unnamed';
+        final String type = pet['type']?.toString() ?? 'Unknown';
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
+              width: 1,
             ),
-            child: Text(
-              pet,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : Colors.black,
-              ),
+          ),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Icon(
+              Icons.pets,
+              color: isSelected ? Theme.of(context).primaryColor : Colors.grey,
             ),
+            title: Text(
+              name,
+              style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
+            ),
+            subtitle: Text(type),
+            trailing: isSelected
+                ? Icon(Icons.check_circle, color: Theme.of(context).primaryColor)
+                : null,
+            onTap: () => setState(() => selectedPetId = pet['_id']),
           ),
         );
       }).toList(),
     );
   }
+
 }
