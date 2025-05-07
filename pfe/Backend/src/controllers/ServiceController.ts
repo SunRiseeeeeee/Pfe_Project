@@ -101,18 +101,14 @@ export const updateService = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    
-    // Récupération des champs textuels depuis form-data
-    const name = req.body.name ? String(req.body.name) : undefined;
-    const description = req.body.description ? String(req.body.description) : undefined;
-    const imageFile = req.file; // Fichier uploadé
+    const { name, description } = req.body;
+    const imageFile = req.file;
 
-    // Debug: afficher les données reçues
-    console.log('Données reçues:', { name, description, file: imageFile?.filename });
-
-    // Vérification qu'il y a bien des données à mettre à jour
+    // Vérification des données
     if (!name && !description && !imageFile) {
-      res.status(400).json({ message: "Aucune donnée valide fournie pour la mise à jour" });
+      res.status(400).json({ 
+        message: "Au moins un champ (nom, description ou image) doit être fourni pour la mise à jour" 
+      });
       return;
     }
 
@@ -124,43 +120,33 @@ export const updateService = async (
     }
 
     // Préparation des données de mise à jour
-    const updateData: Partial<IServiceInput> = {};
-    if (name) updateData.name = name;
-    if (description) updateData.description = description;
+    const updateData: Partial<IServiceInput> = {
+      ...(name && { name }),
+      ...(description && { description }),
+    };
 
-    // Gestion de l'image si un fichier est fourni
+    // Gestion de l'image
     if (imageFile) {
-      // Suppression de l'ancienne image si elle existe
-      if (existingService.image) {
-        try {
-          const imagePath = existingService.image.split('/uploads/services/')[1];
-          const fullPath = path.join(__dirname, '../uploads/services', imagePath);
-          if (fs.existsSync(fullPath)) {
-            fs.unlinkSync(fullPath);
-          }
-        } catch (error) {
-          console.error("Erreur lors de la suppression de l'ancienne image:", error);
+      try {
+        // Suppression de l'ancienne image
+        if (existingService.image) {
+          await deleteExistingImage(existingService.image, req);
         }
+
+        // Traitement de la nouvelle image
+        const localPath = `/uploads/services/${imageFile.filename}`;
+const imageUrl = buildImageUrl(req, localPath);
+updateData.image = imageUrl;
+
+
+      } catch (error) {
+        console.error("Erreur de traitement de l'image:", error);
+        res.status(500).json({ message: "Erreur lors du traitement de l'image" });
+        return;
       }
-
-      // Génération d'un nouveau nom de fichier
-      const newFilename = `service-${Date.now()}-${imageFile.originalname}`;
-      const uploadDir = path.join(__dirname, '../uploads/services');
-
-      // Création du dossier s'il n'existe pas
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      // Déplacement du fichier uploadé
-      const newPath = path.join(uploadDir, newFilename);
-      await fs.promises.rename(imageFile.path, newPath);
-
-      // Mise à jour du chemin de l'image
-      updateData.image = `${req.protocol}://${req.get('host')}/uploads/services/${newFilename}`;
     }
 
-    // Mise à jour du service dans la base de données
+    // Mise à jour en base de données
     const updatedService = await ServiceService.updateService(id, updateData);
     
     if (!updatedService) {
@@ -168,17 +154,59 @@ export const updateService = async (
       return;
     }
 
-    // Réponse avec le service mis à jour
-    res.status(200).json({
+    // Réponse finale
+    const responseData = {
       ...updatedService.toObject(),
       image: updateData.image || existingService.image
-    });
+    };
+
+    res.status(200).json(responseData);
 
   } catch (error) {
     console.error('Erreur dans updateService:', error);
     next(error);
   }
 };
+
+// Fonctions utilitaires (restent identiques)
+async function deleteExistingImage(imageUrl: string, req: Request): Promise<void> {
+  try {
+    const basePath = path.join(__dirname, '..', '..', 'uploads', 'services');
+    const filename = imageUrl.split('/uploads/services/')[1];
+    
+    if (filename) {
+      const fullPath = path.join(basePath, filename);
+      if (fs.existsSync(fullPath)) {
+        await fs.promises.unlink(fullPath);
+      }
+    }
+  } catch (error) {
+    console.error("Erreur lors de la suppression de l'image existante:", error);
+    throw error;
+  }
+}
+
+async function processUploadedImage(file: Express.Multer.File, req: Request): Promise<string> {
+  const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'services');
+  
+  // Création du dossier si nécessaire
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  // Génération du nouveau nom de fichier
+  const fileExt = path.extname(file.originalname);
+  const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+  const newFilename = `service-${uniqueSuffix}${fileExt}`;
+  const newPath = path.join(uploadDir, newFilename);
+
+  // Déplacement du fichier
+  await fs.promises.rename(file.path, newPath);
+
+  // Retourne l'URL complète
+  return `${req.protocol}://${req.get('host')}/uploads/services/${newFilename}`;
+}
+
 /**
  * Supprime un service par ID
  */
