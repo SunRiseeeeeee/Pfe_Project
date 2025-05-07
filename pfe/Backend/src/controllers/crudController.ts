@@ -2,6 +2,11 @@ import { Request, Response, NextFunction } from "express";
 import { UserService } from "../services/userService";
 import User, { UserRole } from "../models/User";
 import mongoose from "mongoose";
+import { userUpload } from '../services/userMulterConfig';
+import path from "path";
+import fs from 'fs';
+
+
 
 // Type pour les contrôleurs Express (retour void)
 type ExpressController = (req: Request, res: Response, next?: NextFunction) => Promise<void>;
@@ -40,42 +45,134 @@ export const getUserById: ExpressController = async (req, res) => {
   }
 };
 
+
+
+
 export const updateUser: ExpressController = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const updateFields = { ...req.body };
+  userUpload(req, res, async (uploadError) => {
+    try {
+      const { userId } = req.params;
+      
+      // Validation de l'ID utilisateur
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return sendJsonResponse(res, 400, { 
+          success: false,
+          message: "ID utilisateur invalide" 
+        });
+      }
 
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      sendJsonResponse(res, 400, { message: "ID utilisateur invalide" });
-      return;
-    }
+      // Gestion des erreurs d'upload
+      if (uploadError) {
+        return sendJsonResponse(res, 400, {
+          success: false,
+          message: "Erreur lors de l'upload de l'image",
+          error: uploadError.message
+        });
+      }
 
-    const protectedFields = ['email', 'role', 'password'];
-    if (protectedFields.some(field => field in updateFields)) {
-      sendJsonResponse(res, 403, {
-        message: "La modification de certains champs n'est pas autorisée"
+      const updateFields = { ...req.body };
+
+      // Gestion de l'image uploadée
+      if (req.file) {
+        const newImagePath = `${req.protocol}://${req.get('host')}/uploads/users/${req.file.filename}`;
+        updateFields.profilePicture = newImagePath;
+        
+        // Suppression de l'ancienne image
+        try {
+          const oldUser = await User.findById(userId).select('profilePicture').lean();
+          if (oldUser?.profilePicture) {
+            const filename = path.basename(oldUser.profilePicture);
+            const oldImagePath = path.join(__dirname, '..', '..', 'uploads', 'users', filename);
+            
+            if (fs.existsSync(oldImagePath)) {
+              fs.unlink(oldImagePath, (unlinkError) => {
+                if (unlinkError) console.error('Erreur suppression ancienne image:', unlinkError);
+              });
+            }
+          }
+        } catch (fsError) {
+          console.error('Erreur gestion fichiers:', fsError);
+        }
+      }
+
+      // Protection des champs sensibles
+      const protectedFields = ['email', 'role', 'password', 'veterinaireId', 'isActive'];
+      const invalidUpdate = protectedFields.some(field => field in updateFields);
+      
+      if (invalidUpdate) {
+        // Suppression de la nouvelle image si uploadée
+        if (req.file) {
+          const tempPath = path.join(__dirname, '..', '..', 'uploads', 'users', req.file.filename);
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        }
+        
+        return sendJsonResponse(res, 403, {
+          success: false,
+          message: "Modification non autorisée pour certains champs"
+        });
+      }
+
+      // Mise à jour de l'utilisateur
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        updateFields,
+        { 
+          new: true,
+          runValidators: true,
+          select: '-password -refreshToken -loginAttempts -lockUntil'
+        }
+      );
+
+      if (!updatedUser) {
+        // Suppression de la nouvelle image si l'utilisateur n'existe pas
+        if (req.file) {
+          const tempPath = path.join(__dirname, '..', '..', 'uploads', 'users', req.file.filename);
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        }
+        
+        return sendJsonResponse(res, 404, {
+          success: false,
+          message: "Utilisateur non trouvé"
+        });
+      }
+
+      // Réponse réussie
+      sendJsonResponse(res, 200, {
+        success: true,
+        message: "Profil mis à jour avec succès",
+        user: {
+          id: updatedUser._id,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          profilePicture: updatedUser.profilePicture,
+          email: updatedUser.email,
+          role: updatedUser.role
+        }
       });
-      return;
-    }
 
-    const updatedUser = await UserService.updateUser(userId, updateFields);
-    if (!updatedUser) {
-      sendJsonResponse(res, 404, { message: "Utilisateur non trouvé" });
-      return;
-    }
+    } catch (error) {
+      console.error("Erreur updateUser:", error);
+      
+      // Nettoyage des fichiers en cas d'erreur
+      if (req.file) {
+        try {
+          const tempPath = path.join(__dirname, '..', '..', 'uploads', 'users', req.file.filename);
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch (cleanupError) {
+          console.error('Erreur nettoyage fichier:', cleanupError);
+        }
+      }
 
-    sendJsonResponse(res, 200, {
-      message: "Coordonnées mises à jour avec succès",
-      user: updatedUser
-    });
-  } catch (error) {
-    console.error("Erreur updateUser:", error);
-    sendJsonResponse(res, 400, {
-      message: error instanceof Error ? error.message : "Erreur lors de la mise à jour"
-    });
-  }
+      sendJsonResponse(res, 500, {
+        success: false,
+        message: error instanceof Error ? error.message : "Erreur serveur lors de la mise à jour",
+        ...(process.env.NODE_ENV === 'development' && {
+          error: error instanceof Error ? error.stack : undefined
+        })
+      });
+    }
+  });
 };
-
 export const deleteUser: ExpressController = async (req, res) => {
   try {
     const { userId } = req.params;
