@@ -5,6 +5,8 @@ import {
   signupAdmin,
   loginHandler,
   refreshTokenHandler,
+  resetPassword,
+
   forgetPassword,
   logoutHandler,
 } from "../controllers/authController";
@@ -21,6 +23,8 @@ const router = Router();
  *   name: Auth
  *   description: Authentication management
  */
+router.post("/reset-password", resetPassword);
+
 router.post("/forget-password", forgetPassword);
 /**
  * @swagger

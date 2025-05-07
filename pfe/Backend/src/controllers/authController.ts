@@ -10,6 +10,7 @@ import nodemailer from "nodemailer";
 import crypto from 'crypto';  // Utilise cette importation pour accéder à 'randomBytes'
 import { userUpload } from '../services/userMulterConfig';
 
+
 //#region Interfaces et Types
 interface WorkingHours {
   day: string;
@@ -283,6 +284,63 @@ const handleControllerError = (error: unknown): ErrorResponse => {
 //#endregion
 
 //#region Controller Handlers
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// Fonction de réinitialisation du mot de passe
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      res.status(400).json({ message: "All fields are required" });
+      return;
+    }
+
+    // 🔑 On “ré-active” les champs cachés
+    const user = await User
+      .findOne({ email: email.toLowerCase() })
+      .select("+resetPasswordCode +resetPasswordExpires");
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    console.log("Code dans la base de données:", user.resetPasswordCode);
+    console.log("Date d'expiration dans la base :", user.resetPasswordExpires);
+
+    if (
+      user.resetPasswordCode !== code ||
+      !user.resetPasswordExpires ||
+      user.resetPasswordExpires.getTime() < Date.now()
+    ) {
+      res.status(400).json({ message: "Invalid or expired verification code" });
+      return;
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.resetPasswordCode = undefined;
+    user.resetPasswordExpires = undefined;
+
+    await user.save();
+
+    res.status(200).json({ message: "Password has been reset successfully" });
+    return;
+  } catch (error) {
+    console.error("Error during password reset:", error);
+    res.status(500).json({ message: "Internal server error" });
+    return;
+  }
+};
+
+// Fonction de demande de réinitialisation de mot de passe (Oublié)
 export const forgetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email } = req.body;
@@ -299,34 +357,41 @@ export const forgetPassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString(); // code à 6 chiffres
+    // 🔍 Génération du code et de l'expiration
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
+    // 🔄 Mise à jour de l'utilisateur avec le code et la date d'expiration
     user.resetPasswordCode = code;
-    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // expire dans 15 minutes
+    user.resetPasswordExpires = expires;
+
+    // 🔍 Logs pour vérifier avant sauvegarde
+    console.log("Avant sauvegarde - Code :", user.resetPasswordCode);
+    console.log("Avant sauvegarde - Expiration :", user.resetPasswordExpires);
+
+    // ✅ Sauvegarde dans la base de données
     await user.save();
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+    // 🔍 Vérification après sauvegarde
+    const updatedUser = await User.findOne({ email });  // Récupération de l'utilisateur après la sauvegarde
+    console.log("Après sauvegarde - Code :", updatedUser?.resetPasswordCode);
+    console.log("Après sauvegarde - Expiration :", updatedUser?.resetPasswordExpires);
 
+    // 📧 Envoi de l'email
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
       subject: "Reset your password",
-      text: `Your verification code is: ${code}`,
+      text: `Your verification code is ${code}. It will expire in 10 minutes.`,
     });
 
     res.status(200).json({ message: "Verification code sent successfully" });
+
   } catch (error) {
-    console.error("Email sending error:", error);
+    console.error("Error during password reset request:", error);
     res.status(500).json({ message: "Something went wrong" });
   }
 };
-
 
 export const signupHandler = (role: UserRole): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {

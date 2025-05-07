@@ -57,15 +57,10 @@ export interface IUser extends Document {
   loginAttempts?: number;
   lockUntil?: Date | null;
   lastLogin?: Date;
-  passwordResetCode?: string | null;
-  passwordResetCodeExpires?: Date | null;
+  resetPasswordCode?: string | null;
+  resetPasswordExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
-    // Ajout des nouvelles propriétés
-    verificationCode?: string | null;           // Code de réinitialisation du mot de passe
-    verificationCodeExpires?: Date | null;     // Date d'expiration du code
-    resetPasswordCode?: string;
-  resetPasswordExpires?: Date;  
 }
 
 const UserSchema: Schema = new Schema<IUser>(
@@ -183,8 +178,8 @@ const UserSchema: Schema = new Schema<IUser>(
     loginAttempts: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, default: null, select: false },
     lastLogin: { type: Date, default: null },
-    passwordResetCode: { type: String, default: null, select: false },
-    passwordResetCodeExpires: { type: Date, default: null, select: false },
+    resetPasswordCode: { type: String, default: null, select: false },
+    resetPasswordExpires: { type: Date, default: null, select: false },
   },
   {
     timestamps: true,
@@ -198,8 +193,8 @@ const UserSchema: Schema = new Schema<IUser>(
         delete ret.refreshToken;
         delete ret.loginAttempts;
         delete ret.lockUntil;
-        delete ret.passwordResetCode;
-        delete ret.passwordResetCodeExpires;
+        delete ret.resetPasswordCode;
+        delete ret.resetPasswordExpires;
         return ret;
       },
     },
@@ -213,8 +208,8 @@ const UserSchema: Schema = new Schema<IUser>(
         delete ret.refreshToken;
         delete ret.loginAttempts;
         delete ret.lockUntil;
-        delete ret.passwordResetCode;
-        delete ret.passwordResetCodeExpires;
+        delete ret.resetPasswordCode;
+        delete ret.resetPasswordExpires;
         return ret;
       },
     },

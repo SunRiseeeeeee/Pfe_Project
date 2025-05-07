@@ -117,40 +117,44 @@ export class AuthService {
     if (!email) {
       throw new Error("Email is required");
     }
-  
-    const user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+
+    // On récupère aussi les champs resetPasswordCode & resetPasswordExpires (select: false par défaut)
+    const user = await User
+      .findOne({ email: email.toLowerCase(), isActive: true })
+      .select("+resetPasswordCode +resetPasswordExpires") as IUser | null;
+
     if (!user) {
       throw new Error("No active account found with this email");
     }
-  
+
     // Générer un code de vérification à 6 chiffres
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-  
-    // Facultatif : Ajouter une date d'expiration (15 minutes par exemple)
+
+    // Ajouter une date d'expiration (15 minutes)
     const expiration = new Date(Date.now() + 15 * 60 * 1000);
-  
+
     // Sauvegarder le code et son expiration dans la base
-    user.verificationCode = code;
-    user.verificationCodeExpires = expiration;
+    user.resetPasswordCode = code;
+    user.resetPasswordExpires = expiration;
     await user.save();
-  
-    // Configurer le transporteur SMTP (exemple avec Gmail, remplace par tes valeurs)
+
+    // Configurer le transporteur SMTP (exemple avec Gmail)
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      service: "gmail",
       auth: {
         user: process.env.SMTP_USER!,
         pass: process.env.SMTP_PASS!,
       },
     });
-  
+
     // Contenu de l'email
     const mailOptions = {
       from: process.env.SMTP_USER!,
       to: user.email,
-      subject: 'Code de réinitialisation du mot de passe',
-      text: `Bonjour ${user.firstName},\n\nVotre code de vérification est : ${code}\n\nCe code expire dans 15 minutes.`,
+      subject: "Code de réinitialisation du mot de passe",
+      text: `Bonjour ${user.firstName},\n\nVotre code de réinitialisation est : ${code}\n\nIl expire dans 15 minutes.`,
     };
-  
+
     // Envoi de l'email
     await transporter.sendMail(mailOptions);
   }
