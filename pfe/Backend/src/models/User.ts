@@ -50,8 +50,7 @@ export interface IUser extends Document {
   description?: string;
   address?: IAddress;
   details?: IUserDetails;
-  reviews?: Types.ObjectId[];
-  rating?: number;
+
   refreshToken?: string | null;
   isActive?: boolean;
   loginAttempts?: number;
@@ -61,6 +60,7 @@ export interface IUser extends Document {
   resetPasswordExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+
 }
 
 const UserSchema: Schema = new Schema<IUser>(
@@ -160,19 +160,8 @@ const UserSchema: Schema = new Schema<IUser>(
       specialization: { type: String, default: null, trim: true },
       experienceYears: { type: Number, default: 0, min: 0, max: 100 },
     },
-    reviews: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "Review",
-      },
-    ],
-    rating: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5,
-      set: (value: number) => parseFloat(value.toFixed(2)),
-    },
+
+
     refreshToken: { type: String, default: null, select: false },
     isActive: { type: Boolean, default: true },
     loginAttempts: { type: Number, default: 0, select: false },
@@ -216,9 +205,12 @@ const UserSchema: Schema = new Schema<IUser>(
   }
 );
 
+// Indexes
 UserSchema.index({ email: 1, username: 1, phoneNumber: 1 }, { unique: true });
 UserSchema.index({ "address.city": 1, "address.country": 1 });
 UserSchema.index({ role: 1, isActive: 1 });
+UserSchema.index({ ratedVeterinarians: 1 });
+
 
 const User = mongoose.model<IUser>("User", UserSchema);
 export default User;

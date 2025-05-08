@@ -225,9 +225,6 @@ const buildExtraDetails = (role: UserRole, body: SignupRequest): Partial<IUser> 
     }
   };
 
-  if (role === UserRole.VETERINAIRE) {
-    details.rating = 0;
-  }
 
   return details;
 };
@@ -512,7 +509,6 @@ export const signupHandler = (role: UserRole): RequestHandler => {
           details: createdUser.details,
           mapsLocation: createdUser.mapsLocation,
           description: createdUser.description,
-          rating: createdUser.rating,
           isActive: createdUser.isActive,
           createdAt: createdUser.createdAt,
           updatedAt: createdUser.updatedAt,

@@ -10,6 +10,7 @@ import animalRoutes from "./routes/animalRoutes";     // routes animaux
 import appointmentRoutes from "./routes/appointmentRoutes";
 import serviceRoutes from "./routes/serviceRoutes";   // routes services
 import { setupSwagger } from "./swaggerConfig";
+import ReviewRatingRoutes from "./routes/ReviewRatingRoutes";
 
 dotenv.config();
 
@@ -34,7 +35,7 @@ app.use("/api/users", crudRoutes);
 app.use("/api/animals", animalRoutes);          // Routes pour animaux corrigées
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/services", serviceRoutes);        // Nouvelle route pour services
-
+app.use("/api/reviews", ReviewRatingRoutes);
 // Documentation Swagger
 setupSwagger(app);
 
