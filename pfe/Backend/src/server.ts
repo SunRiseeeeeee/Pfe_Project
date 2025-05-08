@@ -11,6 +11,7 @@ import appointmentRoutes from "./routes/appointmentRoutes";
 import serviceRoutes from "./routes/serviceRoutes";   // routes services
 import { setupSwagger } from "./swaggerConfig";
 import ReviewRatingRoutes from "./routes/ReviewRatingRoutes";
+import animalFicheRoutes from "./routes/animalFicheRoutes";
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'services', 'uploads')))
 app.use("/api/auth", authRoutes);
 app.use("/api/users", crudRoutes);
 app.use("/api/animals", animalRoutes);          // Routes pour animaux corrigées
+app.use("/api/animal-fiche", animalFicheRoutes);  
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/services", serviceRoutes);        // Nouvelle route pour services
 app.use("/api/reviews", ReviewRatingRoutes);
