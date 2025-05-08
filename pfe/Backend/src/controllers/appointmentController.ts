@@ -413,3 +413,58 @@ export const updateAppointment = async (req: Request, res: Response, next: NextF
     next(error);
   }
 };
+// Fonction pour récupérer la liste des clients avec un rendez-vous accepté chez un vétérinaire spécifique
+export const getClientsWithAcceptedAppointmentsForVeterinaire = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { veterinaireId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+      return sendResponse(res, 400, {}, "ID de vétérinaire invalide.");
+    }
+
+    // Vérifier si le vétérinaire existe
+    const veterinaireExists = await User.exists({ _id: veterinaireId, role: UserRole.VETERINAIRE });
+    if (!veterinaireExists) {
+      return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
+    }
+
+    // Récupérer les rendez-vous acceptés avec les informations des clients
+    const appointments = await Appointment.find({
+      veterinaireId,
+      status: AppointmentStatus.ACCEPTED,
+    }).populate("clientId", "firstName lastName email phoneNumber address profilePicture");
+
+    // Extraire les clients sans doublons
+    const uniqueClients = Array.from(
+      new Map(
+        appointments.map((a) => [a.clientId._id.toString(), a.clientId])
+      ).values()
+    );
+
+    if (!uniqueClients.length) {
+      return sendResponse(
+        res, 
+        404, 
+        { count: 0 }, 
+        "Aucun client avec un rendez-vous accepté trouvé."
+      );
+    }
+
+    sendResponse(
+      res, 
+      200, 
+      { 
+        count: uniqueClients.length,
+        clients: uniqueClients 
+      },
+      `${uniqueClients.length} client(s) trouvé(s) avec des rendez-vous acceptés.`
+    );
+  } catch (error) {
+    console.error("[getClientsWithAcceptedAppointmentsForVeterinaire] Error:", error);
+    next(error);
+  }
+};

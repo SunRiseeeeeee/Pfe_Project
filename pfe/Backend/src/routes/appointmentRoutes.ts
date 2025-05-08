@@ -3,6 +3,7 @@ import asyncHandler from "express-async-handler";
 import { authenticateToken } from "../middlewares/authMiddleware";
 import {
   createAppointment,
+  getClientsWithAcceptedAppointmentsForVeterinaire,
   getAppointmentForVeterinaireById,
   getAppointmentForClientById,
   getAppointmentsByClient,
@@ -14,6 +15,14 @@ import {
 } from "../controllers/appointmentController";
 
 const router = express.Router();
+
+
+/**
+ * @route GET /api/appointments/veterinaire/:veterinaireId/clients
+ * @desc Récupérer la liste des clients avec un rendez-vous accepté chez un vétérinaire spécifique
+ * @access Privé (Accès réservé aux vétérinaires ou administrateurs)
+ */
+router.get("/veterinaire/:veterinaireId/clients", getClientsWithAcceptedAppointmentsForVeterinaire);
 
 /**
  * @swagger
