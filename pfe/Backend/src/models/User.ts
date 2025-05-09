@@ -6,6 +6,7 @@ export enum UserRole {
   VETERINAIRE = "veterinaire",
   SECRETAIRE = "secretaire",
   ADMIN = "admin",
+  SECRETARIEN = "SECRETARIEN",
 }
 
 // Interface pour les horaires de travail incluant une pause

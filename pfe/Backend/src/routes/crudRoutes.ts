@@ -4,8 +4,10 @@ import {
   deleteUser,
   getVeterinarians,
   getVeterinaireById,
+  
   getUserById
 } from "../controllers/crudController";
+import { getSecretariensByVeterinaire } from '../controllers/crudController';
 
 const router = express.Router();
 
@@ -24,7 +26,8 @@ const router = express.Router();
  *         description: Erreur serveur
  */
 router.get("/veterinarians", getVeterinarians);
-
+// Route pour récupérer les secrétaires d'un vétérinaire par son ID
+router.get('/veterinaire/:veterinaireId/secretariens', getSecretariensByVeterinaire);
 /**
  * @swagger
  * /users/{userId}:

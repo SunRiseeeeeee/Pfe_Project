@@ -1,13 +1,25 @@
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction, RequestHandler } from "express";
 import { UserService } from "../services/userService";
 import User, { UserRole } from "../models/User";
 import mongoose from "mongoose";
 import { userUpload } from '../services/userMulterConfig';
+import ReviewRating from "../models/Review";
+import Veterinaire from '../models/User'; // Ajuste le chemin selon ta structure
+import Secretaire from '../models/User'; // Ajuste le chemin selon ta structure
+
 import path from "path";
 import fs from 'fs';
+import Review from "../models/Review";
 
 
-
+declare global {
+  namespace Express {
+    interface Request {
+      id?: string; // Déclaration de la propriété id optionnelle
+      // Ajoutez d'autres propriétés personnalisées si nécessaire
+    }
+  }
+}
 // Type pour les contrôleurs Express (retour void)
 type ExpressController = (req: Request, res: Response, next?: NextFunction) => Promise<void>;
 
@@ -19,7 +31,6 @@ const sendJsonResponse = (
 ): void => {
   res.status(status).json(data);
 };
-
 export const getUserById: ExpressController = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -44,10 +55,6 @@ export const getUserById: ExpressController = async (req, res) => {
     });
   }
 };
-
-
-
-
 export const updateUser: ExpressController = async (req, res) => {
   userUpload(req, res, async (uploadError) => {
     try {
@@ -227,12 +234,15 @@ export const getVeterinarians: ExpressController = async (req, res) => {
   try {
     const { 
       rating: ratingParam, 
-      location, 
+      city,
+      state,
+      country, 
       services: servicesParam,
       page: pageParam = '1',
       sort = 'desc'
     } = req.query;
 
+    // Parsing des paramètres
     const rating = ratingParam ? parseFloat(ratingParam as string) : undefined;
     const services = servicesParam ? (servicesParam as string).split(',') : undefined;
     const page = Math.max(1, parseInt(pageParam as string) || 1);
@@ -241,30 +251,61 @@ export const getVeterinarians: ExpressController = async (req, res) => {
 
     const filter: any = { role: UserRole.VETERINAIRE };
 
-    if (rating && !isNaN(rating)) {
-      filter.rating = { $gte: rating };
-    }
+    // Filtrage par localisation (city, state, country)
+    if (city || state || country) {
+      filter.$and = [];
 
-    if (location) {
-      const regex = new RegExp(location as string, 'i');
-      filter.$or = [
-        { 'address.city': regex },
-        { 'address.state': regex },
-        { 'address.country': regex }
-      ];
+      if (city) filter.$and.push({ 'address.city': new RegExp(city as string, 'i') });
+      if (state) filter.$and.push({ 'address.state': new RegExp(state as string, 'i') });
+      if (country) filter.$and.push({ 'address.country': new RegExp(country as string, 'i') });
     }
 
     if (services?.length) {
       filter['details.services'] = { $in: services };
     }
 
-    const [veterinarians, totalCount] = await Promise.all([
-      User.find(filter, '-password -refreshToken')
-        .sort({ rating: sortOrder, lastName: 1 })
-        .skip((page - 1) * limit)
-        .limit(limit),
-      User.countDocuments(filter)
-    ]);
+    // Debug : Log du filtre généré pour vérifier la bonne structure
+    console.log("Filtre généré : ", filter);
+
+    // Pipeline d'agrégation pour calculer l'averageRating
+    const aggregationPipeline = [
+      { $match: filter },
+      {
+        $lookup: {
+          from: "reviews",
+          localField: "_id",
+          foreignField: "veterinarian",
+          as: "reviews",
+        },
+      },
+      {
+        $addFields: {
+          averageRating: { $avg: "$reviews.rating" }
+        },
+      },
+      {
+        $sort: { averageRating: sortOrder as 1 | -1, lastName: sortOrder as 1 | -1 }
+      },
+      {
+        $project: {
+          password: 0,
+          refreshToken: 0,
+          reviews: 0,
+        }
+      },
+      {
+        $skip: (page - 1) * limit
+      },
+      {
+        $limit: limit
+      }
+    ];
+
+    // Exécution de l'agrégation
+    const veterinarians = await User.aggregate(aggregationPipeline);
+
+    // Récupérer le nombre total pour la pagination
+    const totalCount = await User.countDocuments(filter);
 
     if (!veterinarians.length) {
       sendJsonResponse(res, 404, { message: "Aucun vétérinaire trouvé" });
@@ -287,6 +328,71 @@ export const getVeterinarians: ExpressController = async (req, res) => {
   }
 };
 
+export const getSecretariensByVeterinaire: RequestHandler = async (req, res, next) => {
+  try {
+    // Vérification de la connexion MongoDB
+    if (!mongoose.connection?.readyState) {
+      res.status(500).json({ 
+        success: false,
+        message: 'Database connection not established'
+      });
+      return;
+    }
+
+    const { veterinaireId } = req.params;
+
+    // Validation de l'ID
+    if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid veterinarian ID format'
+      });
+      return;
+    }
+
+    const vetObjectId = new mongoose.Types.ObjectId(veterinaireId);
+
+    // Vérification que le vétérinaire existe
+    const vetExists = await User.exists({
+      _id: vetObjectId,
+      role: 'veterinaire'
+    });
+
+    if (!vetExists) {
+      res.status(404).json({
+        success: false,
+        message: 'Veterinarian not found'
+      });
+      return;
+    }
+
+    // Recherche des secrétaires
+    const secretariens = await User.find({
+      role: 'secretaire',
+      veterinaireId: vetObjectId,
+      isActive: true
+    })
+      .select('_id firstName lastName email phoneNumber profilePicture createdAt')
+      .sort({ lastName: 1, firstName: 1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: secretariens.length,
+      data: secretariens
+    });
+
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      ...(process.env.NODE_ENV === 'development' && {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    });
+  }
+};
 export const getVeterinaireById: ExpressController = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -296,16 +402,65 @@ export const getVeterinaireById: ExpressController = async (req, res) => {
       return;
     }
 
-    const vet = await User.findOne({
-      _id: userId,
-      role: UserRole.VETERINAIRE
-    }).select('-password -refreshToken');
+    // Pipeline d'agrégation amélioré
+    const aggregationPipeline = [
+      { 
+        $match: { 
+          _id: new mongoose.Types.ObjectId(userId),
+          role: UserRole.VETERINAIRE 
+        } 
+      },
+      {
+        $lookup: {
+          from: "reviews",
+          localField: "_id",
+          foreignField: "veterinarian",
+          as: "reviews",
+          pipeline: [
+            {
+              $group: {
+                _id: "$user",  // Groupe par utilisateur distinct
+                rating: { $first: "$rating" } // Prend juste la note (peu importe laquelle)
+              }
+            }
+          ]
+        }
+      },
+      {
+        $addFields: {
+          averageRating: {
+            $cond: {
+              if: { $gt: [{ $size: "$reviews" }, 0] },
+              then: { $avg: "$reviews.rating" },
+              else: 0
+            }
+          },
+          totalReviews: { // Nombre total de reviews (tous utilisateurs confondus)
+            $size: "$reviews"
+          },
+          uniqueReviewersCount: { // Nombre d'utilisateurs distincts ayant laissé un avis
+            $size: "$reviews"
+          },
+          reviews: "$$REMOVE" // On supprime le tableau complet des reviews
+        }
+      },
+      {
+        $project: {
+          password: 0,
+          refreshToken: 0,
+          // On conserve les nouveaux champs calculés
+        }
+      }
+    ];
 
-    if (!vet) {
+    const result = await User.aggregate(aggregationPipeline);
+
+    if (!result.length) {
       sendJsonResponse(res, 404, { message: "Vétérinaire non trouvé" });
       return;
     }
 
+    const vet = result[0];
     sendJsonResponse(res, 200, vet);
   } catch (error) {
     console.error("Erreur getVeterinaireById:", error);
