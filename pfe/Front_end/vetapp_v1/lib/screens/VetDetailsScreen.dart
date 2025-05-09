@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
-
+import 'dart:convert';
 import 'appointment_screen.dart';
 import 'bookAppointment.dart';
 
@@ -20,6 +20,8 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    print('Working hours: ${widget.vet.workingHours}');
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -119,11 +121,26 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                 widget.vet.description ?? 'No description available for this veterinarian.',
                 style: const TextStyle(color: Colors.grey),
               ),
+
+              const SizedBox(height: 24),
+              Text(
+                'Working Hours',
+                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                formatWorkingHoursFromString(widget.vet.workingHours ?? ''),
+                style: const TextStyle(color: Colors.grey),
+              ),
+
+
+
               const SizedBox(height: 24),
               Text(
                 'Fees',
                 style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
               ),
+
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -165,6 +182,49 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
       ),
     );
   }
+  String formatWorkingHoursFromString(String workingHoursString) {
+    final entries = workingHoursString.split(RegExp(r'\},\s*\{'));
+
+    List<String> formatted = [];
+
+    for (var entry in entries) {
+      // Clean braces
+      entry = entry.replaceAll(RegExp(r'[\{\}]'), '');
+
+      // Split into key-value pairs
+      final pairs = entry.split(',').map((e) => e.trim()).toList();
+
+      Map<String, String?> data = {};
+      for (var pair in pairs) {
+        final parts = pair.split(':');
+        if (parts.length >= 2) {
+          final key = parts[0].trim();
+          final value = parts.sublist(1).join(':').trim();
+          data[key] = value == 'null' ? null : value;
+        }
+      }
+
+      final day = data['day'] ?? '...';
+      final start = data['start'] ?? '...';
+      final end = data['end'] ?? '...';
+      final pauseStart = data['pauseStart'];
+      final pauseEnd = data['pauseEnd'];
+
+      String formattedEntry = '$day: $start';
+
+      if (pauseStart != null && pauseEnd != null) {
+        formattedEntry += ' → $pauseStart (Break) → $pauseEnd';
+      }
+
+      formattedEntry += ' → $end';
+      formatted.add(formattedEntry);
+    }
+
+    return formatted.join('\n');
+  }
+
+
+
 
   // Helper method to display info stats
   Widget _infoStat(IconData icon, String value, String label) {

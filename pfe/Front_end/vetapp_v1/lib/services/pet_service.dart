@@ -8,7 +8,7 @@ class PetService {
 
   PetService({required Dio dio})
       : dio = Dio(
-    BaseOptions(baseUrl: 'http://192.168.1.24:3000/api'), // ✅ Correct base URL
+    BaseOptions(baseUrl: 'http://192.168.1.18:3000/api'), // ✅ Correct base URL
   );
 
   Future<String?> _getToken() async => await TokenStorage.getToken();

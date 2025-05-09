@@ -7,8 +7,8 @@ class Veterinarian {
   final String? profilePicture;
   final double rating;
   final String? workingHours;
-  final String? location;
   final String? description;
+  final Map<String, dynamic>? address; // NEW: raw address map
 
   Veterinarian({
     required this.id,
@@ -17,42 +17,24 @@ class Veterinarian {
     this.profilePicture,
     required this.rating,
     this.workingHours,
-    this.location,
     this.description,
+    this.address,
   });
 
   factory Veterinarian.fromJson(Map<String, dynamic> json) {
-    // Enhanced ID parser with better error handling
+    // Same ID parser, safeString, and workingHours logic...
+
     String parseId(dynamic idValue) {
       try {
-        if (idValue == null) {
-          throw FormatException('Veterinarian ID is null');
-        }
-
-        if (idValue is String) {
-          if (idValue.isEmpty) {
-            throw FormatException('Veterinarian ID is empty');
-          }
-          return idValue;
-        }
-
+        if (idValue == null) throw FormatException('Veterinarian ID is null');
+        if (idValue is String && idValue.isNotEmpty) return idValue;
         if (idValue is Map) {
-          if (idValue.containsKey('\$oid')) {
-            final oid = idValue['\$oid'];
-            if (oid is String && oid.isNotEmpty) {
-              return oid;
-            }
-            throw FormatException('Invalid ObjectId format');
-          }
-          // Try other common ID map formats
+          if (idValue.containsKey('\$oid')) return idValue['\$oid'];
           if (idValue.containsKey('id')) return parseId(idValue['id']);
           if (idValue.containsKey('_id')) return parseId(idValue['_id']);
         }
-
-        // Try common alternative ID fields if primary fails
         if (json.containsKey('id')) return parseId(json['id']);
         if (json.containsKey('vetId')) return parseId(json['vetId']);
-
         throw FormatException('No valid ID found in veterinarian data');
       } catch (e) {
         debugPrint('Error parsing veterinarian ID: $e');
@@ -60,7 +42,6 @@ class Veterinarian {
       }
     }
 
-    // Enhanced safe string converter
     String safeString(dynamic value, {String fieldName = 'field'}) {
       try {
         if (value == null) return 'Unknown';
@@ -73,7 +54,6 @@ class Veterinarian {
       }
     }
 
-    // Enhanced working hours parser
     String? safeWorkingHours(dynamic details) {
       try {
         if (details is Map) {
@@ -95,8 +75,21 @@ class Veterinarian {
       profilePicture: json['profilePicture'] is String ? json['profilePicture'] : null,
       rating: (json['rating'] is num ? json['rating'].toDouble() : 0.0),
       workingHours: safeWorkingHours(json['details'] ?? json['workingHours']),
-      location: json['location'] is String ? json['location'] : null,
       description: json['description'] is String ? json['description'] : null,
+      address: json['address'] is Map<String, dynamic> ? json['address'] : null, // NEW
     );
+  }
+
+  // Getter to format the location string nicely
+  String get location {
+    if (address == null) return 'Unknown Location';
+
+    final street = address!['street'];
+    final city = address!['city'];
+    final country = address!['country'];
+
+    return [street, city, country]
+        .where((e) => e != null && e.toString().trim().isNotEmpty)
+        .join(', ');
   }
 }

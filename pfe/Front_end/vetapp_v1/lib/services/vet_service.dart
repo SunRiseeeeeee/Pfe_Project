@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 
 class VetService {
-  static const String baseUrl = "http://192.168.1.24:3000/api/users/veterinarians";
+  static const String baseUrl = "http://192.168.1.18:3000/api/users/veterinarians";
   static final Dio _dio = Dio();
 
   static Future<Map<String, dynamic>> fetchVeterinarians({

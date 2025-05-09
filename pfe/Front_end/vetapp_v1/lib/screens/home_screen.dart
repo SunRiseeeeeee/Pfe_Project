@@ -292,56 +292,19 @@ class _HomeContentState extends State<HomeContent> {
                 // Display the list of veterinarians
                 return Column(
                   children: [
-                    ListView.builder(
+                    GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2, // Two columns
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 3 / 4, // Adjust as needed
+                      ),
                       itemCount: veterinarians.length,
                       itemBuilder: (context, index) {
                         final vet = veterinarians[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Hero(
-                            tag: vet.id,
-                            child: CircleAvatar(
-                              radius: 30,
-                              backgroundImage: vet.profilePicture != null
-                                  ? NetworkImage(vet.profilePicture!)
-                                  : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
-                              child: vet.profilePicture == null ? const Icon(Icons.person) : null,
-                            ),
-                          ),
-                          title: Text(
-                            '${vet.firstName} ${vet.lastName}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.star, color: Colors.amber, size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${vet.rating}/5',
-                                    style: const TextStyle(fontFamily: 'Poppins'),
-                                  ),
-                                ],
-                              ),
-                              Row(
-                                children: [
-                                  const Icon(Icons.calendar_today, size: 16),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      vet.workingHours ?? 'N/A',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                        return GestureDetector(
                           onTap: () {
                             Navigator.push(
                               context,
@@ -350,10 +313,64 @@ class _HomeContentState extends State<HomeContent> {
                               ),
                             );
                           },
+                          child: Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                    child: vet.profilePicture != null
+                                        ? Image.network(
+                                      vet.profilePicture!,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                    )
+                                        : Image.asset(
+                                      'assets/images/default_avatar.png',
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        '${vet.firstName} ${vet.lastName}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'Poppins',
+                                          fontSize: 14,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.star, color: Colors.amber, size: 16),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${vet.rating}/5',
+                                            style: const TextStyle(fontSize: 13, fontFamily: 'Poppins'),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         );
                       },
                     ),
-                    // Pagination Controls
+                    // Pagination Controls (unchanged)
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: Row(
@@ -384,6 +401,7 @@ class _HomeContentState extends State<HomeContent> {
                     ),
                   ],
                 );
+
               },
             ),
             const SizedBox(height: 24),
