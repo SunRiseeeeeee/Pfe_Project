@@ -1,17 +1,17 @@
-import mongoose, { Schema, Document } from "mongoose";
-
+import mongoose, { Schema, Document, Types } from "mongoose";
 
 export interface IComment extends Document {
   content: string; 
   createdBy: mongoose.Types.ObjectId;
+  postId: mongoose.Types.ObjectId;
   createdAt: Date; 
 }
 
-
 const CommentSchema: Schema = new Schema({
-  content: { type: String, required: true }, // Contenu du commentaire
-  createdBy: { type: Schema.Types.ObjectId, refPath: "createdByModel", required: true }, // Référence vers l'utilisateur
-  createdAt: { type: Date, default: Date.now }, // Date de création du commentaire
+  content: { type: String, required: true },
+  createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  postId: { type: Schema.Types.ObjectId, ref: "Post", required: true },
+  createdAt: { type: Date, default: Date.now },
 });
 
 export default mongoose.model<IComment>("Comment", CommentSchema);
