@@ -468,3 +468,86 @@ export const getClientsWithAcceptedAppointmentsForVeterinaire = async (
     next(error);
   }
 };
+// Fonction pour récupérer les animaux d'un client avec au moins un rendez-vous accepté chez un vétérinaire spécifique
+
+export const getClientAnimalsWithAcceptedAppointments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { clientId, veterinaireId } = req.params;
+
+    // ✅ Validation des IDs
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      return sendResponse(res, 400, {}, "ID de client invalide.");
+    }
+    if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+      return sendResponse(res, 400, {}, "ID de vétérinaire invalide.");
+    }
+
+    // ✅ Vérification de l'existence du client et du vétérinaire
+    const [clientExists, veterinaireExists] = await Promise.all([
+      User.exists({ _id: clientId, role: UserRole.CLIENT }),
+      User.exists({ _id: veterinaireId, role: UserRole.VETERINAIRE }),
+    ]);
+
+    if (!clientExists) {
+      return sendResponse(res, 404, {}, "Client non trouvé.");
+    }
+    if (!veterinaireExists) {
+      return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
+    }
+
+    // ✅ Récupérer les rendez-vous acceptés pour ce client et ce vétérinaire
+    const acceptedAppointments = await Appointment.find({
+      clientId,
+      veterinaireId,
+      status: AppointmentStatus.ACCEPTED
+    }).select('animalId animalType');
+
+    console.log("✅ Liste des rendez-vous récupérés :", acceptedAppointments);
+
+    // 🚩 Vérification des IDs récupérés
+    if (acceptedAppointments.length === 0) {
+      return sendResponse(
+        res,
+        404,
+        { count: 0 },
+        "Aucun animal trouvé avec des rendez-vous acceptés chez ce vétérinaire."
+      );
+    }
+
+    // ✅ Récupérer les détails complets des animaux concernés
+    const animalIds = acceptedAppointments.map((appointment) => appointment.animalId);
+
+    // Assurez-vous que `animalIds` contient des ObjectId valides
+    const animals = await Animal.find({
+      _id: { $in: animalIds },
+      owner: new mongoose.Types.ObjectId(clientId), // Vérification que l'animal appartient au client
+    }).select("-__v");
+
+    // 🚩 Vérification du résultat final
+    if (animals.length === 0) {
+      return sendResponse(
+        res,
+        404,
+        { count: 0 },
+        "Les animaux avec des rendez-vous acceptés existent, mais ils ne correspondent pas au client spécifié."
+      );
+    }
+
+    sendResponse(
+      res,
+      200,
+      {
+        count: animals.length,
+        animals,
+      },
+      `${animals.length} animal(s) trouvé(s) avec des rendez-vous acceptés chez ce vétérinaire.`
+    );
+  } catch (error) {
+    console.error("[getClientAnimalsWithAcceptedAppointments] Error:", error);
+    next(error);
+  }
+};

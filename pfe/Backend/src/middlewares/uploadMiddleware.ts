@@ -2,56 +2,36 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
-// 📌 Chemin vers le dossier d'upload des utilisateurs
-const usersUploadDir = path.join(__dirname, '..','services', 'uploads', 'users');
-// 📌 Chemin vers le dossier d'upload des animaux
-const animalsUploadDir = path.join(__dirname, '..', 'services', 'uploads', 'animals');
-// 📌 Chemin vers le dossier d'upload des services
-const servicesUploadDir = path.join(__dirname, '..', 'services', 'uploads', 'services');
+// 📌 Dossiers d'upload
+const uploadDirs: Record<string, string> = {
+  users: path.join(__dirname, '..', 'services', 'uploads', 'users'),
+  animals: path.join(__dirname, '..', 'services', 'uploads', 'animals'),
+  services: path.join(__dirname, '..', 'services', 'uploads', 'services'),
+  posts: path.join(__dirname, '..', 'services', 'uploads', 'posts'),
+};
 
-// 📌 Créer les dossiers s'ils n'existent pas
-if (!fs.existsSync(usersUploadDir)) {
-  fs.mkdirSync(usersUploadDir, { recursive: true });
-}
-if (!fs.existsSync(animalsUploadDir)) {
-  fs.mkdirSync(animalsUploadDir, { recursive: true });
-}
-if (!fs.existsSync(servicesUploadDir)) {
-  fs.mkdirSync(servicesUploadDir, { recursive: true });
-}
-
-// 📌 Configuration du stockage pour les utilisateurs
-const usersStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, usersUploadDir);
-  },
-  filename: (req, file, cb) => {
-    const filename = `user-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(file.originalname)}`;
-    cb(null, filename);
-  },
+// 📌 Création des dossiers s'ils n'existent pas
+Object.values(uploadDirs).forEach((dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 });
 
-// 📌 Configuration du stockage pour les animaux
-const animalsStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, animalsUploadDir);
-  },
-  filename: (req, file, cb) => {
-    const filename = `animal-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(file.originalname)}`;
-    cb(null, filename);
-  },
-});
+// 📌 Générer le nom du fichier
+const generateFilename = (prefix: string, originalname: string): string => {
+  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(originalname)}`;
+};
 
-// 📌 Configuration du stockage pour les services
-const servicesStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, servicesUploadDir);
-  },
-  filename: (req, file, cb) => {
-    const filename = `service-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(file.originalname)}`;
-    cb(null, filename);
-  },
-});
+// 📌 Configuration du stockage dynamique
+const storage = (folder: string) =>
+  multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, folder);
+    },
+    filename: (req, file, cb) => {
+      cb(null, generateFilename(path.basename(folder), file.originalname));
+    },
+  });
 
 // 📌 Filtrer les types de fichiers (images uniquement)
 const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
@@ -62,25 +42,30 @@ const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.
   }
 };
 
-// 📌 Configuration de multer pour les utilisateurs
+// 📌 Configuration de multer pour chaque type
 const userUpload = multer({
-  storage: usersStorage,
+  storage: storage(uploadDirs.users),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max
-}).single('image'); // Le champ de formulaire s'appelle 'image'
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('image');
 
-// 📌 Configuration de multer pour les animaux
 const animalUpload = multer({
-  storage: animalsStorage,
+  storage: storage(uploadDirs.animals),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max
-}).single('image'); // Le champ de formulaire s'appelle 'image'
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('image');
 
-// 📌 Configuration de multer pour les services
 const serviceUpload = multer({
-  storage: servicesStorage,
+  storage: storage(uploadDirs.services),
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max
-}).single('image'); // Le champ de formulaire s'appelle 'image'
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('image');
 
-export { userUpload, animalUpload, serviceUpload };
+const postUpload = multer({
+  storage: storage(uploadDirs.posts),
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('photo'); // Le champ de formulaire s'appelle 'photo' pour les posts
+
+// 📌 Export des configurations
+export { userUpload, animalUpload, serviceUpload, postUpload };

@@ -12,7 +12,7 @@ import serviceRoutes from "./routes/serviceRoutes";   // routes services
 import { setupSwagger } from "./swaggerConfig";
 import ReviewRatingRoutes from "./routes/ReviewRatingRoutes";
 import animalFicheRoutes from "./routes/animalFicheRoutes";
-
+import postRoutes from "./routes/postRoutes";
 dotenv.config();
 
 const app = express();
@@ -38,6 +38,7 @@ app.use("/api/animal-fiche", animalFicheRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/services", serviceRoutes);        // Nouvelle route pour services
 app.use("/api/reviews", ReviewRatingRoutes);
+app.use("/api/posts", postRoutes);
 // Documentation Swagger
 setupSwagger(app);
 
