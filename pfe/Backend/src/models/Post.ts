@@ -12,6 +12,16 @@ export interface IReaction {
   userDetails?: IReactionUserDetails;
 }
 
+export interface IComment {
+  [x: string]: any;
+  userId: Types.ObjectId;
+  content: string;
+  userDetails?: IReactionUserDetails;
+  reactions: IReaction[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IPost extends Document {
   photo: string;
   description: string;
@@ -21,6 +31,7 @@ export interface IPost extends Document {
   createdByModel: "Veterinarian";
   veterinaireId?: Types.ObjectId;
   reactions: IReaction[];
+  comments: IComment[];
 }
 
 const ReactionSchema = new Schema({
@@ -41,6 +52,24 @@ const ReactionSchema = new Schema({
   }
 }, { _id: false });
 
+const CommentSchema = new Schema({
+  userId: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    required: true
+  },
+  content: {
+    type: String,
+    required: true
+  },
+  userDetails: {
+    firstName: { type: String },
+    lastName: { type: String },
+    profilePicture: { type: String }
+  },
+  reactions: [ReactionSchema]
+}, { timestamps: true });
+
 const PostSchema: Schema = new Schema(
   {
     photo: { type: String, required: true },
@@ -60,13 +89,10 @@ const PostSchema: Schema = new Schema(
       ref: "Veterinarian",
       required: false,
     },
-    reactions: [ReactionSchema]
+    reactions: [ReactionSchema],
+    comments: [CommentSchema]
   },
   { timestamps: true }
 );
-
-
-
-
 
 export default mongoose.model<IPost>("Post", PostSchema);

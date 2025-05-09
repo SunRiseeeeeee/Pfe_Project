@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 import { Types } from "mongoose";
+import { IComment, IReaction } from "../models/Post"; // Import des interfaces depuis le modèle
 
 const unlinkAsync = promisify(fs.unlink);
 
@@ -40,6 +41,19 @@ interface IPostResponse {
       };
     }>;
   };
+  comments: Array<{
+    _id: Types.ObjectId;
+    content: string;
+    user: {
+      _id: Types.ObjectId;
+      firstName: string;
+      lastName: string;
+      profilePicture?: string;
+    };
+    reactions: IReaction[];
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
 }
 
 // 📌 Créer un post
@@ -394,6 +408,20 @@ const formatPostResponse = (host: string) => (post: any): IPostResponse => {
     };
   });
 
+  const formattedComments = post.comments.map((comment: any) => ({
+    _id: comment._id,
+    content: comment.content,
+    user: {
+      _id: comment.userId,
+      firstName: comment.userDetails?.firstName || '',
+      lastName: comment.userDetails?.lastName || '',
+      profilePicture: comment.userDetails?.profilePicture
+    },
+    reactions: comment.reactions,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt
+  }));
+
   return {
     _id: post._id,
     photo: `${host}/uploads/posts/${post.photo}`,
@@ -409,6 +437,132 @@ const formatPostResponse = (host: string) => (post: any): IPostResponse => {
     reactions: {
       counts,
       userReactions
-    }
+    },
+    comments: formattedComments
   };
+};
+
+// 📌 Ajouter un commentaire
+export const addComment = async (req: Request, res: Response): Promise<Response> => {
+  const { postId } = req.params;
+  const { userId, content } = req.body;
+
+  if (!userId || !content) {
+    return res.status(400).json({ message: "userId et content sont requis." });
+  }
+
+  try {
+    const user = await User.findById(userId).select('firstName lastName profilePicture');
+    if (!user) {
+      return res.status(404).json({ message: "Utilisateur non trouvé." });
+    }
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Post non trouvé." });
+    }
+
+    const newComment: IComment = {
+      userId: new Types.ObjectId(userId),
+      content,
+      userDetails: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profilePicture: user.profilePicture
+      },
+      reactions: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    post.comments.push(newComment);
+    await post.save();
+
+    return res.status(201).json({ 
+      message: "Commentaire ajouté avec succès", 
+      comment: {
+        ...newComment,
+        _id: post.comments[post.comments.length - 1]._id // Récupère l'ID généré par MongoDB
+      } 
+    });
+  } catch (error: any) {
+    console.error("Erreur addComment:", error);
+    return res.status(500).json({ 
+      message: "Erreur lors de l'ajout du commentaire",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// 📌 Modifier un commentaire
+export const updateComment = async (req: Request, res: Response): Promise<Response> => {
+  const { postId, commentId } = req.params;
+  const { content } = req.body;
+
+  if (!content) {
+    return res.status(400).json({ message: "Le contenu du commentaire est requis." });
+  }
+
+  try {
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Post non trouvé." });
+    }
+
+    const comment = post.comments.find(c => c._id.toString() === commentId);
+    if (!comment) {
+      return res.status(404).json({ message: "Commentaire non trouvé." });
+    }
+
+    comment.content = content;
+    comment.updatedAt = new Date();
+    await post.save();
+
+    return res.status(200).json({ 
+      message: "Commentaire modifié avec succès", 
+      comment: {
+        ...comment,
+        user: {
+          _id: comment.userId,
+          firstName: comment.userDetails?.firstName || '',
+          lastName: comment.userDetails?.lastName || '',
+          profilePicture: comment.userDetails?.profilePicture
+        }
+      }
+    });
+  } catch (error: any) {
+    console.error("Erreur updateComment:", error);
+    return res.status(500).json({ 
+      message: "Erreur lors de la modification du commentaire",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// 📌 Supprimer un commentaire
+export const deleteComment = async (req: Request, res: Response): Promise<Response> => {
+  const { postId, commentId } = req.params;
+
+  try {
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ message: "Post non trouvé." });
+    }
+
+    const commentIndex = post.comments.findIndex(c => c._id.toString() === commentId);
+    if (commentIndex === -1) {
+      return res.status(404).json({ message: "Commentaire non trouvé." });
+    }
+
+    post.comments.splice(commentIndex, 1);
+    await post.save();
+
+    return res.status(200).json({ message: "Commentaire supprimé avec succès" });
+  } catch (error: any) {
+    console.error("Erreur deleteComment:", error);
+    return res.status(500).json({ 
+      message: "Erreur lors de la suppression du commentaire",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 };
