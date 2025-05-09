@@ -14,7 +14,7 @@ class VetService {
   }) async {
     try {
       final queryParams = {
-        if (rating != null && rating.trim().isNotEmpty) 'rating': rating.trim(),
+        if (rating != null && rating.trim().isNotEmpty) 'rating': rating.trim(), // average rating filter
         if (location != null && location.trim().isNotEmpty) 'location': location.trim(),
         if (services != null && services.isNotEmpty) 'services': services.join(","),
         'page': page.toString(),
@@ -26,7 +26,7 @@ class VetService {
       print('Response from API: ${response.data}');
 
       if (response.statusCode == 200) {
-        return response.data; // contains 'data': [...vets...]
+        return response.data; // contains 'averageRating' per vet
       } else {
         throw Exception('Failed to load veterinarians. Status Code: ${response.statusCode}');
       }

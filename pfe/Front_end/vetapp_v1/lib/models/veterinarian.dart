@@ -6,9 +6,10 @@ class Veterinarian {
   final String lastName;
   final String? profilePicture;
   final double rating;
+  final double averageRating; // ✅ NEW
   final String? workingHours;
   final String? description;
-  final Map<String, dynamic>? address; // NEW: raw address map
+  final Map<String, dynamic>? address;
 
   Veterinarian({
     required this.id,
@@ -16,14 +17,13 @@ class Veterinarian {
     required this.lastName,
     this.profilePicture,
     required this.rating,
+    required this.averageRating, // ✅ NEW
     this.workingHours,
     this.description,
     this.address,
   });
 
   factory Veterinarian.fromJson(Map<String, dynamic> json) {
-    // Same ID parser, safeString, and workingHours logic...
-
     String parseId(dynamic idValue) {
       try {
         if (idValue == null) throw FormatException('Veterinarian ID is null');
@@ -74,13 +74,13 @@ class Veterinarian {
       lastName: safeString(json['lastName'], fieldName: 'lastName'),
       profilePicture: json['profilePicture'] is String ? json['profilePicture'] : null,
       rating: (json['rating'] is num ? json['rating'].toDouble() : 0.0),
+      averageRating: (json['averageRating'] is num ? json['averageRating'].toDouble() : 0.0), // ✅ NEW
       workingHours: safeWorkingHours(json['details'] ?? json['workingHours']),
       description: json['description'] is String ? json['description'] : null,
-      address: json['address'] is Map<String, dynamic> ? json['address'] : null, // NEW
+      address: json['address'] is Map<String, dynamic> ? json['address'] : null,
     );
   }
 
-  // Getter to format the location string nicely
   String get location {
     if (address == null) return 'Unknown Location';
 

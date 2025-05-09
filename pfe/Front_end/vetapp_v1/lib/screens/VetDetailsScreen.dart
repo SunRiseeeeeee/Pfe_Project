@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
-import 'dart:convert';
-import 'appointment_screen.dart';
+import 'package:vetapp_v1/screens/reviews_screen.dart';
+import 'package:vetapp_v1/services/review_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'bookAppointment.dart';
 
 class VetDetailsScreen extends StatefulWidget {
@@ -15,13 +17,53 @@ class VetDetailsScreen extends StatefulWidget {
 }
 
 class _VetDetailsScreenState extends State<VetDetailsScreen> {
-  // State variable to track whether the veterinarian is marked as a favorite
   bool isFavorite = false;
+  int reviewCount = 0;
+  double averageRating = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchReviewData();
+  }
+
+  void fetchReviewData() async {
+    final response = await ReviewService.getReviews(widget.vet.id);
+    if (response['success']) {
+      setState(() {
+        reviewCount = response['ratingCount'];
+        averageRating = response['averageRating'];
+      });
+    } else {
+      print('Failed to load reviews: ${response['message']}');
+    }
+  }
+
+  // Method to navigate to the ReviewsScreen
+  void navigateToReviews() async {
+    // Get the current user ID from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = prefs.getString('userId');
+
+    if (currentUserId != null) {
+      // Navigate to ReviewsScreen passing both vetId and currentUserId
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ReviewsScreen(
+            vetId: widget.vet.id,
+            currentUserId: currentUserId,  // Pass userId
+          ),
+        ),
+      );
+    } else {
+      // Handle the case where userId is not found in SharedPreferences
+      print("User ID not found in SharedPreferences");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    print('Working hours: ${widget.vet.workingHours}');
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -60,7 +102,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
               ),
               const SizedBox(height: 16),
               Hero(
-                tag: widget.vet.id, // Match the tag from HomeScreen
+                tag: widget.vet.id,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: Image.network(
@@ -106,8 +148,11 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                   children: [
                     _infoStat(Icons.people, "4,500+", "Patients"),
                     _infoStat(Icons.history, "10+", "Years Exp."),
-                    _infoStat(Icons.star, "${widget.vet.rating}", "Rating"),
-                    _infoStat(Icons.comment, "3,256", "Review"),
+                    _infoStat(Icons.star, averageRating.toStringAsFixed(1), "Rating"),
+                    GestureDetector(
+                      onTap: navigateToReviews,  // Use the updated method to navigate
+                      child: _infoStat(Icons.comment, "$reviewCount", "Review${reviewCount == 1 ? '' : 's'}"),
+                    ),
                   ],
                 ),
               ),
@@ -121,7 +166,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                 widget.vet.description ?? 'No description available for this veterinarian.',
                 style: const TextStyle(color: Colors.grey),
               ),
-
               const SizedBox(height: 24),
               Text(
                 'Working Hours',
@@ -132,15 +176,11 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                 formatWorkingHoursFromString(widget.vet.workingHours ?? ''),
                 style: const TextStyle(color: Colors.grey),
               ),
-
-
-
               const SizedBox(height: 24),
               Text(
                 'Fees',
                 style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -159,7 +199,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
           onPressed: () {
-            print('Navigating with vet ID: ${widget.vet.id}');
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -182,16 +221,14 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
       ),
     );
   }
+
   String formatWorkingHoursFromString(String workingHoursString) {
     final entries = workingHoursString.split(RegExp(r'\},\s*\{'));
 
     List<String> formatted = [];
 
     for (var entry in entries) {
-      // Clean braces
       entry = entry.replaceAll(RegExp(r'[\{\}]'), '');
-
-      // Split into key-value pairs
       final pairs = entry.split(',').map((e) => e.trim()).toList();
 
       Map<String, String?> data = {};
@@ -223,10 +260,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     return formatted.join('\n');
   }
 
-
-
-
-  // Helper method to display info stats
   Widget _infoStat(IconData icon, String value, String label) {
     return Column(
       children: [
@@ -245,7 +278,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     );
   }
 
-  // Helper method to create fee buttons
   Widget _feeButton(String label) {
     return Expanded(
       child: Padding(
