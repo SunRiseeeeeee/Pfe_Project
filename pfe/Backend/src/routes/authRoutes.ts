@@ -5,6 +5,9 @@ import {
   signupAdmin,
   loginHandler,
   refreshTokenHandler,
+  resetPassword,
+
+  forgetPassword,
   logoutHandler,
 } from "../controllers/authController";
 import { signupSecretaire } from "../controllers/authController"; // adapte le chemin si besoin
@@ -20,7 +23,9 @@ const router = Router();
  *   name: Auth
  *   description: Authentication management
  */
+router.post("/reset-password", resetPassword);
 
+router.post("/forget-password", forgetPassword);
 /**
  * @swagger
  * components:

@@ -1,5 +1,25 @@
 import { Router } from "express";
-import { createService, getAllServices, getServiceById, updateService, deleteService } from "../controllers/ServiceController";
+import {
+  createService,
+  getAllServices,
+  getServiceById,
+  updateService,
+  deleteService,
+} from "../controllers/ServiceController";
+import multer from "multer";
+
+// Configuration de Multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "C:/Users/adem/Documents/GitHub/Pfe_Project/pfe/Backend/src/services/uploads/services");
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + "-" + file.originalname);
+  },
+});
+
+const serviceUpload = multer({ storage });
 
 const router = Router();
 
@@ -16,17 +36,26 @@ const router = Router();
  *   post:
  *     summary: Création d'un nouveau service
  *     tags: [Services]
+ *     consumes:
+ *       - multipart/form-data
  *     requestBody:
- *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/Service'
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               image:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       201:
  *         description: Service créé avec succès
  */
-router.post("/", createService);
+router.post("/", serviceUpload.single("image"), createService);
 
 /**
  * @swagger
@@ -67,6 +96,8 @@ router.get("/:id", getServiceById);
  *   put:
  *     summary: Met à jour un service existant
  *     tags: [Services]
+ *     consumes:
+ *       - multipart/form-data
  *     parameters:
  *       - in: path
  *         name: id
@@ -75,18 +106,27 @@ router.get("/:id", getServiceById);
  *         required: true
  *         description: ID du service à mettre à jour
  *     requestBody:
- *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/Service'
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               image:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       200:
  *         description: Service mis à jour
+ *       400:
+ *         description: Données invalides
  *       404:
  *         description: Service non trouvé
  */
-router.put("/:id", updateService);
+router.put("/:id", serviceUpload.single("image"), updateService);
 
 /**
  * @swagger

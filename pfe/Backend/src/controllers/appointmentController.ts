@@ -312,24 +312,37 @@ export const updateAppointment = async (req: Request, res: Response, next: NextF
     const updatedData = { ...req.body };
     const user = req.user;
 
+    // Vérifications initiales
     if (!user) {
       return sendResponse(res, 401, {}, "Utilisateur non authentifié");
     }
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return sendResponse(res, 400, {}, "ID de rendez-vous invalide");
     }
+
+    // Récupération du rendez-vous
     const appointment = await Appointment.findById(id);
     if (!appointment) {
       return sendResponse(res, 404, {}, "Rendez-vous non trouvé");
     }
+
+    // Vérification des autorisations
     if (user.role !== UserRole.CLIENT || appointment.clientId.toString() !== user.id) {
       return sendResponse(res, 403, {}, "Accès interdit : vous ne pouvez pas modifier ce rendez-vous.");
     }
+
+    // Vérification du statut
     if (appointment.status !== AppointmentStatus.PENDING) {
       return sendResponse(res, 403, {}, "Modification interdite : Le statut du rendez-vous n'est pas 'pending'.");
     }
-    const protectedFields = ["clientId","veterinaireId","createdAt","updatedAt","_id","__v"];
-    for (const field of protectedFields) delete updatedData[field];
+
+    // Protection des champs sensibles
+    const protectedFields = ["clientId", "veterinaireId", "createdAt", "updatedAt", "_id", "__v"];
+    for (const field of protectedFields) {
+      delete updatedData[field];
+    }
+
+    // Vérification de l'animal
     if (updatedData.animalId) {
       if (!mongoose.Types.ObjectId.isValid(updatedData.animalId)) {
         return sendResponse(res, 400, {}, "ID de l'animal invalide.");
@@ -339,10 +352,52 @@ export const updateAppointment = async (req: Request, res: Response, next: NextF
         return sendResponse(res, 403, {}, "Cet animal n'existe pas ou ne vous appartient pas.");
       }
     }
-    const updatedAppointment = await Appointment.findByIdAndUpdate(id, updatedData, { new: true, runValidators: true });
+
+    // Vérification des conflits de rendez-vous (nouvelle implémentation)
+    if (updatedData.date) {
+      const newDate = new Date(updatedData.date);
+      const minEndTime = new Date(newDate.getTime() + 20 * 60000); // +20 minutes
+      
+      const conflicting = await Appointment.find({
+        _id: { $ne: id }, // Exclure le rendez-vous actuel
+        $or: [
+          { 
+            date: { 
+              $gte: newDate, 
+              $lt: minEndTime 
+            } 
+          },
+          {
+            date: { 
+              $lt: newDate, 
+              $gte: new Date(newDate.getTime() - 20 * 60000) 
+            }
+          }
+        ]
+      });
+
+      if (conflicting.length > 0) {
+        return sendResponse(
+          res,
+          400,
+          {},
+          "Créneau indisponible. Il doit y avoir au moins 20 minutes entre deux rendez-vous."
+        );
+      }
+    }
+
+    // Mise à jour du rendez-vous
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      id, 
+      updatedData, 
+      { new: true, runValidators: true }
+    );
+
     if (!updatedAppointment) {
       return sendResponse(res, 500, {}, "Erreur lors de la mise à jour.");
     }
+
+    // Réponse réussie
     sendResponse(res, 200, {
       id: updatedAppointment._id,
       date: updatedAppointment.date,
@@ -352,8 +407,147 @@ export const updateAppointment = async (req: Request, res: Response, next: NextF
       services: updatedAppointment.services,
       caseDescription: updatedAppointment.caseDescription
     }, "Rendez-vous mis à jour avec succès.");
+
   } catch (error) {
     console.error("[updateAppointment] Error:", error);
+    next(error);
+  }
+};
+// Fonction pour récupérer la liste des clients avec un rendez-vous accepté chez un vétérinaire spécifique
+export const getClientsWithAcceptedAppointmentsForVeterinaire = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { veterinaireId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+      return sendResponse(res, 400, {}, "ID de vétérinaire invalide.");
+    }
+
+    // Vérifier si le vétérinaire existe
+    const veterinaireExists = await User.exists({ _id: veterinaireId, role: UserRole.VETERINAIRE });
+    if (!veterinaireExists) {
+      return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
+    }
+
+    // Récupérer les rendez-vous acceptés avec les informations des clients
+    const appointments = await Appointment.find({
+      veterinaireId,
+      status: AppointmentStatus.ACCEPTED,
+    }).populate("clientId", "firstName lastName email phoneNumber address profilePicture");
+
+    // Extraire les clients sans doublons
+    const uniqueClients = Array.from(
+      new Map(
+        appointments.map((a) => [a.clientId._id.toString(), a.clientId])
+      ).values()
+    );
+
+    if (!uniqueClients.length) {
+      return sendResponse(
+        res, 
+        404, 
+        { count: 0 }, 
+        "Aucun client avec un rendez-vous accepté trouvé."
+      );
+    }
+
+    sendResponse(
+      res, 
+      200, 
+      { 
+        count: uniqueClients.length,
+        clients: uniqueClients 
+      },
+      `${uniqueClients.length} client(s) trouvé(s) avec des rendez-vous acceptés.`
+    );
+  } catch (error) {
+    console.error("[getClientsWithAcceptedAppointmentsForVeterinaire] Error:", error);
+    next(error);
+  }
+};
+// Fonction pour récupérer les animaux d'un client avec au moins un rendez-vous accepté chez un vétérinaire spécifique
+
+export const getClientAnimalsWithAcceptedAppointments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { clientId, veterinaireId } = req.params;
+
+    // ✅ Validation des IDs
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      return sendResponse(res, 400, {}, "ID de client invalide.");
+    }
+    if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+      return sendResponse(res, 400, {}, "ID de vétérinaire invalide.");
+    }
+
+    // ✅ Vérification de l'existence du client et du vétérinaire
+    const [clientExists, veterinaireExists] = await Promise.all([
+      User.exists({ _id: clientId, role: UserRole.CLIENT }),
+      User.exists({ _id: veterinaireId, role: UserRole.VETERINAIRE }),
+    ]);
+
+    if (!clientExists) {
+      return sendResponse(res, 404, {}, "Client non trouvé.");
+    }
+    if (!veterinaireExists) {
+      return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
+    }
+
+    // ✅ Récupérer les rendez-vous acceptés pour ce client et ce vétérinaire
+    const acceptedAppointments = await Appointment.find({
+      clientId,
+      veterinaireId,
+      status: AppointmentStatus.ACCEPTED
+    }).select('animalId animalType');
+
+    console.log("✅ Liste des rendez-vous récupérés :", acceptedAppointments);
+
+    // 🚩 Vérification des IDs récupérés
+    if (acceptedAppointments.length === 0) {
+      return sendResponse(
+        res,
+        404,
+        { count: 0 },
+        "Aucun animal trouvé avec des rendez-vous acceptés chez ce vétérinaire."
+      );
+    }
+
+    // ✅ Récupérer les détails complets des animaux concernés
+    const animalIds = acceptedAppointments.map((appointment) => appointment.animalId);
+
+    // Assurez-vous que `animalIds` contient des ObjectId valides
+    const animals = await Animal.find({
+      _id: { $in: animalIds },
+      owner: new mongoose.Types.ObjectId(clientId), // Vérification que l'animal appartient au client
+    }).select("-__v");
+
+    // 🚩 Vérification du résultat final
+    if (animals.length === 0) {
+      return sendResponse(
+        res,
+        404,
+        { count: 0 },
+        "Les animaux avec des rendez-vous acceptés existent, mais ils ne correspondent pas au client spécifié."
+      );
+    }
+
+    sendResponse(
+      res,
+      200,
+      {
+        count: animals.length,
+        animals,
+      },
+      `${animals.length} animal(s) trouvé(s) avec des rendez-vous acceptés chez ce vétérinaire.`
+    );
+  } catch (error) {
+    console.error("[getClientAnimalsWithAcceptedAppointments] Error:", error);
     next(error);
   }
 };

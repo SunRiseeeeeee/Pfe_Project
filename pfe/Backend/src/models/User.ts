@@ -6,15 +6,16 @@ export enum UserRole {
   VETERINAIRE = "veterinaire",
   SECRETAIRE = "secretaire",
   ADMIN = "admin",
+  SECRETARIEN = "SECRETARIEN",
 }
 
 // Interface pour les horaires de travail incluant une pause
 interface IWorkingHour {
   day: string;
-  start: string;       // format: "08:00"
-  pauseStart?: string; // début de la pause HH:MM
-  pauseEnd?: string;   // fin de la pause   HH:MM
-  end: string;         // format: "17:00"
+  start: string;
+  pauseStart?: string;
+  pauseEnd?: string;
+  end: string;
 }
 
 // Interface pour l'adresse
@@ -44,24 +45,25 @@ export interface IUser extends Document {
   password: string;
   phoneNumber: string;
   role: UserRole;
-  veterinaireId?: Types.ObjectId; // ID du vétérinaire associé (pour les secrétaires)
+  veterinaireId?: Types.ObjectId;
   profilePicture?: string;
   mapsLocation?: string;
   description?: string;
   address?: IAddress;
   details?: IUserDetails;
-  reviews?: Types.ObjectId[];
-  rating?: number;
+
   refreshToken?: string | null;
   isActive?: boolean;
   loginAttempts?: number;
   lockUntil?: Date | null;
   lastLogin?: Date;
+  resetPasswordCode?: string | null;
+  resetPasswordExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+
 }
 
-// Définition du schéma Mongoose
 const UserSchema: Schema = new Schema<IUser>(
   {
     firstName: { type: String, required: true, trim: true },
@@ -100,7 +102,6 @@ const UserSchema: Schema = new Schema<IUser>(
         message: 'Role invalide',
       },
     },
-    // Champ ajouté pour lier la secrétaire à son vétérinaire
     veterinaireId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -160,24 +161,15 @@ const UserSchema: Schema = new Schema<IUser>(
       specialization: { type: String, default: null, trim: true },
       experienceYears: { type: Number, default: 0, min: 0, max: 100 },
     },
-    reviews: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "Review",
-      },
-    ],
-    rating: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5,
-      set: (value: number) => parseFloat(value.toFixed(2)),
-    },
+
+
     refreshToken: { type: String, default: null, select: false },
     isActive: { type: Boolean, default: true },
     loginAttempts: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, default: null, select: false },
     lastLogin: { type: Date, default: null },
+    resetPasswordCode: { type: String, default: null, select: false },
+    resetPasswordExpires: { type: Date, default: null, select: false },
   },
   {
     timestamps: true,
@@ -191,6 +183,8 @@ const UserSchema: Schema = new Schema<IUser>(
         delete ret.refreshToken;
         delete ret.loginAttempts;
         delete ret.lockUntil;
+        delete ret.resetPasswordCode;
+        delete ret.resetPasswordExpires;
         return ret;
       },
     },
@@ -204,16 +198,20 @@ const UserSchema: Schema = new Schema<IUser>(
         delete ret.refreshToken;
         delete ret.loginAttempts;
         delete ret.lockUntil;
+        delete ret.resetPasswordCode;
+        delete ret.resetPasswordExpires;
         return ret;
       },
     },
   }
 );
 
-// Index pour les recherches courantes
+// Indexes
 UserSchema.index({ email: 1, username: 1, phoneNumber: 1 }, { unique: true });
 UserSchema.index({ "address.city": 1, "address.country": 1 });
 UserSchema.index({ role: 1, isActive: 1 });
+UserSchema.index({ ratedVeterinarians: 1 });
+
 
 const User = mongoose.model<IUser>("User", UserSchema);
 export default User;

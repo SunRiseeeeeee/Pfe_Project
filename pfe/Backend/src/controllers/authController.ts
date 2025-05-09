@@ -3,9 +3,13 @@ import mongoose, { Types } from "mongoose";
 import jwt from "jsonwebtoken";
 import { AuthService, UserService } from "../services/userService";
 import { UserRole } from "../types";
-import User, { IUser } from "../models/User";
+import User, { IUser, IUserDetails } from "../models/User";
 import bcrypt from "bcryptjs";
-import { upload } from "../services/multerConfig";
+import { upload } from "../services/animalMulterConfig";
+import nodemailer from "nodemailer"; 
+import crypto from 'crypto';  // Utilise cette importation pour accéder à 'randomBytes'
+import { userUpload } from '../services/userMulterConfig';
+
 
 //#region Interfaces et Types
 interface WorkingHours {
@@ -116,7 +120,7 @@ const EMAIL_REGEX = /^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/;
 const PHONE_REGEX = /^[0-9]{8,15}$/;
 
 const ERROR_MESSAGES: ErrorMessages = {
-  MISSING_FIELD: (field?: string) => `Le champ ${field ? '${field}' : ''} est requis.`,
+  MISSING_FIELD: (field?: string) => `Le champ ${field ? `'${field}'` : ''} est requis.`,
   INVALID_EMAIL: "L'email est invalide.",
   INVALID_USERNAME: "Le nom d'utilisateur est invalide (caractères alphanumériques et _ uniquement).",
   INVALID_PHONE: "Le numéro de téléphone doit contenir 8 à 15 chiffres.",
@@ -221,9 +225,6 @@ const buildExtraDetails = (role: UserRole, body: SignupRequest): Partial<IUser> 
     }
   };
 
-  if (role === UserRole.VETERINAIRE) {
-    details.rating = 0;
-  }
 
   return details;
 };
@@ -281,194 +282,284 @@ const handleControllerError = (error: unknown): ErrorResponse => {
 
 //#region Controller Handlers
 
-export const signupSecretaire: RequestHandler = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// Fonction de réinitialisation du mot de passe
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { firstName, lastName, username, email, password, phoneNumber } = req.body;
-    const { veterinaireId } = req.params;
-
-    // Validation de l'ID du vétérinaire
-    if (!veterinaireId) {
-      res.status(400).json({ message: "L'ID du vétérinaire est requis." });
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      res.status(400).json({ message: "All fields are required" });
       return;
     }
 
-    const veterinaire = await User.findById(veterinaireId);
-    if (!veterinaire || veterinaire.role !== UserRole.VETERINAIRE) {
-      res.status(400).json({ message: "Vétérinaire introuvable ou rôle invalide." });
+    // 🔑 On “ré-active” les champs cachés
+    const user = await User
+      .findOne({ email: email.toLowerCase() })
+      .select("+resetPasswordCode +resetPasswordExpires");
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
       return;
     }
 
-    // Vérification de l'unicité de l'email et du username
-    const exists = await User.findOne({ $or: [{ username }, { email }] });
-    if (exists) {
-      res.status(409).json({ message: "Username ou email déjà utilisé." });
+    console.log("Code dans la base de données:", user.resetPasswordCode);
+    console.log("Date d'expiration dans la base :", user.resetPasswordExpires);
+
+    if (
+      user.resetPasswordCode !== code ||
+      !user.resetPasswordExpires ||
+      user.resetPasswordExpires.getTime() < Date.now()
+    ) {
+      res.status(400).json({ message: "Invalid or expired verification code" });
       return;
     }
 
-    // Hashage du mot de passe
-    const hashed = await bcrypt.hash(password, 12);
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.resetPasswordCode = undefined;
+    user.resetPasswordExpires = undefined;
 
-    // Gestion de l'image (si présente)
-    const profilePicture = req.file ? `uploads/${req.file.filename}` : undefined;
+    await user.save();
 
-    // Création du nouveau secrétaire
-    const newSecretaire = new User({
-      firstName,
-      lastName,
-      username,
-      email,
-      password: hashed,
-      phoneNumber,
-      role: UserRole.SECRETAIRE,
-      veterinaireId,
-      ...(profilePicture && { profilePicture }), // Ajouter l'image si présente
-    });
-
-    await newSecretaire.save();
-
-    // Réponse après la création
-    res.status(201).json({
-      message: "Secrétaire créée avec succès.",
-      user: {
-        id: newSecretaire._id,
-        firstName: newSecretaire.firstName,
-        lastName: newSecretaire.lastName,
-        username: newSecretaire.username,
-        email: newSecretaire.email,
-        phoneNumber: newSecretaire.phoneNumber,
-        ...(newSecretaire.profilePicture && { profilePicture: newSecretaire.profilePicture }),
-      },
-    });
-  } catch (err) {
-    next(err); // Passer l'erreur au middleware d'erreur
+    res.status(200).json({ message: "Password has been reset successfully" });
+    return;
+  } catch (error) {
+    console.error("Error during password reset:", error);
+    res.status(500).json({ message: "Internal server error" });
+    return;
   }
 };
 
-export const signupHandler = async (req: Request, res: Response, next: NextFunction, role: UserRole): Promise<Response> => {
+// Fonction de demande de réinitialisation de mot de passe (Oublié)
+export const forgetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Extraction des champs du corps de la requête
-    const { firstName, lastName, username, email, password, phoneNumber } = req.body;
+    const { email } = req.body;
 
-    // Validation des champs obligatoires
-    const requiredFields = { firstName, lastName, username, email, password, phoneNumber };
-    const missingFields = Object.entries(requiredFields)
-      .filter(([_, value]) => !value)
-      .map(([key]) => key);
-
-    if (missingFields.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Champs obligatoires manquants: ${missingFields.join(', ')}`,
-        error: 'MISSING_FIELDS',
-      });
+    if (!email) {
+      res.status(400).json({ message: "Email is required" });
+      return;
     }
 
-    // Validation des formats des champs (username, email, phoneNumber)
-    try {
-      validateUsernameFormat(username);
-      validateEmailFormat(email);
-      validatePhoneFormat(phoneNumber);
-    } catch (validationError) {
-      return res.status(400).json({
-        success: false,
-        message: validationError instanceof Error ? validationError.message : 'Format de données invalide',
-        error: 'VALIDATION_ERROR',
-      });
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
     }
 
-    // Gestion de l'image (si présente)
-    const profilePicture = req.file ? `uploads/${req.file.filename}` : undefined; // image est optionnelle
+    // 🔍 Génération du code et de l'expiration
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Construction des données utilisateur
-    const userData = {
-      firstName,
-      lastName,
-      username,
-      email,
-      password,
-      phoneNumber,
-      role,
-      ...(profilePicture && { profilePicture }), // Si profilePicture existe, l'ajouter
-    };
+    // 🔄 Mise à jour de l'utilisateur avec le code et la date d'expiration
+    user.resetPasswordCode = code;
+    user.resetPasswordExpires = expires;
 
-    // Ajouter les détails spécifiques au rôle (ex: secrétaire, vétérinaire, etc.)
-    const extraDetails = buildExtraDetails(role, req.body);
+    // 🔍 Logs pour vérifier avant sauvegarde
+    console.log("Avant sauvegarde - Code :", user.resetPasswordCode);
+    console.log("Avant sauvegarde - Expiration :", user.resetPasswordExpires);
 
-    // Création de l'utilisateur via le service
-    const newUser = await UserService.createUser(userData, extraDetails);
+    // ✅ Sauvegarde dans la base de données
+    await user.save();
 
-    if (!newUser?._id) {
-      throw new Error("USER_CREATION_FAILED");
-    }
+    // 🔍 Vérification après sauvegarde
+    const updatedUser = await User.findOne({ email });  // Récupération de l'utilisateur après la sauvegarde
+    console.log("Après sauvegarde - Code :", updatedUser?.resetPasswordCode);
+    console.log("Après sauvegarde - Expiration :", updatedUser?.resetPasswordExpires);
 
-    // Réponse après l'inscription réussie
-    const userResponse = {
-      id: newUser._id.toString(),
-      role: newUser.role,
-      firstName: newUser.firstName,
-      lastName: newUser.lastName,
-      email: newUser.email,
-      username: newUser.username,
-      phoneNumber: newUser.phoneNumber,
-      createdAt: newUser.createdAt,
-      updatedAt: newUser.updatedAt,
-      ...(newUser.profilePicture && { profilePicture: newUser.profilePicture }),
-    };
-
-    return res.status(201).json({
-      success: true,
-      message: `${role} inscrit avec succès`,
-      user: userResponse,
+    // 📧 Envoi de l'email
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Reset your password",
+      text: `Your verification code is ${code}. It will expire in 10 minutes.`,
     });
+
+    res.status(200).json({ message: "Verification code sent successfully" });
 
   } catch (error) {
-    // Gestion des erreurs connues
-    if (error instanceof mongoose.Error.ValidationError) {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-        error: 'VALIDATION_ERROR',
-      });
-    }
-
-    if (error instanceof Error && error.message.includes('DUPLICATE_USER')) {
-      return res.status(409).json({
-        success: false,
-        message: 'Un utilisateur avec ces informations existe déjà',
-        error: 'DUPLICATE_USER',
-      });
-    }
-
-    // Gestion des autres erreurs générales
-    console.error(`[${new Date().toISOString()}] Signup Error:`, error);
-
-    const errorResponse = {
-      success: false,
-      message: 'Erreur lors de la création du compte',
-      error: 'SERVER_ERROR',
-      ...(process.env.NODE_ENV === 'development' && {
-        debug: {
-          message: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined,
-        },
-      }),
-    };
-
-    return res.status(500).json(errorResponse);
+    console.error("Error during password reset request:", error);
+    res.status(500).json({ message: "Something went wrong" });
   }
 };
 
-export const signupClient: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
-  await signupHandler(req, res, next, UserRole.CLIENT);
+export const signupHandler = (role: UserRole): RequestHandler => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    userUpload(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: "Erreur lors de l'upload de l'image",
+          error: err.message,
+        });
+      }
+
+      try {
+        const {
+          firstName,
+          lastName,
+          username,
+          email,
+          password,
+          phoneNumber,
+          mapsLocation,
+          description,
+          address,
+          details,
+        } = req.body;
+
+        // Récupération du veterinaireId depuis l'URL si le rôle est SECRETAIRE
+        const veterinaireId = role === UserRole.SECRETAIRE ? req.params.veterinaireId : undefined;
+
+        // Vérification des champs obligatoires
+        if (!username || !firstName || !lastName || !password || !email || !phoneNumber) {
+          return res.status(400).json({
+            success: false,
+            message: 'Tous les champs obligatoires doivent être fournis',
+            requiredFields: {
+              username: 'string',
+              firstName: 'string',
+              lastName: 'string',
+              password: 'string (min 8 caractères)',
+              email: 'string (format email)',
+              phoneNumber: 'string (8-15 chiffres)'
+            }
+          });
+        }
+
+        // Validation spécifique pour les secrétaires
+        if (role === UserRole.SECRETAIRE) {
+          if (!veterinaireId) {
+            return res.status(400).json({
+              success: false,
+              message: 'Un secrétaire doit être associé à un vétérinaire',
+              error: 'MISSING_VETERINAIRE_ID'
+            });
+          }
+
+          if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
+            return res.status(400).json({
+              success: false,
+              message: 'ID du vétérinaire invalide',
+              error: 'INVALID_VETERINAIRE_ID'
+            });
+          }
+        }
+
+        // Génération de l'URL de l'image si présente
+        const profilePicture = req.file
+          ? `${req.protocol}://${req.get('host')}/uploads/users/${req.file.filename}`
+          : undefined;
+
+        // Préparation des données utilisateur
+        const userData = {
+          firstName,
+          lastName,
+          username,
+          email,
+          password,
+          phoneNumber,
+          role,
+          profilePicture,
+          mapsLocation,
+          description,
+          address: address ? {
+            street: address.street,
+            city: address.city,
+            state: address.state,
+            country: address.country,
+            postalCode: address.postalCode
+          } : undefined,
+          details: details ? {
+            services: details.services || [],
+            workingHours: details.workingHours || [],
+            specialization: details.specialization,
+            experienceYears: details.experienceYears || 0
+          } : undefined,
+          ...(role === UserRole.SECRETAIRE && { veterinaireId }),
+          isActive: true,
+          rating: role === UserRole.VETERINAIRE ? 0 : undefined,
+          reviews: []
+        };
+
+        // Création de l'utilisateur
+        const createdUser = await UserService.createUser(userData);
+
+        // Génération des tokens
+        const tokens = await AuthService.generateTokens(createdUser);
+
+        // Construction de la réponse sécurisée
+        const safeUser = {
+          id: createdUser._id.toString(),
+          role: createdUser.role,
+          firstName: createdUser.firstName,
+          lastName: createdUser.lastName,
+          email: createdUser.email,
+          username: createdUser.username,
+          phoneNumber: createdUser.phoneNumber,
+          profilePicture: createdUser.profilePicture,
+          address: createdUser.address,
+          details: createdUser.details,
+          mapsLocation: createdUser.mapsLocation,
+          description: createdUser.description,
+          isActive: createdUser.isActive,
+          createdAt: createdUser.createdAt,
+          updatedAt: createdUser.updatedAt,
+          ...(role === UserRole.SECRETAIRE && { veterinaireId: createdUser.veterinaireId })
+        };
+
+        res.status(201).json({
+          success: true,
+          message: `${role} créé avec succès`,
+          user: safeUser,
+          tokens: {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken
+          }
+        });
+
+      } catch (error: any) {
+        console.error('Erreur lors de l\'inscription:', error);
+        
+        // Gestion des erreurs de duplication
+        if (error.code === 11000) {
+          const duplicateField = error.message.includes('email') ? 'email' : 
+                               error.message.includes('username') ? 'username' : 'phoneNumber';
+          return res.status(409).json({
+            success: false,
+            message: `Ce ${duplicateField} est déjà utilisé`,
+            error: 'DUPLICATE_ENTRY'
+          });
+        }
+
+        // Gestion spécifique pour les erreurs de référence (vétérinaire non trouvé)
+        if (error.message.includes('veterinaireId')) {
+          return res.status(404).json({
+            success: false,
+            message: 'Le vétérinaire spécifié n\'existe pas',
+            error: 'VETERINAIRE_NOT_FOUND'
+          });
+        }
+
+        // Gestion des autres erreurs
+        res.status(500).json({
+          success: false,
+          message: "Erreur lors de la création du compte",
+          error: error.message,
+          ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+        });
+      }
+    });
+  };
 };
 
-export const signupVeterinaire: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
-  await signupHandler(req, res, next, UserRole.VETERINAIRE);
-};
-
-export const signupAdmin: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
-  await signupHandler(req, res, next, UserRole.ADMIN);
-};
 
 export const loginHandler: RequestHandler = async (req, res, next) => {
   try {
@@ -581,7 +672,6 @@ export const logoutHandler: RequestHandler = async (req, res, next) => {
     });
   }
 };
-
 export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   const { status, code, message } = handleControllerError(err);
   res.status(status).json({
@@ -597,3 +687,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
   });
 };
 //#endregion
+export const signupClient = signupHandler(UserRole.CLIENT);
+export const signupVeterinaire = signupHandler(UserRole.VETERINAIRE);
+export const signupAdmin = signupHandler(UserRole.ADMIN);
+export const signupSecretaire = signupHandler(UserRole.SECRETAIRE);

@@ -25,6 +25,7 @@ export interface UserTokenPayload {
   phoneNumber: string;
   profilePicture?: string;
   address?: UserAddress;
+  veterinaireId?:string;
 }
 
 // 3. Interface pour le payload JWT
@@ -110,7 +111,8 @@ export const authenticateToken: RequestHandler = async (req, res, next) => {
       username: decoded.username,
       phoneNumber: decoded.phoneNumber,
       profilePicture: decoded.profilePicture,
-      address: decoded.address
+      address: decoded.address,
+      veterinaireId:decoded.veterinaireId,
     };
 
     next();

@@ -3,6 +3,7 @@ import asyncHandler from "express-async-handler";
 import { authenticateToken } from "../middlewares/authMiddleware";
 import {
   createAppointment,
+  getClientsWithAcceptedAppointmentsForVeterinaire,
   getAppointmentForVeterinaireById,
   getAppointmentForClientById,
   getAppointmentsByClient,
@@ -11,10 +12,15 @@ import {
   deleteAppointment,
   acceptAppointment,
   rejectAppointment,
+  getClientAnimalsWithAcceptedAppointments,
 } from "../controllers/appointmentController";
 
 const router = express.Router();
 
+
+
+router.get("/veterinaire/:veterinaireId/clients", getClientsWithAcceptedAppointmentsForVeterinaire);
+router.get("/veterinaire/:veterinaireId/client/:clientId/animals",getClientAnimalsWithAcceptedAppointments);
 /**
  * @swagger
  * /appointments:
