@@ -15,7 +15,7 @@ class PetsScreen extends StatefulWidget {
 
 class _PetsScreenState extends State<PetsScreen> {
   Future<List<Map<String, dynamic>>>? _petsFuture;
-  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.24:3000/api')));
+  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api')));
 
   @override
   void initState() {

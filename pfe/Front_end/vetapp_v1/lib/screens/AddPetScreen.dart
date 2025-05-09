@@ -25,7 +25,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
   @override
   void initState() {
     super.initState();
-    Dio dio = Dio(BaseOptions(baseUrl: 'http://192.168.1.24:3000/api'));
+    Dio dio = Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api'));
     _petService = PetService(dio: dio);
   }
 

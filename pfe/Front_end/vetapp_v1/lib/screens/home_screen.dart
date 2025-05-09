@@ -256,136 +256,93 @@ class _HomeContentState extends State<HomeContent> {
             FutureBuilder<Map<String, dynamic>>(
               future: veterinariansFuture,
               builder: (context, snapshot) {
-                // Check if the data is still loading
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                // Handle errors during the API call
                 if (snapshot.hasError) {
-                  print('API Error: ${snapshot.error}'); // Log the error for debugging
+                  print('API Error: ${snapshot.error}');
                   return Center(
-                    child: Text(
-                      'Error: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.red),
-                    ),
+                    child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
                   );
                 }
-                // Extract the data from the snapshot
                 final Map<String, dynamic>? responseData = snapshot.data;
-                // Handle empty or null data
-                if (responseData == null ||
-                    responseData['veterinarians'] == null ||
-                    responseData['veterinarians'].isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No veterinarians found.',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  );
+                if (responseData == null || responseData['veterinarians'] == null || responseData['veterinarians'].isEmpty) {
+                  return const Center(child: Text('No veterinarians found.', style: TextStyle(fontSize: 16, color: Colors.grey)));
                 }
-                // Extract the list of veterinarians and pagination details
                 final List<dynamic> veterinariansData = responseData['veterinarians'];
-                final int totalPages = responseData['totalPages'] ?? 1;
-                // Convert the list into a list of Veterinarian objects
-                final List<Veterinarian> veterinarians =
-                veterinariansData.map((json) => Veterinarian.fromJson(json)).toList();
-                // Display the list of veterinarians
+                final List<Veterinarian> veterinarians = veterinariansData.map((json) => Veterinarian.fromJson(json)).toList();
+
                 return Column(
                   children: [
-                    ListView.builder(
+                    GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 3 / 4,
+                      ),
                       itemCount: veterinarians.length,
                       itemBuilder: (context, index) {
                         final vet = veterinarians[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Hero(
-                            tag: vet.id,
-                            child: CircleAvatar(
-                              radius: 30,
-                              backgroundImage: vet.profilePicture != null
-                                  ? NetworkImage(vet.profilePicture!)
-                                  : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
-                              child: vet.profilePicture == null ? const Icon(Icons.person) : null,
-                            ),
-                          ),
-                          title: Text(
-                            '${vet.firstName} ${vet.lastName}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.star, color: Colors.amber, size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${vet.rating}/5',
-                                    style: const TextStyle(fontFamily: 'Poppins'),
-                                  ),
-                                ],
-                              ),
-                              Row(
-                                children: [
-                                  const Icon(Icons.calendar_today, size: 16),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      vet.workingHours ?? 'N/A',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                        return GestureDetector(
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (context) => VetDetailsScreen(vet: vet),
-                              ),
+                              MaterialPageRoute(builder: (context) => VetDetailsScreen(vet: vet)),
                             );
                           },
+                          child: Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                    child: vet.profilePicture != null
+                                        ? Image.network(vet.profilePicture!, width: double.infinity, fit: BoxFit.cover)
+                                        : Image.asset('assets/images/default_avatar.png', width: double.infinity, fit: BoxFit.cover),
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        '${vet.firstName} ${vet.lastName}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Poppins', fontSize: 14),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.star, color: Colors.amber, size: 16),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${vet.averageRating.toStringAsFixed(1)}/5', // Directly display the averageRating from the API
+                                            style: const TextStyle(fontSize: 13, fontFamily: 'Poppins'),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         );
                       },
-                    ),
-                    // Pagination Controls
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back),
-                            onPressed: currentPage > 1
-                                ? () {
-                              _refreshVeterinarians(currentPage - 1);
-                            }
-                                : null,
-                          ),
-                          Text(
-                            'Page $currentPage of $totalPages',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.arrow_forward),
-                            onPressed: currentPage < totalPages
-                                ? () {
-                              _refreshVeterinarians(currentPage + 1);
-                            }
-                                : null,
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 );
               },
             ),
+
             const SizedBox(height: 24),
           ],
         ),
