@@ -241,8 +241,13 @@ export class AuthService {
   private static createTokens(user: IUser): TokenResponse {
     this.validateJwtConfig();
   
+    // Vérifier que user et user._id existent
+    if (!user || !user._id) {
+      throw new Error("Invalid user object: missing _id");
+    }
+  
     const commonPayload: JwtPayload = {
-      id: user._id.toString(),
+      id: user.id.toString(), // Ligne 245
       role: user.role,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -250,21 +255,16 @@ export class AuthService {
       phoneNumber: user.phoneNumber,
       profilePicture: user.profilePicture,
       address: user.address,
-      iat: Math.floor(Date.now() / 1000)
-      // Remove the exp property here
+      iat: Math.floor(Date.now() / 1000),
     };
   
-    const accessToken = jwt.sign(
-      commonPayload, // No exp in payload
-      process.env.JWT_SECRET!,
-      { expiresIn: ACCESS_TOKEN_EXPIRATION } // Use expiresIn option instead
-    );
+    const accessToken = jwt.sign(commonPayload, process.env.JWT_SECRET!, {
+      expiresIn: ACCESS_TOKEN_EXPIRATION,
+    });
   
-    const refreshToken = jwt.sign(
-      commonPayload, // No exp in payload
-      process.env.JWT_REFRESH_SECRET!,
-      { expiresIn: REFRESH_TOKEN_EXPIRATION } // Use expiresIn option instead
-    );
+    const refreshToken = jwt.sign(commonPayload, process.env.JWT_REFRESH_SECRET!, {
+      expiresIn: REFRESH_TOKEN_EXPIRATION,
+    });
   
     return { accessToken, refreshToken };
   }
@@ -380,56 +380,103 @@ export class UserService {
   //#endregion
   //#region CRUD Operations
 // Ensure this is the ONLY declaration of createUser
+// Modifiez la méthode createUser comme suit :
 static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {}): Promise<IUser> {
   try {
-      // 1. Validation
-      this.validateUserData(userData, extraDetails);
-      await this.checkDuplicateUser(userData);
-      // 2. Hashage du mot de passe
-      const hashedPassword = await this.hashPassword(userData.password);
-      // 3. Création et sauvegarde du document
-      const newUser = new User({
-          ...userData,
-          ...extraDetails,
-          password: hashedPassword,
-          isActive: true
-      });
-      const savedUser = await newUser.save();      
-      // 4. Vérification de la sauvegarde
-      if (!savedUser?._id) {
-          throw new Error("SERVER_ERROR: Document sauvegardé sans ID");
-      }
-      // 5. Conversion en objet simple avec typage correct
-      const userObject = savedUser.toObject({
-          getters: true,
-          virtuals: true,
-          versionKey: false
-      }) as unknown as IUser;
-      // 6. Construction du résultat final
-      return {
-          ...userObject,
-          _id: savedUser._id, // Garantie de l'ID
-          id: savedUser._id.toString() // Pour la compatibilité avec toJSON
-      } as IUser;
+    // 1. Envoi des informations par email avant le hashage
+    await this.sendUserCredentialsByEmail(userData);
+
+    // 2. Hashage du mot de passe
+    const hashedPassword = await this.hashPassword(userData.password);
+
+    // 3. Création et sauvegarde du document
+    const newUser = new User({
+      ...userData,
+      ...extraDetails,
+      password: hashedPassword,
+      isActive: true,
+    });
+
+    const savedUser = await newUser.save();
+    console.log("Saved user:", savedUser); // Log pour débogage
+
+    // Retourner directement savedUser sans toObject
+    return savedUser as IUser;
   } catch (error) {
-      console.error('Erreur création utilisateur:', {
-          error,
-          inputData: {
-              ...userData,
-              password: '***',
-              extraDetails: extraDetails
-          }
-      });
-      if (error instanceof mongoose.Error.ValidationError) {
-          const messages = Object.values(error.errors).map(e => e.message);
-          throw new Error(`VALIDATION_ERROR: ${messages.join(', ')}`);
-      }
+    console.error("Erreur création utilisateur:", error);
+    throw error;
+  }
+}
 
-      if ((error as any).code === 11000) {
-          throw new Error("DUPLICATE_USER: Un utilisateur existe déjà avec ces informations");
-      }
+// Ajoutez cette nouvelle méthode pour l'envoi d'email
 
-      throw new Error(`SERVER_ERROR: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+private static async sendUserCredentialsByEmail(userData: UserCreateData): Promise<void> {
+  // Valider le format de l'email
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(userData.email)) {
+    console.error(`Invalid email format: ${userData.email}`);
+    throw new Error("Invalid email format");
+  }
+
+  // Supprimer les espaces éventuels et normaliser
+  const recipientEmail = userData.email.trim().toLowerCase();
+
+  // Vérifier que les variables d'environnement sont définies
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.error("Missing email configuration: EMAIL_USER or EMAIL_PASS not set");
+    throw new Error("Email configuration missing");
+  }
+
+  // Configurer le transporteur Nodemailer
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  // Configurer les options de l'email
+  const mailOptions = {
+    from: `"PFE Project" <${process.env.EMAIL_USER}>`, // Nom d'expéditeur personnalisé
+    to: recipientEmail,
+    subject: "Vos identifiants de connexion",
+    text: `Bonjour ${userData.firstName},\n\n
+Votre compte a été créé avec succès. Voici vos informations de connexion :\n
+- Prénom: ${userData.firstName}\n
+- Nom: ${userData.lastName}\n
+- Nom d'utilisateur: ${userData.username}\n
+- Mot de passe: ${userData.password}\n\n
+Pour des raisons de sécurité, veuillez changer votre mot de passe après votre première connexion en utilisant l'option "Réinitialiser le mot de passe" dans l'application.\n\n
+Cordialement,\nL'équipe PFE`,
+    html: `
+      <p>Bonjour ${userData.firstName},</p>
+      <p>Votre compte a été créé avec succès. Voici vos informations de connexion :</p>
+      <ul>
+        <li><strong>Prénom:</strong> ${userData.firstName}</li>
+        <li><strong>Nom:</strong> ${userData.lastName}</li>
+        <li><strong>Nom d'utilisateur:</strong> ${userData.username}</li>
+        <li><strong>Mot de passe:</strong> ${userData.password}</li>
+      </ul>
+      <p><strong>Pour des raisons de sécurité, veuillez changer votre mot de passe après votre première connexion en utilisant l'option "Réinitialiser le mot de passe" dans l'application.</strong></p>
+      <p>Cordialement,<br>L'équipe PFE</p>
+    `,
+  };
+
+  try {
+    // Vérifier la connexion au serveur SMTP
+    await transporter.verify();
+    console.log(`SMTP connection verified for ${process.env.EMAIL_USER}`);
+
+    // Envoyer l'email
+    await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully to ${recipientEmail}`);
+  } catch (error: any) {
+    console.error(`Failed to send email to ${recipientEmail}:`, error);
+    if (error.message.includes("550 5.1.1")) {
+      throw new Error("L'adresse email fournie n'existe pas. Veuillez vérifier l'email.");
+    }
+    throw new Error(`Failed to send email: ${error.message}`);
   }
 }
 private static async saveUser(
