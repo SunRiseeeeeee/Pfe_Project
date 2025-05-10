@@ -6,14 +6,16 @@ import fs from "fs";
 import path from "path";
 import { promisify } from "util";
 import { Types } from "mongoose";
-import { IComment, IReaction } from "../models/Post"; // Import des interfaces depuis le modèle
+import { IComment, IReaction } from "../models/Post";
+import multer from "multer";
 
 const unlinkAsync = promisify(fs.unlink);
 
 // Interface pour typer les réponses des posts
 interface IPostResponse {
   _id: Types.ObjectId;
-  photo: string;
+  media: string;
+  mediaType: "image" | "video";
   description: string;
   createdAt: Date;
   updatedAt: Date;
@@ -54,12 +56,24 @@ interface IPostResponse {
     createdAt: Date;
     updatedAt: Date;
   }>;
+  commentCount: number;
 }
+
+// 📌 Middleware to handle Multer errors
+export const handleMulterError = (err: any, req: Request, res: Response, next: Function) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ message: "Champ inattendu. Utilisez le champ 'media' pour le fichier." });
+    }
+    return res.status(400).json({ message: `Erreur Multer: ${err.message}` });
+  }
+  next(err);
+};
 
 // 📌 Créer un post
 export const createPost = async (req: Request, res: Response): Promise<Response> => {
   if (!req.file) {
-    return res.status(400).json({ message: "L'image est requise." });
+    return res.status(400).json({ message: "Le média (image ou vidéo) est requis." });
   }
 
   const { description } = req.body;
@@ -70,21 +84,24 @@ export const createPost = async (req: Request, res: Response): Promise<Response>
   }
 
   try {
+    const mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
     const newPost = await Post.create({
-      photo: req.file.filename,
+      media: req.file.filename,
+      mediaType,
       description,
       veterinaireId,
       createdBy: veterinaireId,
       createdByModel: "Veterinarian",
     });
 
-    const photoUrl = `${req.protocol}://${req.get("host")}/uploads/posts/${newPost.photo}`;
+    const mediaUrl = `${req.protocol}://${req.get("host")}/uploads/posts/${newPost.media}`;
 
     return res.status(201).json({
       message: "Post créé avec succès",
       post: {
         _id: newPost._id,
-        photo: photoUrl,
+        media: mediaUrl,
+        mediaType: newPost.mediaType,
         description: newPost.description,
         createdAt: newPost.createdAt,
         updatedAt: newPost.updatedAt,
@@ -115,10 +132,11 @@ export const updatePost = async (req: Request, res: Response): Promise<Response>
       return res.status(404).json({ message: "Post non trouvé ou accès non autorisé." });
     }
 
-    let oldImage: string | null = null;
+    let oldMedia: string | null = null;
     if (req.file) {
-      oldImage = post.photo;
-      post.photo = req.file.filename;
+      oldMedia = post.media;
+      post.media = req.file.filename;
+      post.mediaType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
     }
 
     if (typeof req.body.description === 'string') {
@@ -127,19 +145,20 @@ export const updatePost = async (req: Request, res: Response): Promise<Response>
 
     const updatedPost = await post.save();
 
-    if (oldImage) {
-      const filePath = path.join(__dirname, "..", "services", "uploads", "posts", oldImage);
+    if (oldMedia) {
+      const filePath = path.join(__dirname, "..", "services", "uploads", "posts", oldMedia);
       if (fs.existsSync(filePath)) {
         try { await unlinkAsync(filePath); } catch (e) { console.error(e); }
       }
     }
 
-    const photoUrl = `${req.protocol}://${req.get("host")}/uploads/posts/${updatedPost.photo}`;
+    const mediaUrl = `${req.protocol}://${req.get("host")}/uploads/posts/${updatedPost.media}`;
     return res.status(200).json({
       message: "Post mis à jour avec succès",
       post: {
         _id: updatedPost._id,
-        photo: photoUrl,
+        media: mediaUrl,
+        mediaType: updatedPost.mediaType,
         description: updatedPost.description,
         updatedAt: updatedPost.updatedAt,
       },
@@ -167,7 +186,7 @@ export const deletePost = async (req: Request, res: Response): Promise<Response>
       return res.status(404).json({ message: "Post non trouvé ou accès non autorisé." });
     }
 
-    const filePath = path.join(__dirname, "..", "services", "uploads", "posts", post.photo);
+    const filePath = path.join(__dirname, "..", "services", "uploads", "posts", post.media);
     try { await unlinkAsync(filePath); } catch {}
 
     return res.status(200).json({ message: "Post supprimé avec succès" });
@@ -424,7 +443,8 @@ const formatPostResponse = (host: string) => (post: any): IPostResponse => {
 
   return {
     _id: post._id,
-    photo: `${host}/uploads/posts/${post.photo}`,
+    media: `${host}/uploads/posts/${post.media}`,
+    mediaType: post.mediaType,
     description: post.description,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
@@ -438,7 +458,8 @@ const formatPostResponse = (host: string) => (post: any): IPostResponse => {
       counts,
       userReactions
     },
-    comments: formattedComments
+    comments: formattedComments,
+    commentCount: post.comments.length
   };
 };
 
@@ -482,7 +503,7 @@ export const addComment = async (req: Request, res: Response): Promise<Response>
       message: "Commentaire ajouté avec succès", 
       comment: {
         ...newComment,
-        _id: post.comments[post.comments.length - 1]._id // Récupère l'ID généré par MongoDB
+        _id: post.comments[post.comments.length - 1]._id!
       } 
     });
   } catch (error: any) {
@@ -509,7 +530,7 @@ export const updateComment = async (req: Request, res: Response): Promise<Respon
       return res.status(404).json({ message: "Post non trouvé." });
     }
 
-    const comment = post.comments.find(c => c._id.toString() === commentId);
+    const comment = post.comments.find(c => c._id!.toString() === commentId);
     if (!comment) {
       return res.status(404).json({ message: "Commentaire non trouvé." });
     }
@@ -522,6 +543,7 @@ export const updateComment = async (req: Request, res: Response): Promise<Respon
       message: "Commentaire modifié avec succès", 
       comment: {
         ...comment,
+        _id: comment._id!,
         user: {
           _id: comment.userId,
           firstName: comment.userDetails?.firstName || '',
@@ -549,7 +571,7 @@ export const deleteComment = async (req: Request, res: Response): Promise<Respon
       return res.status(404).json({ message: "Post non trouvé." });
     }
 
-    const commentIndex = post.comments.findIndex(c => c._id.toString() === commentId);
+    const commentIndex = post.comments.findIndex(c => c._id!.toString() === commentId);
     if (commentIndex === -1) {
       return res.status(404).json({ message: "Commentaire non trouvé." });
     }

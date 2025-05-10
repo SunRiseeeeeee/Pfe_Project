@@ -21,12 +21,13 @@ const postsStorage = multer.diskStorage({
   },
 });
 
-// 📌 Filtrer les types de fichiers (images uniquement)
+// 📌 Filtrer les types de fichiers (images et vidéos uniquement)
 const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  if (file.mimetype.startsWith('image/')) {
+  const allowedTypes = ['image/', 'video/mp4', 'video/avi', 'video/mpeg', 'video/quicktime'];
+  if (allowedTypes.some(type => file.mimetype.startsWith(type))) {
     cb(null, true);
   } else {
-    cb(new Error('Seuls les fichiers image sont autorisés'));
+    cb(new Error('Seuls les fichiers image ou vidéo sont autorisés'));
   }
 };
 
@@ -34,7 +35,7 @@ const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.
 const postUpload = multer({
   storage: postsStorage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max
-}).single('image'); // Le champ de formulaire s'appelle 'image'
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 Mo max pour permettre les vidéos
+}).single('media'); // Le champ de formulaire s'appelle 'media'
 
 export { postUpload };

@@ -13,7 +13,7 @@ export interface IReaction {
 }
 
 export interface IComment {
-  [x: string]: any;
+  _id?: Types.ObjectId; // Made optional to fix TS2741
   userId: Types.ObjectId;
   content: string;
   userDetails?: IReactionUserDetails;
@@ -23,7 +23,8 @@ export interface IComment {
 }
 
 export interface IPost extends Document {
-  photo: string;
+  media: string;
+  mediaType: "image" | "video";
   description: string;
   createdAt: Date;
   updatedAt: Date;
@@ -72,7 +73,12 @@ const CommentSchema = new Schema({
 
 const PostSchema: Schema = new Schema(
   {
-    photo: { type: String, required: true },
+    media: { type: String, required: true },
+    mediaType: { 
+      type: String, 
+      enum: ["image", "video"], 
+      required: true 
+    },
     description: { type: String, required: true },
     createdBy: {
       type: Schema.Types.ObjectId,
