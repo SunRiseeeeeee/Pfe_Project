@@ -4,8 +4,8 @@ import 'package:vetapp_v1/models/veterinarian.dart';
 import 'package:vetapp_v1/screens/reviews_screen.dart';
 import 'package:vetapp_v1/services/review_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'bookAppointment.dart';
+import 'package:vetapp_v1/screens/bookAppointment.dart';
+import 'dart:convert';
 
 class VetDetailsScreen extends StatefulWidget {
   final Veterinarian vet;
@@ -39,27 +39,83 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     }
   }
 
-  // Method to navigate to the ReviewsScreen
   void navigateToReviews() async {
-    // Get the current user ID from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final currentUserId = prefs.getString('userId');
 
     if (currentUserId != null) {
-      // Navigate to ReviewsScreen passing both vetId and currentUserId
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => ReviewsScreen(
             vetId: widget.vet.id,
-            currentUserId: currentUserId,  // Pass userId
+            currentUserId: currentUserId,
           ),
         ),
       );
     } else {
-      // Handle the case where userId is not found in SharedPreferences
       print("User ID not found in SharedPreferences");
     }
+  }
+
+  Map<String, dynamic> parseWorkingHours(String workingHoursString) {
+    debugPrint('Raw working hours input: $workingHoursString');
+    if (workingHoursString.isEmpty) {
+      return {'formatted': 'Not available', 'parsed': []};
+    }
+
+    final entries = workingHoursString.split(RegExp(r'\},\s*\{'));
+    List<Map<String, String?>> parsedHours = [];
+
+    for (var entry in entries) {
+      entry = entry.replaceAll(RegExp(r'[\{\}]'), '');
+      final pairs = entry.split(',').map((e) => e.trim()).toList();
+
+      Map<String, String?> data = {};
+      for (var pair in pairs) {
+        final parts = pair.split(':');
+        if (parts.length >= 2) {
+          final key = parts[0].trim();
+          final value = parts.sublist(1).join(':').trim();
+          data[key] = value == 'null' ? null : value;
+        }
+      }
+
+      final day = data['day'];
+      final start = data['start'];
+      final end = data['end'];
+
+      if (day != null && start != null && end != null) {
+        parsedHours.add({
+          'day': day,
+          'start': start,
+          'end': end,
+          'pauseStart': data['pauseStart'],
+          'pauseEnd': data['pauseEnd'],
+        });
+      }
+    }
+
+    return {
+      'formatted': parsedHours.isEmpty
+          ? 'Not available'
+          : parsedHours
+          .map((e) {
+        String formattedEntry = '${e['day']}: ${e['start']}';
+        if (e['pauseStart'] != null && e['pauseEnd'] != null) {
+          formattedEntry += ' → ${e['pauseStart']} (Break) → ${e['pauseEnd']}';
+        }
+        formattedEntry += ' → ${e['end']}';
+        return formattedEntry;
+      })
+          .join('\n'),
+      'parsed': parsedHours,
+    };
+  }
+
+  String formatWorkingHoursFromString(String workingHoursString) {
+    final result = parseWorkingHours(workingHoursString);
+    return result['formatted'];
   }
 
   @override
@@ -150,7 +206,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                     _infoStat(Icons.history, "10+", "Years Exp."),
                     _infoStat(Icons.star, averageRating.toStringAsFixed(1), "Rating"),
                     GestureDetector(
-                      onTap: navigateToReviews,  // Use the updated method to navigate
+                      onTap: navigateToReviews,
                       child: _infoStat(Icons.comment, "$reviewCount", "Review${reviewCount == 1 ? '' : 's'}"),
                     ),
                   ],
@@ -199,10 +255,16 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
           onPressed: () {
+            final workingHoursData = parseWorkingHours(widget.vet.workingHours ?? '');
+            final workingHoursJson = jsonEncode(workingHoursData['parsed']);
+            debugPrint('Passing working hours JSON to AppointmentsScreen: $workingHoursJson');
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => AppointmentsScreen(vet: widget.vet),
+                builder: (context) => AppointmentsScreen(
+                  vet: widget.vet,
+                  workingHours: workingHoursJson,
+                ),
               ),
             );
           },
@@ -220,44 +282,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         ),
       ),
     );
-  }
-
-  String formatWorkingHoursFromString(String workingHoursString) {
-    final entries = workingHoursString.split(RegExp(r'\},\s*\{'));
-
-    List<String> formatted = [];
-
-    for (var entry in entries) {
-      entry = entry.replaceAll(RegExp(r'[\{\}]'), '');
-      final pairs = entry.split(',').map((e) => e.trim()).toList();
-
-      Map<String, String?> data = {};
-      for (var pair in pairs) {
-        final parts = pair.split(':');
-        if (parts.length >= 2) {
-          final key = parts[0].trim();
-          final value = parts.sublist(1).join(':').trim();
-          data[key] = value == 'null' ? null : value;
-        }
-      }
-
-      final day = data['day'] ?? '...';
-      final start = data['start'] ?? '...';
-      final end = data['end'] ?? '...';
-      final pauseStart = data['pauseStart'];
-      final pauseEnd = data['pauseEnd'];
-
-      String formattedEntry = '$day: $start';
-
-      if (pauseStart != null && pauseEnd != null) {
-        formattedEntry += ' → $pauseStart (Break) → $pauseEnd';
-      }
-
-      formattedEntry += ' → $end';
-      formatted.add(formattedEntry);
-    }
-
-    return formatted.join('\n');
   }
 
   Widget _infoStat(IconData icon, String value, String label) {

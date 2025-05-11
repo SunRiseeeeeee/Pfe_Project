@@ -11,8 +11,10 @@ class PetService {
     BaseOptions(baseUrl: 'http://192.168.1.18:3000/api'), // ✅ Correct base URL
   );
 
+  // 🔹 Get the token from the TokenStorage
   Future<String?> _getToken() async => await TokenStorage.getToken();
 
+  // 🔹 Decode the JWT token to retrieve the user ID
   Future<String> _getUserId(String token) {
     final decoded = JwtDecoder.decode(token);
     final userId = decoded['id']?.toString();
@@ -34,11 +36,25 @@ class PetService {
     );
 
     if (response.statusCode == 200) {
-      return List<Map<String, dynamic>>.from(response.data);
+      List<Map<String, dynamic>> pets =
+      List<Map<String, dynamic>>.from(response.data);
+
+      // Append full image URL if image path exists
+      for (var pet in pets) {
+        final imagePath = pet['image'];
+        if (imagePath != null && imagePath.toString().isNotEmpty) {
+          pet['imageUrl'] = 'http://192.168.1.18:3000/$imagePath'; // ✅ Ensure this matches your backend static path
+        } else {
+          pet['imageUrl'] = null;
+        }
+      }
+
+      return pets;
     } else {
       throw Exception('Failed to load pets: ${response.statusCode}');
     }
   }
+
 
   /// 🔹 Create a new pet
   Future<Map<String, dynamic>> createPet({
@@ -54,6 +70,7 @@ class PetService {
 
     final userId = await _getUserId(token);
 
+    // Prepare the form data for the request
     FormData formData = FormData.fromMap({
       'name': name,
       'species': species,
@@ -97,6 +114,7 @@ class PetService {
 
     final userId = await _getUserId(token);
 
+    // Prepare the form data for the request
     FormData formData = FormData.fromMap({
       'name': name,
       'species': species,
