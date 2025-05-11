@@ -82,8 +82,8 @@ export const createAppointment = async (
 
 // Vérification du créneau - Seulement pour les rendez-vous ACCEPTED
 const appointmentDate = new Date(date);
-const windowStart = new Date(appointmentDate.getTime() - 20 * 60000);
-const windowEnd = new Date(appointmentDate.getTime() + 20 * 60000);
+const windowStart = new Date(appointmentDate.getTime() - 29 * 60000);
+const windowEnd = new Date(appointmentDate.getTime() + 29 * 60000);
 
 const conflicting = await Appointment.find({
   veterinaireId: veterinaire._id,
