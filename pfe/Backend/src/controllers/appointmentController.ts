@@ -80,25 +80,25 @@ export const createAppointment = async (
       return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
     }
 
-    // Vérification du créneau
-    const appointmentDate = new Date(date);
-    const windowStart = new Date(appointmentDate.getTime() - 20 * 60000);
-    const windowEnd = new Date(appointmentDate.getTime() + 20 * 60000);
+// Vérification du créneau - Seulement pour les rendez-vous ACCEPTED
+const appointmentDate = new Date(date);
+const windowStart = new Date(appointmentDate.getTime() - 20 * 60000);
+const windowEnd = new Date(appointmentDate.getTime() + 20 * 60000);
 
-    const conflicting = await Appointment.find({
-      veterinaireId: veterinaire._id,
-      date: { $gte: windowStart, $lte: windowEnd },
-      status: { $ne: AppointmentStatus.REJECTED }
-    });
+const conflicting = await Appointment.find({
+  veterinaireId: veterinaire._id,
+  date: { $gte: windowStart, $lte: windowEnd },
+  status: AppointmentStatus.ACCEPTED // Seulement vérifier les rendez-vous acceptés
+});
 
-    if (conflicting.length) {
-      return sendResponse(
-        res,
-        400,
-        {},
-        "Créneau indisponible. Il doit y avoir au moins 20 minutes entre deux rendez-vous."
-      );
-    }
+if (conflicting.length) {
+  return sendResponse(
+    res,
+    400,
+    {},
+    "Créneau indisponible. Il doit y avoir au moins 20 minutes entre deux rendez-vous acceptés."
+  );
+}
 
     // Enregistrer le rendez-vous
     const appointment = new Appointment({
