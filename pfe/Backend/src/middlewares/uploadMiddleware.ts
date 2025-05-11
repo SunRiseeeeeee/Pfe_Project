@@ -1,71 +1,68 @@
-import multer from 'multer';
+import multer, { MulterError } from 'multer';
 import path from 'path';
-import fs from 'fs';
+import fs from 'fs/promises';
+import os from 'os';
 
-// 📌 Dossiers d'upload
-const uploadDirs: Record<string, string> = {
-  users: path.join(__dirname, '..', 'services', 'uploads', 'users'),
-  animals: path.join(__dirname, '..', 'services', 'uploads', 'animals'),
-  services: path.join(__dirname, '..', 'services', 'uploads', 'services'),
-  posts: path.join(__dirname, '..', 'services', 'uploads', 'posts'),
+// 📌 Chemin vers le dossier d'upload des messages de chat
+const chatsUploadDir = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR, 'chats')
+  : path.resolve(__dirname, '..', 'services', 'uploads', 'chats');
+
+// 📌 Créer le dossier s'il n'existe pas (asynchrone)
+const ensureUploadDir = async (): Promise<void> => {
+  try {
+    await fs.mkdir(chatsUploadDir, { recursive: true });
+  } catch (error) {
+    console.error('Erreur lors de la création du dossier d’upload:', error);
+    throw new Error('Impossible de configurer le dossier d’upload');
+  }
 };
 
-// 📌 Création des dossiers s'ils n'existent pas
-Object.values(uploadDirs).forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+// 📌 Vérifier le dossier au démarrage
+ensureUploadDir().catch((error) => {
+  console.error('Échec de l’initialisation du dossier d’upload:', error);
+  console.warn('Les uploads seront désactivés jusqu’à ce que le dossier soit accessible.');
 });
 
-// 📌 Générer le nom du fichier
-const generateFilename = (prefix: string, originalname: string): string => {
-  return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(originalname)}`;
-};
+// 📌 Configuration de stockage pour les messages de chat
+const chatsStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, chatsUploadDir);
+  },
+  filename: (req, file, cb) => {
+    const filename = `chat-${Date.now()}-${Math.floor(Math.random() * 100000)}${path.extname(file.originalname)}`;
+    cb(null, filename);
+  },
+});
 
-// 📌 Configuration du stockage dynamique
-const storage = (folder: string) =>
-  multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, folder);
-    },
-    filename: (req, file, cb) => {
-      cb(null, generateFilename(path.basename(folder), file.originalname));
-    },
-  });
-
-// 📌 Filtrer les types de fichiers (images uniquement)
+// 📌 Filtrer les types de fichiers (images, vidéos, audio, fichiers spécifiques)
 const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  if (file.mimetype.startsWith('image/')) {
+  const allowedTypes = [
+    /^image\//, // Toutes les images (jpeg, png, gif, etc.)
+    /^video\/(mp4|webm)$/, // MP4, WebM
+    /^audio\/(mpeg|wav|ogg)$/, // MP3, WAV, OGG
+    'application/pdf', // PDF
+    'text/plain', // TXT
+    'application/msword', // DOC
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+  ];
+
+  const isAllowed = allowedTypes.some((type) =>
+    typeof type === 'string' ? file.mimetype === type : type.test(file.mimetype)
+  );
+
+  if (isAllowed) {
     cb(null, true);
   } else {
-    cb(new Error('Seuls les fichiers image sont autorisés'));
+    cb(new MulterError('LIMIT_UNEXPECTED_FILE', `Type de fichier non supporté: ${file.mimetype}`));
   }
 };
 
-// 📌 Configuration de multer pour chaque type
-const userUpload = multer({
-  storage: storage(uploadDirs.users),
+// 📌 Configuration de multer pour les messages de chat
+const chatUpload = multer({
+  storage: chatsStorage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
-}).single('image');
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 Mo max pour permettre vidéos/audio
+});
 
-const animalUpload = multer({
-  storage: storage(uploadDirs.animals),
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
-}).single('image');
-
-const serviceUpload = multer({
-  storage: storage(uploadDirs.services),
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
-}).single('image');
-
-const postUpload = multer({
-  storage: storage(uploadDirs.posts),
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
-}).single('photo'); // Le champ de formulaire s'appelle 'photo' pour les posts
-
-// 📌 Export des configurations
-export { userUpload, animalUpload, serviceUpload, postUpload };
+export { chatUpload };

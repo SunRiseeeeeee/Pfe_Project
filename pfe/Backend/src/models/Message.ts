@@ -1,64 +1,124 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
-import { UserRole } from '../types';
 
+// Enum for message types
 export enum MessageType {
   TEXT = 'text',
   IMAGE = 'image',
-  VIDEO = 'video'
+  VIDEO = 'video',
+  FILE = 'file',
+  AUDIO = 'audio',
 }
 
+// Interface for the message document
 export interface IMessage extends Document {
   chatId: Types.ObjectId;
   sender: Types.ObjectId;
   type: MessageType;
-  content: string;      // texte ou URL image/vidéo
+  content: string;
+  readBy: Types.ObjectId[];
   createdAt: Date;
-  senderInfo?: {       // virtual populated
+  updatedAt?: Date;
+  senderInfo?: {
     _id: Types.ObjectId;
+    firstName: string;
+    lastName: string;
     username: string;
     profilePicture?: string;
+    role: string;
   };
 }
 
-const MessageSchema: Schema = new Schema<IMessage>(
+// Define the schema
+const MessageSchema: Schema<IMessage> = new Schema<IMessage>(
   {
     chatId: {
       type: Schema.Types.ObjectId,
       ref: 'Chat',
-      required: true
+      required: true,
+      index: true,
     },
     sender: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: true,
+      index: true,
     },
     type: {
       type: String,
       enum: Object.values(MessageType),
-      default: MessageType.TEXT
+      default: MessageType.TEXT,
+      required: true,
     },
     content: {
       type: String,
-      required: true
-    }
+      required: true,
+      trim: true,
+      maxlength: 2000,
+      validate: {
+        validator: function (content: string) {
+          return !(this.type === MessageType.TEXT && content.length > 2000);
+        },
+        message: 'Le message texte ne peut pas dépasser 2000 caractères',
+      },
+    },
+    readBy: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        default: [],
+      },
+    ],
   },
   {
-    timestamps: { createdAt: true, updatedAt: false },
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+    timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc: Document, ret: Record<string, any>) {
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc: Document, ret: Record<string, any>) {
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
 );
 
-// Virtual to include sender username and profilePicture
+// Virtual for sender information
 MessageSchema.virtual('senderInfo', {
   ref: 'User',
   localField: 'sender',
   foreignField: '_id',
   justOne: true,
-  options: { select: 'username profilePicture' }
+  options: {
+    select: 'firstName lastName username profilePicture role',
+  },
 });
 
-// Index to speed up chat message retrieval
-MessageSchema.index({ chatId: 1, createdAt: 1 });
+// Indexes
+MessageSchema.index({ chatId: 1, createdAt: -1 }); // For retrieving recent messages in a chat
+MessageSchema.index({ sender: 1, createdAt: -1 }); // For finding messages by user
+MessageSchema.index({ readBy: 1 }); // For queries on read messages
 
+// Middleware to validate content before saving
+MessageSchema.pre<IMessage>('save', function (next) {
+  if (
+    this.isModified('content') &&
+    this.type === MessageType.TEXT &&
+    this.content.length > 2000
+  ) {
+    return next(new Error('Le message texte ne peut pas dépasser 2000 caractères'));
+  }
+  next();
+});
+
+// Export the model
 export default mongoose.model<IMessage>('Message', MessageSchema);

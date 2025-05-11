@@ -245,9 +245,8 @@ export class AuthService {
     if (!user || !user._id) {
       throw new Error("Invalid user object: missing _id");
     }
-  
     const commonPayload: JwtPayload = {
-      id: user.id.toString(), // Ligne 245
+      id: user._id.toString(),
       role: user.role,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -256,8 +255,8 @@ export class AuthService {
       profilePicture: user.profilePicture,
       address: user.address,
       iat: Math.floor(Date.now() / 1000),
+      ...(user.role === UserRole.SECRETAIRE && user.veterinaireId && { veterinaireId: user.veterinaireId.toString() }),
     };
-  
     const accessToken = jwt.sign(commonPayload, process.env.JWT_SECRET!, {
       expiresIn: ACCESS_TOKEN_EXPIRATION,
     });
