@@ -1,35 +1,104 @@
 import mongoose, { Schema, Document, Types } from "mongoose";
 
-// Interface TypeScript pour un post
-export interface IPost extends Document {
-  photo: string; // Photo du post
-  description: string; // Description du post
-  createdAt: Date; // Date de création du post (gérée automatiquement avec timestamps)
-  updatedAt: Date; // Date de dernière modification (gérée automatiquement avec timestamps)
-  createdBy: mongoose.Types.ObjectId; // Référence vers l'utilisateur (User, Veterinarian)
-  createdByModel: "User" | "Veterinarian"; // Modèle de l'utilisateur
-  veterinaireId?: Types.ObjectId; // ID du vétérinaire si le post est créé par un vétérinaire
+export interface IReactionUserDetails {
+  firstName: string;
+  lastName: string;
+  profilePicture?: string;
 }
 
-// Définition du schéma Mongoose
-const PostSchema: Schema = new Schema({
-  photo: { type: String, required: true }, // Photo du post
-  description: { type: String, required: true }, // Description du post
-  createdBy: { 
+export interface IReaction {
+  userId: Types.ObjectId;
+  type: "j'aime" | "j'adore" | "triste" | "j'admire";
+  userDetails?: IReactionUserDetails;
+}
+
+export interface IComment {
+  _id?: Types.ObjectId; // Made optional to fix TS2741
+  userId: Types.ObjectId;
+  content: string;
+  userDetails?: IReactionUserDetails;
+  reactions: IReaction[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IPost extends Document {
+  media: string;
+  mediaType: "image" | "video";
+  description: string;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: mongoose.Types.ObjectId;
+  createdByModel: "Veterinarian";
+  veterinaireId?: Types.ObjectId;
+  reactions: IReaction[];
+  comments: IComment[];
+}
+
+const ReactionSchema = new Schema({
+  userId: { 
     type: Schema.Types.ObjectId, 
-    refPath: 'createdByModel', 
+    ref: "User",
     required: true 
   },
-  createdByModel: { 
+  type: { 
     type: String, 
-    required: true, 
-    enum: ["Veterinarian"], // Permet de définir soit User, soit Veterinarian
+    enum: ["j'aime", "j'adore", "triste", "j'admire"],
+    required: true 
   },
-  veterinaireId: { 
-    type: Schema.Types.ObjectId, 
-    ref: 'Veterinarian', // Le vétérinaire peut être lié à un utilisateur vétérinaire
-    required: false 
+  userDetails: {
+    firstName: { type: String },
+    lastName: { type: String },
+    profilePicture: { type: String }
+  }
+}, { _id: false });
+
+const CommentSchema = new Schema({
+  userId: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    required: true
   },
-}, { timestamps: true }); // Active la gestion automatique des dates createdAt et updatedAt
+  content: {
+    type: String,
+    required: true
+  },
+  userDetails: {
+    firstName: { type: String },
+    lastName: { type: String },
+    profilePicture: { type: String }
+  },
+  reactions: [ReactionSchema]
+}, { timestamps: true });
+
+const PostSchema: Schema = new Schema(
+  {
+    media: { type: String, required: true },
+    mediaType: { 
+      type: String, 
+      enum: ["image", "video"], 
+      required: true 
+    },
+    description: { type: String, required: true },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      refPath: "createdByModel",
+      required: true,
+    },
+    createdByModel: {
+      type: String,
+      required: true,
+      enum: ["Veterinarian"],
+    },
+    veterinaireId: {
+      type: Schema.Types.ObjectId,
+      ref: "Veterinarian",
+      required: false,
+    },
+    reactions: [ReactionSchema],
+    comments: [CommentSchema]
+  },
+  { timestamps: true }
+);
 
 export default mongoose.model<IPost>("Post", PostSchema);
