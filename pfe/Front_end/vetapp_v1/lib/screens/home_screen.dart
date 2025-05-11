@@ -350,13 +350,77 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 
+  // Modify the _buildSectionHeader method
   Widget _buildSectionHeader(String title) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Poppins')),
-        const Text('See All', style: TextStyle(color: Colors.blue, fontFamily: 'Poppins')),
+        Text(
+          title,
+          style: const TextStyle(
+              fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
+        ),
+        // Replace 'See All' with the filter button
+        IconButton(
+          icon: const Icon(Icons.filter_list, color: Colors.blue),
+          onPressed: () {
+            // You can call your filter logic here or navigate to a filter screen
+            _showFilterDialog();
+          },
+        ),
       ],
+    );
+  }
+
+// Method to show filter options (you can customize this)
+  void _showFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Filter Veterinarians'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Filter by Rating'),
+              DropdownButton<String>(
+                value: ratingFilter,
+                items: ['1', '2', '3', '4', '5'].map((String rating) {
+                  return DropdownMenuItem<String>(
+                    value: rating,
+                    child: Text(rating),
+                  );
+                }).toList(),
+                onChanged: (String? value) {
+                  setState(() {
+                    ratingFilter = value;
+                    _refreshVeterinarians(1); // Refresh veterinarians with new filter
+                  });
+                  Navigator.pop(context); // Close dialog after selection
+                },
+              ),
+              const SizedBox(height: 16),
+              const Text('Filter by Location'),
+              TextField(
+                onChanged: (value) {
+                  locationFilter = value;
+                },
+                decoration: const InputDecoration(hintText: 'Enter location'),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _refreshVeterinarians(1); // Refresh veterinarians after applying filter
+                  });
+                  Navigator.pop(context); // Close dialog after applying filter
+                },
+                child: const Text('Apply Filters'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

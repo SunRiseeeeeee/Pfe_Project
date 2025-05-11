@@ -2,11 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:vetapp_v1/services/pet_service.dart';
 import 'package:vetapp_v1/services/appointment_service.dart';
 import 'package:dio/dio.dart';
+import 'package:intl/intl.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
+import 'dart:convert';
 
 class AppointmentsScreen extends StatefulWidget {
   final Veterinarian vet;
-  const AppointmentsScreen({Key? key, required this.vet}) : super(key: key);
+  final String workingHours;
+
+  const AppointmentsScreen({
+    Key? key,
+    required this.vet,
+    required this.workingHours,
+  }) : super(key: key);
 
   @override
   _AppointmentsScreenState createState() => _AppointmentsScreenState();
@@ -29,10 +37,14 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   late final AppointmentService _appointmentService;
   late final PetService _petService;
   String? _errorMessage;
+  final _scrollController = ScrollController();
+
+  late Map<int, Map<String, String>> parsedWorkingHours;
 
   @override
   void initState() {
     super.initState();
+
     final dio = Dio(BaseOptions(
       baseUrl: 'http://192.168.1.18:3000/api',
       headers: {
@@ -40,8 +52,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         'Content-Type': 'application/json',
       },
     ));
+
     _appointmentService = AppointmentService(dio: dio);
     _petService = PetService(dio: dio);
+
+    parsedWorkingHours = _parseWorkingHours(widget.workingHours);
+    debugPrint('Parsed working hours: $parsedWorkingHours');
+
     _initializeUserAndPets();
   }
 
@@ -52,20 +69,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     });
 
     try {
-      await _fetchPets();
-    } catch (e) {
-      setState(() => _errorMessage = e.toString());
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _fetchPets() async {
-    try {
       final fetchedPets = await _petService.getUserPets();
       setState(() => pets = fetchedPets);
     } catch (e) {
       setState(() => _errorMessage = 'Failed to load pets: ${e.toString()}');
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -77,17 +86,368 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
-      setState(() => selectedDate = picked);
+      setState(() {
+        selectedDate = picked;
+        selectedTime = null; // Reset time when date changes
+      });
     }
   }
 
   Future<void> _selectTime() async {
-    final TimeOfDay? picked = await showTimePicker(
+    await _showCustomTimePicker();
+  }
+
+  Future<void> _showCustomTimePicker() async {
+    if (selectedDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a date first')),
+      );
+      return;
+    }
+
+    final int dayOfWeek = selectedDate!.weekday;
+    final dayHours = parsedWorkingHours[dayOfWeek];
+
+    if (dayHours == null || dayHours['start'] == null || dayHours['end'] == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No working hours available for the selected day')),
+      );
+      return;
+    }
+
+    final DateFormat timeFormat = DateFormat('HH:mm');
+    TimeOfDay? selected;
+
+    final List<TimeOfDay> timeSlots = [];
+    try {
+      final startTime = timeFormat.parse(dayHours['start']!);
+      final endTime = timeFormat.parse(dayHours['end']!);
+      final pauseStart = dayHours['pauseStart'] != null && dayHours['pauseStart']!.isNotEmpty
+          ? timeFormat.parse(dayHours['pauseStart']!)
+          : null;
+      final pauseEnd = dayHours['pauseEnd'] != null && dayHours['pauseEnd']!.isNotEmpty
+          ? timeFormat.parse(dayHours['pauseEnd']!)
+          : null;
+
+      DateTime current = startTime;
+      while (current.isBefore(endTime) || current.isAtSameMomentAs(endTime)) {
+        final hour = current.hour;
+        final minute = current.minute;
+        timeSlots.add(TimeOfDay(hour: hour, minute: minute));
+        current = current.add(const Duration(minutes: 15));
+      }
+    } catch (e) {
+      debugPrint('Error generating time slots: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error loading time slots')),
+      );
+      return;
+    }
+
+    await showDialog<TimeOfDay>(
       context: context,
-      initialTime: TimeOfDay.now(),
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Select Time'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                childAspectRatio: 2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: timeSlots.length,
+              itemBuilder: (context, index) {
+                final time = timeSlots[index];
+                final isValid = _isTimeSlotValid(time, dayHours);
+
+                return GestureDetector(
+                  onTap: isValid
+                      ? () {
+                    selected = time;
+                    Navigator.pop(context, time);
+                  }
+                      : null,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isValid ? Colors.white : Colors.red.withOpacity(0.1),
+                      border: Border.all(
+                        color: isValid ? Colors.grey : Colors.red,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Text(
+                        time.format(context),
+                        style: TextStyle(
+                          color: isValid ? Colors.black : Colors.red,
+                          fontWeight: isValid ? FontWeight.normal : FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    ).then((value) {
+      if (value != null) {
+        setState(() => selectedTime = value);
+      }
+    });
+  }
+
+  bool _isTimeSlotValid(TimeOfDay time, Map<String, String> dayHours) {
+    final DateFormat dateFormat = DateFormat('HH:mm');
+    final selectedDateTime = DateTime(
+      selectedDate!.year,
+      selectedDate!.month,
+      selectedDate!.day,
+      time.hour,
+      time.minute,
     );
-    if (picked != null) {
-      setState(() => selectedTime = picked);
+
+    try {
+      final startTime = dateFormat.parse(dayHours['start']!);
+      final endTime = dateFormat.parse(dayHours['end']!);
+      final pauseStartStr = dayHours['pauseStart'] ?? '';
+      final pauseEndStr = dayHours['pauseEnd'] ?? '';
+
+      final fullStart = DateTime(
+        selectedDate!.year,
+        selectedDate!.month,
+        selectedDate!.day,
+        startTime.hour,
+        startTime.minute,
+      );
+
+      final fullEnd = DateTime(
+        selectedDate!.year,
+        selectedDate!.month,
+        selectedDate!.day,
+        endTime.hour,
+        endTime.minute,
+      );
+
+      final isWithinHours = (selectedDateTime.isAfter(fullStart) || selectedDateTime.isAtSameMomentAs(fullStart)) &&
+          (selectedDateTime.isBefore(fullEnd) || selectedDateTime.isAtSameMomentAs(fullEnd));
+
+      bool isDuringPause = false;
+      if (pauseStartStr.isNotEmpty && pauseEndStr.isNotEmpty) {
+        final timeFormat = RegExp(r'^\d{2}:\d{2}$');
+        if (!timeFormat.hasMatch(pauseStartStr) || !timeFormat.hasMatch(pauseEndStr)) {
+          debugPrint('Invalid pause time format: pauseStart=$pauseStartStr, pauseEnd=$pauseEndStr');
+          return isWithinHours;
+        }
+
+        final pauseStartTime = dateFormat.parse(pauseStartStr);
+        final pauseEndTime = dateFormat.parse(pauseEndStr);
+
+        final fullPauseStart = DateTime(
+          selectedDate!.year,
+          selectedDate!.month,
+          selectedDate!.day,
+          pauseStartTime.hour,
+          pauseStartTime.minute,
+        );
+
+        final fullPauseEnd = DateTime(
+          selectedDate!.year,
+          selectedDate!.month,
+          selectedDate!.day,
+          pauseEndTime.hour,
+          pauseEndTime.minute,
+        );
+
+        isDuringPause = selectedDateTime.isAtSameMomentAs(fullPauseStart) ||
+            (selectedDateTime.isAfter(fullPauseStart) &&
+                (selectedDateTime.isBefore(fullPauseEnd) || selectedDateTime.isAtSameMomentAs(fullPauseEnd)));
+      }
+
+      return isWithinHours && !isDuringPause;
+    } catch (e) {
+      debugPrint('Error validating time slot: $e');
+      return false;
+    }
+  }
+
+  Map<int, Map<String, String>> _parseWorkingHours(String? workingHoursJson) {
+    final daysMapping = {
+      'monday': 1,
+      'tuesday': 2,
+      'wednesday': 3,
+      'thursday': 4,
+      'friday': 5,
+      'saturday': 6,
+      'sunday': 7,
+    };
+
+    final Map<int, Map<String, String>> result = {};
+
+    if (workingHoursJson == null || workingHoursJson.isEmpty) {
+      debugPrint('Working hours JSON is null or empty');
+      setState(() => _errorMessage = 'Working hours data is missing');
+      return result;
+    }
+
+    debugPrint('Received working hours JSON: $workingHoursJson');
+
+    try {
+      final List<dynamic> entries = jsonDecode(workingHoursJson);
+      debugPrint('Parsed JSON entries: $entries');
+
+      for (var entry in entries) {
+        if (entry is Map<String, dynamic>) {
+          final day = entry['day']?.toString().toLowerCase();
+          final start = entry['start']?.toString();
+          final end = entry['end']?.toString();
+          final pauseStart = entry['pauseStart']?.toString();
+          final pauseEnd = entry['pauseEnd']?.toString();
+
+          if (day != null && start != null && end != null) {
+            final weekday = daysMapping[day];
+            if (weekday != null) {
+              final timeFormat = RegExp(r'^\d{1,2}:\d{2}$');
+              if (timeFormat.hasMatch(start) && timeFormat.hasMatch(end)) {
+                final normalizedStart = start.padLeft(5, '0');
+                final normalizedEnd = end.padLeft(5, '0');
+                result[weekday] = {
+                  'start': normalizedStart,
+                  'end': normalizedEnd,
+                  'pauseStart': pauseStart ?? '',
+                  'pauseEnd': pauseEnd ?? '',
+                };
+              } else {
+                debugPrint('Invalid time format for day $day: start=$start, end=$end');
+              }
+            } else {
+              debugPrint('Invalid day: $day');
+            }
+          } else {
+            debugPrint('Missing fields in entry: $entry');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error parsing working hours: $e');
+      setState(() => _errorMessage = 'Error parsing working hours');
+    }
+
+    if (result.isEmpty) {
+      setState(() => _errorMessage = 'No valid working hours found');
+    }
+
+    return result;
+  }
+
+  bool _isTimeWithinWorkingHours() {
+    if (selectedDate == null || selectedTime == null) {
+      debugPrint('Selected date or time is null');
+      return false;
+    }
+
+    final int dayOfWeek = selectedDate!.weekday;
+    debugPrint('Selected date: $selectedDate, weekday: $dayOfWeek');
+    debugPrint('Selected time: ${selectedTime!.hour}:${selectedTime!.minute}');
+
+    final dayHours = parsedWorkingHours[dayOfWeek];
+    if (dayHours == null) {
+      debugPrint('No working hours for weekday $dayOfWeek');
+      return false;
+    }
+
+    final String startTimeStr = dayHours['start'] ?? '';
+    final String endTimeStr = dayHours['end'] ?? '';
+    final String pauseStartStr = dayHours['pauseStart'] ?? '';
+    final String pauseEndStr = dayHours['pauseEnd'] ?? '';
+    debugPrint('Working hours for day $dayOfWeek: start=$startTimeStr, end=$endTimeStr, pause=$pauseStartStr-$pauseEndStr');
+
+    if (startTimeStr.isEmpty || endTimeStr.isEmpty) {
+      debugPrint('Start or end time is empty');
+      return false;
+    }
+
+    final DateFormat dateFormat = DateFormat('HH:mm');
+
+    try {
+      final DateTime startTime = dateFormat.parse(startTimeStr);
+      final DateTime endTime = dateFormat.parse(endTimeStr);
+
+      final DateTime selectedDateTime = DateTime(
+        selectedDate!.year,
+        selectedDate!.month,
+        selectedDate!.day,
+        selectedTime!.hour,
+        selectedTime!.minute,
+      );
+
+      final DateTime fullStart = DateTime(
+        selectedDate!.year,
+        selectedDate!.month,
+        selectedDate!.day,
+        startTime.hour,
+        startTime.minute,
+      );
+
+      final DateTime fullEnd = DateTime(
+        selectedDate!.year,
+        selectedDate!.month,
+        selectedDate!.day,
+        endTime.hour,
+        endTime.minute,
+      );
+
+      final isWithinHours = (selectedDateTime.isAfter(fullStart) || selectedDateTime.isAtSameMomentAs(fullStart)) &&
+          (selectedDateTime.isBefore(fullEnd) || selectedDateTime.isAtSameMomentAs(fullEnd));
+
+      bool isDuringPause = false;
+      if (pauseStartStr.isNotEmpty && pauseEndStr.isNotEmpty) {
+        final timeFormat = RegExp(r'^\d{2}:\d{2}$');
+        if (!timeFormat.hasMatch(pauseStartStr) || !timeFormat.hasMatch(pauseEndStr)) {
+          debugPrint('Invalid pause time format: pauseStart=$pauseStartStr, pauseEnd=$pauseEndStr');
+          return isWithinHours;
+        }
+
+        final pauseStartTime = dateFormat.parse(pauseStartStr);
+        final pauseEndTime = dateFormat.parse(pauseEndStr);
+
+        final fullPauseStart = DateTime(
+          selectedDate!.year,
+          selectedDate!.month,
+          selectedDate!.day,
+          pauseStartTime.hour,
+          pauseStartTime.minute,
+        );
+
+        final fullPauseEnd = DateTime(
+          selectedDate!.year,
+          selectedDate!.month,
+          selectedDate!.day,
+          pauseEndTime.hour,
+          pauseEndTime.minute,
+        );
+
+        isDuringPause = selectedDateTime.isAtSameMomentAs(fullPauseStart) ||
+            (selectedDateTime.isAfter(fullPauseStart) &&
+                (selectedDateTime.isBefore(fullPauseEnd) || selectedDateTime.isAtSameMomentAs(fullPauseEnd)));
+      }
+
+      debugPrint('Selected: $selectedDateTime, Start: $fullStart, End: $fullEnd, Pause: $isDuringPause');
+      return isWithinHours && !isDuringPause;
+    } catch (e) {
+      debugPrint('Error parsing times: $e');
+      return false;
     }
   }
 
@@ -98,13 +458,34 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         selectedAppointmentType == null ||
         selectedService == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill all required fields")),
+        const SnackBar(content: Text('Please fill all required fields')),
+      );
+      return;
+    }
+
+    if (!_isTimeWithinWorkingHours()) {
+      final dayHours = parsedWorkingHours[selectedDate!.weekday];
+      final pauseStartStr = dayHours?['pauseStart'] ?? '';
+      final pauseEndStr = dayHours?['pauseEnd'] ?? '';
+      final isDuringBreak = pauseStartStr.isNotEmpty &&
+          pauseEndStr.isNotEmpty &&
+          selectedTime != null &&
+          DateFormat('HH:mm').parse(pauseStartStr).hour <= selectedTime!.hour &&
+          selectedTime!.hour <= DateFormat('HH:mm').parse(pauseEndStr).hour;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isDuringBreak
+                ? 'The selected time falls during the veterinarian\'s break period ($pauseStartStr–$pauseEndStr).'
+                : 'The selected time is outside the veterinarian\'s working hours.',
+          ),
+        ),
       );
       return;
     }
 
     setState(() => _isSubmitting = true);
-
     try {
       final appointmentDateTime = DateTime(
         selectedDate!.year,
@@ -113,10 +494,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         selectedTime!.hour,
         selectedTime!.minute,
       );
-      print('Veterinaire ID: ${widget.vet.id}');
 
       final result = await _appointmentService.createAppointment(
-        veterinaireId: widget.vet.id,
+        veterinaireId: widget.vet.id!,
         date: appointmentDateTime,
         animalId: selectedPetId!,
         type: selectedAppointmentType!,
@@ -126,7 +506,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
       if (result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Appointment created successfully!")),
+          const SnackBar(content: Text('Appointment created successfully!')),
         );
         Navigator.pop(context, true);
       } else {
@@ -136,7 +516,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: ${e.toString()}")),
+        SnackBar(content: Text('Error: ${e.toString()}')),
       );
     } finally {
       setState(() => _isSubmitting = false);
@@ -146,10 +526,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Book Appointment'),
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Book Appointment')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
@@ -160,20 +537,21 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   Widget _buildAppointmentForm() {
     final localizations = MaterialLocalizations.of(context);
-
     return SingleChildScrollView(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("1. Select Your Pet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          _sectionTitle('1. Select Your Pet'),
           const SizedBox(height: 8),
-          if (pets.isEmpty)
-            const Text('No pets found. Please add a pet first.', style: TextStyle(color: Colors.red)),
-          if (pets.isNotEmpty) _buildPetSelector(),
+          pets.isEmpty
+              ? const Text('No pets found. Please add a pet first.', style: TextStyle(color: Colors.red))
+              : _buildPetSelector(),
           const SizedBox(height: 24),
-
-          const Text("2. Select Date & Time", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          _sectionTitle('2. Select Date & Time'),
+          const SizedBox(height: 8),
+          _buildWorkingHours(),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -201,44 +579,25 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             ],
           ),
           const SizedBox(height: 24),
-
-          const Text("3. Appointment Type", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          _sectionTitle('3. Appointment Type'),
           const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
+          _buildDropdown(
+            hint: 'Select type',
             value: selectedAppointmentType,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Select type',
-            ),
-            items: appointmentTypes.map((type) {
-              return DropdownMenuItem(
-                value: type,
-                child: Text(type[0].toUpperCase() + type.substring(1)),
-              );
-            }).toList(),
+            items: appointmentTypes,
             onChanged: (value) => setState(() => selectedAppointmentType = value),
           ),
           const SizedBox(height: 24),
-
-          const Text("4. Service Needed", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          _sectionTitle('4. Service Needed'),
           const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
+          _buildDropdown(
+            hint: 'Select service',
             value: selectedService,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Select service',
-            ),
-            items: services.map((service) {
-              return DropdownMenuItem(
-                value: service,
-                child: Text(service),
-              );
-            }).toList(),
+            items: services,
             onChanged: (value) => setState(() => selectedService = value),
           ),
           const SizedBox(height: 24),
-
-          const Text("5. Case Description (Optional)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          _sectionTitle('5. Case Description (Optional)'),
           const SizedBox(height: 8),
           TextField(
             maxLines: 3,
@@ -249,7 +608,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             onChanged: (value) => caseDescription = value,
           ),
           const SizedBox(height: 32),
-
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -262,10 +620,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                   ? const SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 3,
-                ),
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
               )
                   : const Text('BOOK APPOINTMENT', style: TextStyle(fontSize: 16)),
             ),
@@ -275,41 +630,126 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     );
   }
 
-  Widget _buildPetSelector() {
-    return Column(
-      children: pets.map((pet) {
-        final isSelected = pet['_id'] == selectedPetId;
-        final String name = pet['name']?.toString() ?? 'Unnamed';
-        final String type = pet['type']?.toString() ?? 'Unknown';
+  Widget _sectionTitle(String text) {
+    return Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold));
+  }
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(
-              color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
-              width: 1,
-            ),
-          ),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: Icon(
-              Icons.pets,
-              color: isSelected ? Theme.of(context).primaryColor : Colors.grey,
-            ),
-            title: Text(
-              name,
-              style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
-            ),
-            subtitle: Text(type),
-            trailing: isSelected
-                ? Icon(Icons.check_circle, color: Theme.of(context).primaryColor)
-                : null,
-            onTap: () => setState(() => selectedPetId = pet['_id']),
-          ),
-        );
-      }).toList(),
+  Widget _buildDropdown({
+    required String hint,
+    required String? value,
+    required List<String> items,
+    required Function(String?) onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      value: value,
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        hintText: hint,
+      ),
+      items: items.map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(),
+      onChanged: onChanged,
     );
   }
 
+  Widget _buildPetSelector() {
+    return SizedBox(
+      height: 115,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: pets.length,
+        itemBuilder: (context, index) {
+          final pet = pets[index];
+          final petId = pet['_id']?.toString();
+          final isSelected = petId == selectedPetId;
+          final String name = pet['name']?.toString() ?? 'Unnamed';
+          final String? imagePath = pet['picture'];
+          final String? imageUrl = imagePath != null && !imagePath.startsWith('http')
+              ? 'http://192.168.1.18:3000/uploads/animals/$imagePath'
+              : imagePath;
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
+                  width: 1,
+                ),
+              ),
+              child: InkWell(
+                onTap: petId != null ? () => setState(() => selectedPetId = petId) : null,
+                child: Container(
+                  width: 100,
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: Colors.grey[200],
+                        backgroundImage: imageUrl != null
+                            ? NetworkImage(imageUrl)
+                            : const AssetImage('assets/images/placeholder.png') as ImageProvider,
+                        onBackgroundImageError: (_, __) {},
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        name,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildWorkingHours() {
+    if (parsedWorkingHours.isEmpty) {
+      return const Text(
+        'Working hours not available. Please contact the veterinarian for scheduling.',
+        style: TextStyle(color: Colors.red, fontSize: 14),
+      );
+    }
+
+    final daysMapping = {
+      1: 'Monday',
+      2: 'Tuesday',
+      3: 'Wednesday',
+      4: 'Thursday',
+      5: 'Friday',
+      6: 'Saturday',
+      7: 'Sunday',
+    };
+
+    final sortedHours = parsedWorkingHours.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    final hoursText = sortedHours.map((entry) {
+      final day = daysMapping[entry.key] ?? 'Day ${entry.key}';
+      final start = entry.value['start'] ?? 'N/A';
+      final end = entry.value['end'] ?? 'N/A';
+      final pauseStart = entry.value['pauseStart'] ?? '';
+      final pauseEnd = entry.value['pauseEnd'] ?? '';
+      String formatted = '$day: $start → $end';
+      if (pauseStart.isNotEmpty && pauseEnd.isNotEmpty) {
+        formatted += ' (Break: $pauseStart → $pauseEnd)';
+      }
+      return formatted;
+    }).join(', ');
+
+    return Text(
+      'Working Hours: $hoursText',
+      style: const TextStyle(fontSize: 14, color: Colors.black87),
+    );
+  }
 }
