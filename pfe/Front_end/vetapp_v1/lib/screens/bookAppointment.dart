@@ -29,6 +29,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   String? caseDescription;
 
   List<Map<String, dynamic>> pets = [];
+  List<DateTime> acceptedAppointmentTimes = [];
   final List<String> appointmentTypes = ['domicile', 'cabinet'];
   final List<String> services = ['Consultation', 'Vaccination', 'Surgery', 'Grooming'];
 
@@ -38,12 +39,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   late final PetService _petService;
   String? _errorMessage;
   final _scrollController = ScrollController();
-
   late Map<int, Map<String, String>> parsedWorkingHours;
 
   @override
   void initState() {
     super.initState();
+    debugPrint('initState: Initializing AppointmentsScreen, vetId: ${widget.vet.id}');
 
     final dio = Dio(BaseOptions(
       baseUrl: 'http://192.168.1.18:3000/api',
@@ -66,15 +67,33 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      debugPrint('setState: Initializing user and pets, isLoading: true');
     });
 
     try {
       final fetchedPets = await _petService.getUserPets();
-      setState(() => pets = fetchedPets);
+      final acceptedTimesResponse = await _appointmentService.getAcceptedAppointmentTimes(widget.vet.id!);
+      debugPrint('Fetched accepted appointment times response: $acceptedTimesResponse');
+
+      if (acceptedTimesResponse['success'] == true) {
+        acceptedAppointmentTimes = List<DateTime>.from(acceptedTimesResponse['data']);
+        debugPrint('Accepted appointment times: $acceptedAppointmentTimes');
+      } else {
+        debugPrint('Failed to fetch accepted appointment times: ${acceptedTimesResponse['message']}');
+      }
+
+      setState(() {
+        pets = fetchedPets;
+        _isLoading = false;
+        debugPrint('setState: Pets loaded, isLoading: false, acceptedAppointmentTimes: $acceptedAppointmentTimes');
+      });
     } catch (e) {
-      setState(() => _errorMessage = 'Failed to load pets: ${e.toString()}');
-    } finally {
-      setState(() => _isLoading = false);
+      debugPrint('Error initializing data: $e');
+      setState(() {
+        _errorMessage = 'Failed to load data: ${e.toString()}';
+        _isLoading = false;
+        debugPrint('setState: Error loading data, isLoading: false');
+      });
     }
   }
 
@@ -88,7 +107,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     if (picked != null) {
       setState(() {
         selectedDate = picked;
-        selectedTime = null; // Reset time when date changes
+        selectedTime = null;
+        debugPrint('setState: Selected date: $picked');
       });
     }
   }
@@ -122,12 +142,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     try {
       final startTime = timeFormat.parse(dayHours['start']!);
       final endTime = timeFormat.parse(dayHours['end']!);
-      final pauseStart = dayHours['pauseStart'] != null && dayHours['pauseStart']!.isNotEmpty
-          ? timeFormat.parse(dayHours['pauseStart']!)
-          : null;
-      final pauseEnd = dayHours['pauseEnd'] != null && dayHours['pauseEnd']!.isNotEmpty
-          ? timeFormat.parse(dayHours['pauseEnd']!)
-          : null;
 
       DateTime current = startTime;
       while (current.isBefore(endTime) || current.isAtSameMomentAs(endTime)) {
@@ -203,7 +217,10 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       },
     ).then((value) {
       if (value != null) {
-        setState(() => selectedTime = value);
+        setState(() {
+          selectedTime = value;
+          debugPrint('setState: Selected time: ${value.format(context)}');
+        });
       }
     });
   }
@@ -219,11 +236,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     );
 
     try {
+      // Check working hours
       final startTime = dateFormat.parse(dayHours['start']!);
       final endTime = dateFormat.parse(dayHours['end']!);
-      final pauseStartStr = dayHours['pauseStart'] ?? '';
-      final pauseEndStr = dayHours['pauseEnd'] ?? '';
-
       final fullStart = DateTime(
         selectedDate!.year,
         selectedDate!.month,
@@ -231,7 +246,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         startTime.hour,
         startTime.minute,
       );
-
       final fullEnd = DateTime(
         selectedDate!.year,
         selectedDate!.month,
@@ -243,17 +257,17 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       final isWithinHours = (selectedDateTime.isAfter(fullStart) || selectedDateTime.isAtSameMomentAs(fullStart)) &&
           (selectedDateTime.isBefore(fullEnd) || selectedDateTime.isAtSameMomentAs(fullEnd));
 
+      // Check pause time
       bool isDuringPause = false;
-      if (pauseStartStr.isNotEmpty && pauseEndStr.isNotEmpty) {
+      if (dayHours['pauseStart'] != null && dayHours['pauseEnd'] != null) {
         final timeFormat = RegExp(r'^\d{2}:\d{2}$');
-        if (!timeFormat.hasMatch(pauseStartStr) || !timeFormat.hasMatch(pauseEndStr)) {
-          debugPrint('Invalid pause time format: pauseStart=$pauseStartStr, pauseEnd=$pauseEndStr');
+        if (!timeFormat.hasMatch(dayHours['pauseStart']!) || !timeFormat.hasMatch(dayHours['pauseEnd']!)) {
+          debugPrint('Invalid pause time format: pauseStart=${dayHours['pauseStart']}, pauseEnd=${dayHours['pauseEnd']}');
           return isWithinHours;
         }
 
-        final pauseStartTime = dateFormat.parse(pauseStartStr);
-        final pauseEndTime = dateFormat.parse(pauseEndStr);
-
+        final pauseStartTime = dateFormat.parse(dayHours['pauseStart']!);
+        final pauseEndTime = dateFormat.parse(dayHours['pauseEnd']!);
         final fullPauseStart = DateTime(
           selectedDate!.year,
           selectedDate!.month,
@@ -261,7 +275,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           pauseStartTime.hour,
           pauseStartTime.minute,
         );
-
         final fullPauseEnd = DateTime(
           selectedDate!.year,
           selectedDate!.month,
@@ -271,11 +284,19 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         );
 
         isDuringPause = selectedDateTime.isAtSameMomentAs(fullPauseStart) ||
-            (selectedDateTime.isAfter(fullPauseStart) &&
-                (selectedDateTime.isBefore(fullPauseEnd) || selectedDateTime.isAtSameMomentAs(fullPauseEnd)));
+            (selectedDateTime.isAfter(fullPauseStart) && selectedDateTime.isBefore(fullPauseEnd));
       }
 
-      return isWithinHours && !isDuringPause;
+      // Check for conflicts with accepted appointments
+      bool hasConflict = acceptedAppointmentTimes.any((apptTime) {
+        final apptEnd = apptTime.add(const Duration(minutes: 20));
+        return selectedDateTime.isAfter(apptTime.subtract(const Duration(minutes: 1))) &&
+            selectedDateTime.isBefore(apptEnd);
+      });
+
+      debugPrint(
+          'Validating time: ${time.format(context)}, isWithinHours: $isWithinHours, isDuringPause: $isDuringPause, hasConflict: $hasConflict');
+      return isWithinHours && !isDuringPause && !hasConflict;
     } catch (e) {
       debugPrint('Error validating time slot: $e');
       return false;
@@ -439,12 +460,17 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         );
 
         isDuringPause = selectedDateTime.isAtSameMomentAs(fullPauseStart) ||
-            (selectedDateTime.isAfter(fullPauseStart) &&
-                (selectedDateTime.isBefore(fullPauseEnd) || selectedDateTime.isAtSameMomentAs(fullPauseEnd)));
+            (selectedDateTime.isAfter(fullPauseStart) && selectedDateTime.isBefore(fullPauseEnd));
       }
 
-      debugPrint('Selected: $selectedDateTime, Start: $fullStart, End: $fullEnd, Pause: $isDuringPause');
-      return isWithinHours && !isDuringPause;
+      bool hasConflict = acceptedAppointmentTimes.any((apptTime) {
+        final apptEnd = apptTime.add(const Duration(minutes: 20));
+        return selectedDateTime.isAfter(apptTime.subtract(const Duration(minutes: 1))) &&
+            selectedDateTime.isBefore(apptEnd);
+      });
+
+      debugPrint('Selected: $selectedDateTime, Start: $fullStart, End: $fullEnd, Pause: $isDuringPause, Conflict: $hasConflict');
+      return isWithinHours && !isDuringPause && !hasConflict;
     } catch (e) {
       debugPrint('Error parsing times: $e');
       return false;
@@ -452,11 +478,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   }
 
   Future<void> _createAppointment() async {
+    debugPrint('Attempting to create appointment');
     if (selectedPetId == null ||
         selectedDate == null ||
         selectedTime == null ||
         selectedAppointmentType == null ||
         selectedService == null) {
+      debugPrint('Validation failed: Missing required fields');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all required fields')),
       );
@@ -473,10 +501,26 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           DateFormat('HH:mm').parse(pauseStartStr).hour <= selectedTime!.hour &&
           selectedTime!.hour <= DateFormat('HH:mm').parse(pauseEndStr).hour;
 
+      bool hasConflict = acceptedAppointmentTimes.any((apptTime) {
+        final apptEnd = apptTime.add(const Duration(minutes: 20));
+        final selectedDateTime = DateTime(
+          selectedDate!.year,
+          selectedDate!.month,
+          selectedDate!.day,
+          selectedTime!.hour,
+          selectedTime!.minute,
+        );
+        return selectedDateTime.isAfter(apptTime.subtract(const Duration(minutes: 1))) &&
+            selectedDateTime.isBefore(apptEnd);
+      });
+
+      debugPrint('Time validation failed: isDuringBreak=$isDuringBreak, hasConflict=$hasConflict');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isDuringBreak
+            hasConflict
+                ? 'The selected time conflicts with an existing appointment.'
+                : isDuringBreak
                 ? 'The selected time falls during the veterinarian\'s break period ($pauseStartStr–$pauseEndStr).'
                 : 'The selected time is outside the veterinarian\'s working hours.',
           ),
@@ -485,7 +529,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       return;
     }
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      debugPrint('setState: Starting appointment creation, isSubmitting: true');
+    });
+
     try {
       final appointmentDateTime = DateTime(
         selectedDate!.year,
@@ -495,6 +543,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         selectedTime!.minute,
       );
 
+      debugPrint('Creating appointment with Veterinarian ID: ${widget.vet.id}, date: $appointmentDateTime, petId: $selectedPetId, type: $selectedAppointmentType, service: $selectedService');
       final result = await _appointmentService.createAppointment(
         veterinaireId: widget.vet.id!,
         date: appointmentDateTime,
@@ -503,28 +552,77 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         services: [selectedService!],
         caseDescription: caseDescription,
       );
+      debugPrint('Create appointment response: $result');
 
       if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Appointment created successfully!')),
-        );
-        Navigator.pop(context, true);
+        debugPrint('Appointment created successfully');
+        setState(() {
+          _isSubmitting = false;
+          selectedPetId = null;
+          selectedDate = null;
+          selectedTime = null;
+          selectedAppointmentType = null;
+          selectedService = null;
+          caseDescription = null;
+          debugPrint('setState: isSubmitting: false, form reset');
+        });
+        // Refresh accepted appointment times
+        await _initializeUserAndPets();
+        if (mounted) {
+          await showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Appointment Booked'),
+              content: const Text('Your appointment has been booked. It is pending veterinarian approval.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Appointment created successfully!')),
+          );
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
       } else {
+        debugPrint('Failed to create appointment: ${result['message']}');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result['message'] ?? 'Error creating appointment')),
         );
+        setState(() {
+          _isSubmitting = false;
+          debugPrint('setState: isSubmitting: false (error case)');
+        });
       }
     } catch (e) {
+      debugPrint('Error creating appointment: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}')),
       );
-    } finally {
-      setState(() => _isSubmitting = false);
+      setState(() {
+        _isSubmitting = false;
+        debugPrint('setState: isSubmitting: false (exception case)');
+      });
     }
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    debugPrint('Disposing AppointmentsScreen');
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    debugPrint('Building AppointmentsScreen, acceptedAppointmentTimes: $acceptedAppointmentTimes');
     return Scaffold(
       appBar: AppBar(title: const Text('Book Appointment')),
       body: _isLoading
@@ -537,6 +635,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   Widget _buildAppointmentForm() {
     final localizations = MaterialLocalizations.of(context);
+    debugPrint('Building appointment form, isSubmitting: $_isSubmitting');
     return SingleChildScrollView(
       controller: _scrollController,
       padding: const EdgeInsets.all(16),
@@ -607,7 +706,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             ),
             onChanged: (value) => caseDescription = value,
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -622,7 +721,10 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                 height: 24,
                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
               )
-                  : const Text('BOOK APPOINTMENT', style: TextStyle(fontSize: 16)),
+                  : const Text(
+                'BOOK APPOINTMENT',
+                style: TextStyle(fontSize: 16),
+              ),
             ),
           ),
         ],
@@ -664,7 +766,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           final String name = pet['name']?.toString() ?? 'Unnamed';
           final String? imagePath = pet['picture'];
           final String? imageUrl = imagePath != null && !imagePath.startsWith('http')
-              ? 'http://192.168.1.18:3000/uploads/animals/$imagePath'
+              ? 'http://192.168.1.18:3000/api/uploads/animals/$imagePath'
               : imagePath;
 
           return Padding(

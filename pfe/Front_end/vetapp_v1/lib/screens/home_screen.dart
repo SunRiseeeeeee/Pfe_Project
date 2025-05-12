@@ -2,14 +2,54 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
 import 'package:vetapp_v1/screens/appointment_screen.dart';
-import 'package:vetapp_v1/screens/message_screen.dart';
+import 'package:vetapp_v1/screens/fypscreen.dart';
 import 'package:vetapp_v1/screens/profile_screen.dart';
 import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
-import 'package:vetapp_v1/services/vet_service.dart';
 import 'package:vetapp_v1/screens/MyPetsScreen.dart';
-
 import '../models/token_storage.dart';
+import 'package:dio/dio.dart';
 
+class VetService {
+  static const String baseUrl = "http://192.168.1.18:3000/api/users/veterinarians";
+  static final Dio _dio = Dio();
+
+  static Future<Map<String, dynamic>> fetchVeterinarians({
+    String? location,
+    String? specialty,
+    List<String>? services,
+    int page = 1,
+    int limit = 10,
+    String sort = "desc",
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        if (location != null && location.isNotEmpty) 'location': location.trim(),
+        if (specialty != null && specialty.isNotEmpty) 'specialty': specialty.trim(),
+        if (services != null && services.isNotEmpty) 'services': services.join(","),
+        'page': page.toString(),
+        'limit': limit.toString(),
+        'sort': sort,
+      };
+
+      final url = Uri.parse(baseUrl).replace(queryParameters: queryParams).toString();
+      print('Request URL: $url');
+      print('Query Parameters: $queryParams');
+
+      final response = await _dio.get(baseUrl, queryParameters: queryParams);
+      print('Response Status Code: ${response.statusCode}');
+      print('Response Data: ${response.data}');
+
+      if (response.statusCode == 200) {
+        return response.data;
+      } else {
+        throw Exception('Failed to load veterinarians. Status Code: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error fetching veterinarians: $e');
+      rethrow;
+    }
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,10 +63,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _screens = const [
     HomeContent(),           // 0 - Home
-    AppointmentScreen(),     // 1 - Appointment/
-    PetsScreen(),             // 3 - Pets
-    MessageScreen(),         // 2 - Message
-    ProfileScreen(),
+    AppointmentScreen(),     // 1 - Appointment
+    PetsScreen(),           // 2 - Pets
+    FypScreen(),        // 3 - Message
+    ProfileScreen(),        // 4 - Profile
   ];
 
   void _onItemTapped(int index) {
@@ -43,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Custom Bottom Navigation Bar
   Widget _buildCustomBottomNavigationBar() {
     return Container(
       decoration: BoxDecoration(
@@ -78,23 +117,23 @@ class _HomeScreenState extends State<HomeScreen> {
           showSelectedLabels: true,
           showUnselectedLabels: true,
           items: [
-            BottomNavigationBarItem(  // 0 - Home
+            BottomNavigationBarItem(
               icon: Icon(Icons.home, size: 28),
               label: 'Home',
             ),
-            BottomNavigationBarItem(  // 1 - Appointment
+            BottomNavigationBarItem(
               icon: Icon(Icons.calendar_today, size: 28),
               label: 'Appointment',
             ),
-            BottomNavigationBarItem(  // 2 - Pets (special)
+            BottomNavigationBarItem(
               icon: _BigPawIcon(isSelected: _selectedIndex == 2),
               label: 'Pets',
             ),
-            BottomNavigationBarItem(  // 3 - Message
-              icon: Icon(Icons.message, size: 28),
-              label: 'Message',
+            BottomNavigationBarItem(
+              icon: Icon(Icons.stacked_bar_chart, size: 28),
+              label: 'Fyp',
             ),
-            BottomNavigationBarItem(  // 4 - Profile
+            BottomNavigationBarItem(
               icon: Icon(Icons.person, size: 28),
               label: 'Profile',
             ),
@@ -103,10 +142,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-
-
 }
+
 class _BigPawIcon extends StatelessWidget {
   final bool isSelected;
 
@@ -117,25 +154,24 @@ class _BigPawIcon extends StatelessWidget {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Background circle (slightly larger than normal icons)
         Container(
-          width: 40,  // Bigger than other icons (28)
+          width: 40,
           height: 40,
           decoration: BoxDecoration(
             color: isSelected ? Colors.deepPurple.withOpacity(0.1) : Colors.transparent,
             shape: BoxShape.circle,
           ),
         ),
-        // Paw icon with fingers extending beyond
         Icon(
           Icons.pets,
-          size: 36,  // Larger than other icons
+          size: 36,
           color: isSelected ? Colors.deepPurple : Colors.grey,
         ),
       ],
     );
   }
 }
+
 class HomeContent extends StatefulWidget {
   const HomeContent({super.key});
 
@@ -144,70 +180,147 @@ class HomeContent extends StatefulWidget {
 }
 
 class _HomeContentState extends State<HomeContent> {
-  // Variables to manage pagination
   int currentPage = 1;
-  String? ratingFilter;
   String? locationFilter;
+  String? specialtyFilter;
+  String? nameFilter; // New: For name-based search
   int limit = 10;
   String sort = "desc";
   late Future<Map<String, dynamic>> veterinariansFuture;
-  String? username; // Variable to store the username
+  String? username;
+  final TextEditingController _locationController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounceTimer;
+
+  // List of specialties including "Chirurgie canine"
+  final List<String> specialties = [
+    'General Practice',
+    'Surgery',
+    'Dentistry',
+    'Dermatology',
+    'Cardiology',
+    'Oncology',
+    'Chirurgie canine',
+    'Urgences vétérinaires & NAC',
+  ];
 
   @override
   void initState() {
     super.initState();
-    // Initialize the future with default values
+    _locationController.text = locationFilter ?? '';
+    _searchController.text = nameFilter ?? '';
     veterinariansFuture = VetService.fetchVeterinarians(
-      rating: ratingFilter,
       location: locationFilter,
+      specialty: specialtyFilter,
       page: currentPage,
       limit: limit,
       sort: sort,
     );
-    // Fetch the username from TokenStorage
     _loadUsername();
   }
 
-  // Method to load the username from TokenStorage
   Future<void> _loadUsername() async {
-    final tokenStorage = TokenStorage();
-    setState(() {
-      // Optional: Set a temporary state to indicate loading
-      username = "";
-    });
-
     try {
-      final fetchedUsername = await TokenStorage.getUsernameFromToken(); // Fetching username from SharedPreferences
-      if (fetchedUsername != null) {
-        setState(() {
-          username = fetchedUsername; // Store the username once fetched
-        });
-      } else {
-        setState(() {
-          username = "Username not found"; // Handle the case where username is null
-        });
-      }
-    } catch (e) {
+      final fetchedUsername = await TokenStorage.getUsernameFromToken();
       setState(() {
-        username = "Error loading username"; // Error handling in case of any issue
+        username = fetchedUsername ?? "User";
       });
+    } catch (e) {
       print("Error fetching username: $e");
+      setState(() {
+        username = "Error";
+      });
     }
   }
 
-
-  // Method to refresh the future when navigating pages
   void _refreshVeterinarians(int newPage) {
     setState(() {
       currentPage = newPage;
       veterinariansFuture = VetService.fetchVeterinarians(
-        rating: ratingFilter,
         location: locationFilter,
+        specialty: specialtyFilter,
         page: currentPage,
         limit: limit,
         sort: sort,
       );
+      debugPrint('Refreshing veterinarians with: page=$currentPage, location=$locationFilter, specialty=$specialtyFilter, name=$nameFilter, limit=$limit, sort=$sort');
     });
+  }
+
+  @override
+  void dispose() {
+    _locationController.dispose();
+    _searchController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
+  void _showSearchDialog() {
+    String? tempNameFilter = nameFilter;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Search Veterinarians'),
+          content: StatefulBuilder(
+            builder: (context, setDialogState) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Search by Name'),
+                    TextField(
+                      controller: _searchController,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter first or last name (e.g., Pierre)',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        _debounceTimer?.cancel();
+                        _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+                          setDialogState(() {
+                            tempNameFilter = value;
+                          });
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  nameFilter = null;
+                  _searchController.text = '';
+                  _refreshVeterinarians(1);
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Clear'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  nameFilter = tempNameFilter != null && tempNameFilter!.isNotEmpty ? tempNameFilter?.trim() : null;
+                  _searchController.text = nameFilter ?? '';
+                  _refreshVeterinarians(1);
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Search'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -218,7 +331,6 @@ class _HomeContentState extends State<HomeContent> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -229,7 +341,6 @@ class _HomeContentState extends State<HomeContent> {
                       "Welcome,",
                       style: TextStyle(fontSize: 14, color: Colors.grey, fontFamily: 'Poppins'),
                     ),
-                    // Display the username dynamically here
                     Text(
                       username ?? 'Loading...',
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
@@ -238,7 +349,10 @@ class _HomeContentState extends State<HomeContent> {
                 ),
                 Row(
                   children: [
-                    IconButton(icon: const Icon(Icons.search), onPressed: () {}),
+                    IconButton(
+                      icon: const Icon(Icons.search),
+                      onPressed: _showSearchDialog, // Updated to open search dialog
+                    ),
                     IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
                   ],
                 ),
@@ -253,6 +367,52 @@ class _HomeContentState extends State<HomeContent> {
             const SizedBox(height: 20),
             _buildSectionHeader('Our best veterinarians'),
             const SizedBox(height: 12),
+            if ((locationFilter != null && locationFilter!.isNotEmpty) ||
+                specialtyFilter != null ||
+                (nameFilter != null && nameFilter!.isNotEmpty))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    if (nameFilter != null && nameFilter!.isNotEmpty)
+                      Chip(
+                        label: Text('Name: $nameFilter'),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () {
+                          setState(() {
+                            nameFilter = null;
+                            _searchController.text = '';
+                            _refreshVeterinarians(1);
+                          });
+                        },
+                      ),
+                    if (locationFilter != null && locationFilter!.isNotEmpty)
+                      Chip(
+                        label: Text('Location: $locationFilter'),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () {
+                          setState(() {
+                            locationFilter = null;
+                            _locationController.text = '';
+                            _refreshVeterinarians(1);
+                          });
+                        },
+                      ),
+                    if (specialtyFilter != null)
+                      Chip(
+                        label: Text('Specialty: $specialtyFilter'),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () {
+                          setState(() {
+                            specialtyFilter = null;
+                            _refreshVeterinarians(1);
+                          });
+                        },
+                      ),
+                  ],
+                ),
+              ),
             FutureBuilder<Map<String, dynamic>>(
               future: veterinariansFuture,
               builder: (context, snapshot) {
@@ -260,17 +420,99 @@ class _HomeContentState extends State<HomeContent> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  print('API Error: ${snapshot.error}');
+                  debugPrint('FutureBuilder error: ${snapshot.error}');
                   return Center(
-                    child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: () => _refreshVeterinarians(currentPage),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
                   );
                 }
                 final Map<String, dynamic>? responseData = snapshot.data;
+                debugPrint('API response: $responseData');
                 if (responseData == null || responseData['veterinarians'] == null || responseData['veterinarians'].isEmpty) {
-                  return const Center(child: Text('No veterinarians found.', style: TextStyle(fontSize: 16, color: Colors.grey)));
+                  String message = 'No veterinarians found.';
+                  if (nameFilter != null && nameFilter!.isNotEmpty) {
+                    message = 'No veterinarians found with name $nameFilter.';
+                  }
+                  if (locationFilter != null && locationFilter!.isNotEmpty) {
+                    message = 'No veterinarians found in $locationFilter.';
+                  }
+                  if (specialtyFilter != null) {
+                    message += ' with specialty $specialtyFilter.';
+                  }
+                  return Center(child: Text(message, style: const TextStyle(fontSize: 16, color: Colors.grey)));
                 }
-                final List<dynamic> veterinariansData = responseData['veterinarians'];
-                final List<Veterinarian> veterinarians = veterinariansData.map((json) => Veterinarian.fromJson(json)).toList();
+                List<dynamic> veterinariansData = responseData['veterinarians'];
+                List<Veterinarian> veterinarians = [];
+                List<String?> specializations = [];
+
+                // Parse veterinarians and store specializations
+                for (var json in veterinariansData) {
+                  veterinarians.add(Veterinarian.fromJson(json));
+                  final details = json['details'] as Map<String, dynamic>?;
+                  final specialty = details != null ? details['specialty']?.toString() : null;
+                  specializations.add(specialty);
+                }
+
+                // Client-side filtering for name, location, and specialty
+                if (nameFilter != null && nameFilter!.isNotEmpty) {
+                  final lowerCaseNameFilter = nameFilter!.toLowerCase();
+                  veterinarians = veterinarians.asMap().entries.where((entry) {
+                    final vet = entry.value;
+                    final firstName = vet.firstName.toLowerCase();
+                    final lastName = vet.lastName.toLowerCase();
+                    return firstName.contains(lowerCaseNameFilter) || lastName.contains(lowerCaseNameFilter);
+                  }).map((entry) => entry.value).toList();
+                  specializations = veterinarians.asMap().entries.where((entry) {
+                    final vet = entry.value;
+                    final firstName = vet.firstName.toLowerCase();
+                    final lastName = vet.lastName.toLowerCase();
+                    return firstName.contains(lowerCaseNameFilter) || lastName.contains(lowerCaseNameFilter);
+                  }).map((entry) => specializations[entry.key]).toList();
+                }
+                if (locationFilter != null && locationFilter!.isNotEmpty) {
+                  veterinarians = veterinarians.asMap().entries.where((entry) {
+                    final vet = entry.value;
+                    final location = vet.location.toLowerCase();
+                    return location.contains(locationFilter!.toLowerCase());
+                  }).map((entry) => entry.value).toList();
+                  specializations = veterinarians.asMap().entries.where((entry) {
+                    final vet = entry.value;
+                    final location = vet.location.toLowerCase();
+                    return location.contains(locationFilter!.toLowerCase());
+                  }).map((entry) => specializations[entry.key]).toList();
+                }
+                if (specialtyFilter != null && specialtyFilter!.isNotEmpty) {
+                  final filtered = veterinarians.asMap().entries.where((entry) {
+                    final index = entry.key;
+                    final specialization = specializations[index];
+                    return specialization != null && specialization.toLowerCase() == specialtyFilter!.toLowerCase();
+                  }).toList();
+                  veterinarians = filtered.map((entry) => entry.value).toList();
+                  specializations = filtered.map((entry) => specializations[entry.key]).toList();
+                }
+
+                if (veterinarians.isEmpty) {
+                  String message = 'No veterinarians found.';
+                  if (nameFilter != null && nameFilter!.isNotEmpty) {
+                    message = 'No veterinarians found with name $nameFilter.';
+                  }
+                  if (locationFilter != null && locationFilter!.isNotEmpty) {
+                    message = 'No veterinarians found in $locationFilter.';
+                  }
+                  if (specialtyFilter != null) {
+                    message += ' with specialty $specialtyFilter.';
+                  }
+                  return Center(child: Text(message, style: const TextStyle(fontSize: 16, color: Colors.grey)));
+                }
 
                 return Column(
                   children: [
@@ -286,6 +528,7 @@ class _HomeContentState extends State<HomeContent> {
                       itemCount: veterinarians.length,
                       itemBuilder: (context, index) {
                         final vet = veterinarians[index];
+                        final specialization = specializations[index];
                         return GestureDetector(
                           onTap: () {
                             Navigator.push(
@@ -302,7 +545,14 @@ class _HomeContentState extends State<HomeContent> {
                                   child: ClipRRect(
                                     borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                                     child: vet.profilePicture != null
-                                        ? Image.network(vet.profilePicture!, width: double.infinity, fit: BoxFit.cover)
+                                        ? Image.network(
+                                      vet.profilePicture!,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Image.asset('assets/images/default_avatar.png', width: double.infinity, fit: BoxFit.cover);
+                                      },
+                                    )
                                         : Image.asset('assets/images/default_avatar.png', width: double.infinity, fit: BoxFit.cover),
                                   ),
                                 ),
@@ -318,13 +568,31 @@ class _HomeContentState extends State<HomeContent> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 4),
+                                      Text(
+                                        vet.location,
+                                        style: const TextStyle(fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (specialization != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          specialization,
+                                          style: const TextStyle(fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                      const SizedBox(height: 4),
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                           const Icon(Icons.star, color: Colors.amber, size: 16),
                                           const SizedBox(width: 4),
                                           Text(
-                                            '${vet.averageRating.toStringAsFixed(1)}/5', // Directly display the averageRating from the API
+                                            '${vet.averageRating.toStringAsFixed(1)}/5',
                                             style: const TextStyle(fontSize: 13, fontFamily: 'Poppins'),
                                           ),
                                         ],
@@ -338,11 +606,32 @@ class _HomeContentState extends State<HomeContent> {
                         );
                       },
                     ),
+                    if (responseData['totalPages'] != null && responseData['totalPages'] > 1)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back),
+                              onPressed: currentPage > 1
+                                  ? () => _refreshVeterinarians(currentPage - 1)
+                                  : null,
+                            ),
+                            Text('Page $currentPage of ${responseData['totalPages']}'),
+                            IconButton(
+                              icon: const Icon(Icons.arrow_forward),
+                              onPressed: currentPage < responseData['totalPages']
+                                  ? () => _refreshVeterinarians(currentPage + 1)
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 );
               },
             ),
-
             const SizedBox(height: 24),
           ],
         ),
@@ -350,7 +639,6 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 
-  // Modify the _buildSectionHeader method
   Widget _buildSectionHeader(String title) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -358,67 +646,109 @@ class _HomeContentState extends State<HomeContent> {
         Text(
           title,
           style: const TextStyle(
-              fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Poppins',
+          ),
         ),
-        // Replace 'See All' with the filter button
         IconButton(
           icon: const Icon(Icons.filter_list, color: Colors.blue),
-          onPressed: () {
-            // You can call your filter logic here or navigate to a filter screen
-            _showFilterDialog();
-          },
+          onPressed: _showFilterDialog,
         ),
       ],
     );
   }
 
-// Method to show filter options (you can customize this)
   void _showFilterDialog() {
+    String? tempLocationFilter = locationFilter ?? '';
+    String? tempSpecialtyFilter = specialtyFilter;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('Filter Veterinarians'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Filter by Rating'),
-              DropdownButton<String>(
-                value: ratingFilter,
-                items: ['1', '2', '3', '4', '5'].map((String rating) {
-                  return DropdownMenuItem<String>(
-                    value: rating,
-                    child: Text(rating),
-                  );
-                }).toList(),
-                onChanged: (String? value) {
-                  setState(() {
-                    ratingFilter = value;
-                    _refreshVeterinarians(1); // Refresh veterinarians with new filter
-                  });
-                  Navigator.pop(context); // Close dialog after selection
-                },
-              ),
-              const SizedBox(height: 16),
-              const Text('Filter by Location'),
-              TextField(
-                onChanged: (value) {
-                  locationFilter = value;
-                },
-                decoration: const InputDecoration(hintText: 'Enter location'),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _refreshVeterinarians(1); // Refresh veterinarians after applying filter
-                  });
-                  Navigator.pop(context); // Close dialog after applying filter
-                },
-                child: const Text('Apply Filters'),
-              ),
-            ],
+          content: StatefulBuilder(
+            builder: (context, setDialogState) {
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Filter by Location'),
+                    TextField(
+                      controller: _locationController,
+                      decoration: const InputDecoration(
+                        hintText: 'Enter location (e.g., Lyon)',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        _debounceTimer?.cancel();
+                        _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+                          setDialogState(() {
+                            tempLocationFilter = value;
+                          });
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Filter by Specialty'),
+                    DropdownButton<String>(
+                      value: tempSpecialtyFilter,
+                      hint: const Text('Select specialty'),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('Any'),
+                        ),
+                        ...specialties.map((String specialty) {
+                          return DropdownMenuItem<String>(
+                            value: specialty,
+                            child: Text(specialty),
+                          );
+                        }),
+                      ],
+                      onChanged: (String? value) {
+                        setDialogState(() {
+                          tempSpecialtyFilter = value;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  locationFilter = null;
+                  specialtyFilter = null;
+                  _locationController.text = '';
+                  _refreshVeterinarians(1);
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Clear All'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  locationFilter = tempLocationFilter != null && tempLocationFilter!.isNotEmpty ? tempLocationFilter?.trim() : null;
+                  specialtyFilter = tempSpecialtyFilter;
+                  _locationController.text = locationFilter ?? '';
+                  _refreshVeterinarians(1);
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Apply Filters'),
+            ),
+          ],
         );
       },
     );
@@ -469,14 +799,20 @@ class _HomeContentState extends State<HomeContent> {
                 end: Alignment.topCenter,
               ),
             ),
-            child: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Poppins')),
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins',
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 }
-
 
 class AutoSlidingPageView extends StatefulWidget {
   const AutoSlidingPageView({super.key});
@@ -547,11 +883,20 @@ class _AutoSlidingPageViewState extends State<AutoSlidingPageView> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_carouselItems[_currentPage]['title']!,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Montserrat', color: Colors.white)),
+                  Text(
+                    _carouselItems[_currentPage]['title']!,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Montserrat',
+                      color: Colors.white,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(_carouselItems[_currentPage]['subtitle']!,
-                      style: const TextStyle(fontSize: 14, fontFamily: 'Poppins', color: Colors.white)),
+                  Text(
+                    _carouselItems[_currentPage]['subtitle']!,
+                    style: const TextStyle(fontSize: 14, fontFamily: 'Poppins', color: Colors.white),
+                  ),
                   const SizedBox(height: 10),
                   ElevatedButton(
                     onPressed: () {},

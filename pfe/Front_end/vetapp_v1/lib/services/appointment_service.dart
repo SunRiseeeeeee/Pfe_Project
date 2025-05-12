@@ -19,6 +19,15 @@ class AppointmentService {
         ? data['message'] ?? data['error']
         : e.message;
 
+    // Handle specific backend conflict error
+    if (e.response?.statusCode == 400 && message.contains('sorry you need to wait 20 minutes to take another appointment')) {
+      return {
+        'success': false,
+        'message': message,
+        'statusCode': 400,
+      };
+    }
+
     return {
       'success': false,
       'message': message ?? 'An error occurred. Please try again.',
@@ -35,7 +44,7 @@ class AppointmentService {
     List<String>? services,
     String? caseDescription,
   }) async {
-    print('Creating appointment with Veterinarian ID: $veterinaireId'); // Debug line
+    print('Creating appointment with Veterinarian ID: $veterinaireId');
     try {
       final response = await _dio.post(
         '/appointments',
@@ -98,7 +107,7 @@ class AppointmentService {
   Future<Map<String, dynamic>> getAppointmentsByVeterinaire(String vetId) async {
     try {
       final response = await _dio.get(
-        '/appointments/veterinaire/$vetId',
+        '/appointments/veterinaire/history/$vetId',
         options: Options(headers: await _authHeader()),
       );
 
@@ -111,13 +120,50 @@ class AppointmentService {
     }
   }
 
+  /// Get the times of accepted appointments for a specific veterinarian
+  Future<Map<String, dynamic>> getAcceptedAppointmentTimes(String vetId) async {
+    try {
+      final response = await _dio.get(
+        '/appointments/veterinaire/history/$vetId',
+        options: Options(headers: await _authHeader()),
+      );
+
+      // Extract appointments
+      final appointments = List<Map<String, dynamic>>.from(response.data['appointments'] ?? []);
+
+      // Filter for accepted appointments and extract dates
+      final acceptedTimes = appointments
+          .where((appt) => appt['status']?.toLowerCase() == 'accepted')
+          .map((appt) {
+        try {
+          return DateTime.parse(appt['date']).toLocal();
+        } catch (e) {
+          print('Error parsing date for appointment ${appt['_id']}: $e');
+          return null;
+        }
+      })
+          .where((date) => date != null)
+          .cast<DateTime>()
+          .toList();
+
+      return {
+        'success': true,
+        'data': acceptedTimes,
+        'message': acceptedTimes.isEmpty
+            ? 'No accepted appointments found'
+            : 'Accepted appointment times retrieved successfully',
+      };
+    } on DioException catch (e) {
+      return _handleError(e);
+    }
+  }
+
   /// Update appointment with allowed fields only
   Future<Map<String, dynamic>> updateAppointment(
       String id,
       Map<String, dynamic> updateData,
       ) async {
     try {
-      // Filter out non-updatable fields
       final filteredData = Map<String, dynamic>.from(updateData)
         ..removeWhere((key, _) => [
           'clientId',
@@ -128,19 +174,10 @@ class AppointmentService {
           '__v',
         ].contains(key));
 
-      final token = await TokenStorage.getToken();  // Get token from SharedPreferences
-      if (token == null) {
-        throw Exception("Token is missing. User might not be logged in.");
-      }
-
       final response = await _dio.put(
-        '/appointments/$id',  // Make sure this matches your backend route
+        '/appointments/$id',
         data: filteredData,
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $token',
-          },
-        ),
+        options: Options(headers: await _authHeader()),
       );
 
       return {
@@ -149,11 +186,9 @@ class AppointmentService {
         'message': response.data['message'] ?? 'Appointment updated successfully',
       };
     } on DioException catch (e) {
-      return _handleError(e);  // You already have this to handle Dio errors
+      return _handleError(e);
     }
   }
-
-
 
   /// Delete appointment
   Future<Map<String, dynamic>> deleteAppointment(String id) async {
