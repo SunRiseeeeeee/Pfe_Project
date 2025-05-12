@@ -88,5 +88,5 @@ app.use(
 );
 
 server.listen(port, () => {
-  console.log(`🚀 Serveur démarré sur http://localhost:${port}`);
+  console.log(`🚀 Serveur démarré sur https://localhost:${port}`);
 });

@@ -20,6 +20,7 @@ export interface IAppointment extends Document {
   status: AppointmentStatus;
   services: string[];
   caseDescription?: string;
+  notificationSent?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,6 +45,7 @@ const AppointmentSchema: Schema<IAppointment> = new Schema(
       type: [String],
       default: [],
     },
+    notificationSent: { type: Boolean, default: false },
   },
   {
     timestamps: true,
