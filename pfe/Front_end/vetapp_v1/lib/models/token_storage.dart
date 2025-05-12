@@ -46,6 +46,42 @@ class TokenStorage {
     return null;  // Return null if no token is found
   }
 
+  static Future<String?> getUserLocationFromToken() async {
+    final token = await getToken();
+    if (token != null) {
+      try {
+        final decodedToken = JwtDecoder.decode(token);
+        bool hasExpired = JwtDecoder.isExpired(token);
+        if (hasExpired) return null;
+        return decodedToken['location'];
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Decode JWT to get user role
+  static Future<String?> getUserRoleFromToken() async {
+    final token = await getToken();
+    if (token != null) {
+      try {
+        final decodedToken = JwtDecoder.decode(token);
+
+        // Check if token has expired
+        bool hasExpired = JwtDecoder.isExpired(token);
+        if (hasExpired) {
+          return null; // Token has expired
+        }
+
+        return decodedToken['role'];  // Assuming 'role' is in the payload
+      } catch (e) {
+        return null;  // Return null if the token is invalid or can't be decoded
+      }
+    }
+    return null;  // Return null if no token is found
+  }
+
   // Save token, user ID, first name, last name, and username in SharedPreferences
   static Future<void> setToken(String token, String userId, String firstName, String lastName) async {
     final prefs = await SharedPreferences.getInstance();
