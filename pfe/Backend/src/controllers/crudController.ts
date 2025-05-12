@@ -238,6 +238,8 @@ export const getVeterinarians: ExpressController = async (req, res) => {
       state,
       country, 
       services: servicesParam,
+      firstName,
+      lastName,
       page: pageParam = '1',
       sort = 'desc'
     } = req.query;
@@ -251,13 +253,15 @@ export const getVeterinarians: ExpressController = async (req, res) => {
 
     const filter: any = { role: UserRole.VETERINAIRE };
 
-    // Filtrage par localisation (city, state, country)
-    if (city || state || country) {
+    // Filtrage par localisation (city, state, country) et nom (firstName, lastName)
+    if (city || state || country || firstName || lastName) {
       filter.$and = [];
 
       if (city) filter.$and.push({ 'address.city': new RegExp(city as string, 'i') });
       if (state) filter.$and.push({ 'address.state': new RegExp(state as string, 'i') });
       if (country) filter.$and.push({ 'address.country': new RegExp(country as string, 'i') });
+      if (firstName) filter.$and.push({ firstName: new RegExp(firstName as string, 'i') });
+      if (lastName) filter.$and.push({ lastName: new RegExp(lastName as string, 'i') });
     }
 
     if (services?.length) {
@@ -327,7 +331,6 @@ export const getVeterinarians: ExpressController = async (req, res) => {
     });
   }
 };
-
 export const getSecretariensByVeterinaire: RequestHandler = async (req, res, next) => {
   try {
     // Vérification de la connexion MongoDB

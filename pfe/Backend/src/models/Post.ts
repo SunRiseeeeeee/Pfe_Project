@@ -77,7 +77,7 @@ const PostSchema: Schema = new Schema(
     mediaType: { 
       type: String, 
       enum: ["image", "video"], 
-      required: true 
+      
     },
     description: { type: String, required: true },
     createdBy: {
