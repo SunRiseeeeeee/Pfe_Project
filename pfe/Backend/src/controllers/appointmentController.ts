@@ -96,7 +96,7 @@ if (conflicting.length) {
     res,
     400,
     {},
-    "Créneau indisponible. Il doit y avoir au moins 20 minutes entre deux rendez-vous acceptés."
+    "Créneau indisponible. Il doit y avoir au moins 30 minutes entre deux rendez-vous acceptés."
   );
 }
 
@@ -180,73 +180,118 @@ export const getAppointmentForClientById = async (
 export const getAppointmentsByClient: RequestHandler<{ clientId: string }> =
   async (req, res, next) => {
     const { clientId } = req.params;
+    const { page = 1 } = req.query;
+
     if (!mongoose.Types.ObjectId.isValid(clientId)) {
       res.status(400).json({ message: "ID de client invalide." });
       return;
     }
+
+    const pageNumber = Math.max(Number(page), 1);
+    const limit = 10;
+    const skip = (pageNumber - 1) * limit;
+
     try {
+      // Vérification de l'existence du client
       const exists = await User.exists({ _id: clientId, role: UserRole.CLIENT });
       if (!exists) {
         res.status(404).json({ message: "Client non trouvé." });
         return;
       }
+
+      // Récupération de tous les rendez-vous du client
       const allAppointments = await Appointment.find({ clientId })
         .populate("veterinaireId", "-password -refreshToken")
         .populate("animalId")
         .lean<IAppointment[]>();
-      const filtered = allAppointments
-        .map(a => ({
-          ...a,
-          status: (a.status as string).trim().replace(/,$/, "")
-        }))
-        .filter(a =>
-          a.status === AppointmentStatus.PENDING ||
-          a.status === AppointmentStatus.ACCEPTED
-        );
-      filtered.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      if (!filtered.length) {
+
+      // Filtrage et tri
+      const pendingAppointments = allAppointments
+        .filter(a => a.status === AppointmentStatus.PENDING)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      const acceptedAppointments = allAppointments
+        .filter(a => a.status === AppointmentStatus.ACCEPTED)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Fusionner les deux listes triées
+      const sortedAppointments = [...pendingAppointments, ...acceptedAppointments];
+
+      if (!sortedAppointments.length) {
         res.status(404).json({ message: "Aucun rendez-vous pending/accepted trouvé pour ce client." });
         return;
       }
-      res.status(200).json({ appointments: filtered });
+
+      // Pagination
+      const paginatedAppointments = sortedAppointments.slice(skip, skip + limit);
+
+      res.status(200).json({
+        appointments: paginatedAppointments,
+        currentPage: pageNumber,
+        totalPages: Math.ceil(sortedAppointments.length / limit),
+        totalAppointments: sortedAppointments.length,
+      });
     } catch (err) {
       console.error("[getAppointmentsByClient] Error:", err);
       next(err);
     }
   };
+
 // Historique vétérinaire
 export const getAppointmentsByVeterinaire: RequestHandler<{ veterinaireId: string }> =
   async (req, res, next) => {
     const { veterinaireId } = req.params;
+    const { page = 1 } = req.query; // On récupère le numéro de page depuis la requête, par défaut 1
+
     if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
       res.status(400).json({ message: "ID vétérinaire invalide." });
       return;
     }
+
+    const pageNumber = Math.max(Number(page), 1); // On s'assure que la page est au minimum 1
+    const limit = 10;
+    const skip = (pageNumber - 1) * limit;
+
     try {
+      // Vérification de l'existence du vétérinaire
       const exists = await User.exists({ _id: veterinaireId, role: UserRole.VETERINAIRE });
       if (!exists) {
         res.status(404).json({ message: "Vétérinaire non trouvé." });
         return;
       }
+
+      // Récupération de tous les rendez-vous du vétérinaire
       const allAppointments = await Appointment.find({ veterinaireId })
         .populate("clientId", "-password -refreshToken")
         .populate("animalId")
         .lean<IAppointment[]>();
-      const filtered = allAppointments
-        .map(a => ({
-          ...a,
-          status: (a.status as string).trim().replace(/,$/, "")
-        }))
-        .filter(a =>
-          a.status === AppointmentStatus.PENDING ||
-          a.status === AppointmentStatus.ACCEPTED
-        );
-      filtered.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      if (!filtered.length) {
-        res.status(404).json({ message: "Aucun rendez-vous pending/accepted trouvé pour ce vétérinaire." });
+
+      // Filtrage et tri
+      const pendingAppointments = allAppointments
+        .filter(a => a.status === AppointmentStatus.PENDING)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      const acceptedAppointments = allAppointments
+        .filter(a => a.status === AppointmentStatus.ACCEPTED)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Fusionner les deux listes triées
+      const sortedAppointments = [...pendingAppointments, ...acceptedAppointments];
+
+      if (!sortedAppointments.length) {
+        res.status(404).json({ message: "Aucun rendez-vous trouvé pour ce vétérinaire." });
         return;
       }
-      res.status(200).json({ appointments: filtered });
+
+      // Pagination
+      const paginatedAppointments = sortedAppointments.slice(skip, skip + limit);
+
+      res.status(200).json({
+        appointments: paginatedAppointments,
+        currentPage: pageNumber,
+        totalPages: Math.ceil(sortedAppointments.length / limit),
+        totalAppointments: sortedAppointments.length,
+      });
     } catch (err) {
       console.error("[getAppointmentsByVeterinaire] Error:", err);
       next(err);
