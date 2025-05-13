@@ -466,6 +466,7 @@ export const getClientsWithAcceptedAppointmentsForVeterinaire = async (
 ): Promise<void> => {
   try {
     const { veterinaireId } = req.params;
+    const { firstName, lastName } = req.query as { firstName?: string; lastName?: string };
 
     if (!mongoose.Types.ObjectId.isValid(veterinaireId)) {
       return sendResponse(res, 400, {}, "ID de vétérinaire invalide.");
@@ -477,36 +478,54 @@ export const getClientsWithAcceptedAppointmentsForVeterinaire = async (
       return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
     }
 
+    // Construire les filtres pour firstName et lastName
+    const clientFilters: any = {};
+    if (firstName) {
+      clientFilters.firstName = { $regex: firstName, $options: "i" };
+    }
+    if (lastName) {
+      clientFilters.lastName = { $regex: lastName, $options: "i" };
+    }
+
     // Récupérer les rendez-vous acceptés avec les informations des clients
     const appointments = await Appointment.find({
       veterinaireId,
       status: AppointmentStatus.ACCEPTED,
-    }).populate("clientId", "firstName lastName email phoneNumber address profilePicture");
+    }).populate({
+      path: "clientId",
+      select: "firstName lastName email phoneNumber address profilePicture",
+      match: clientFilters, // Appliquer les filtres sur firstName et lastName
+    });
+
+    // Filtrer les rendez-vous où clientId n'est pas null (car le match peut retourner null si aucun client ne correspond)
+    const validAppointments = appointments.filter((a) => a.clientId !== null);
 
     // Extraire les clients sans doublons
     const uniqueClients = Array.from(
       new Map(
-        appointments.map((a) => [a.clientId._id.toString(), a.clientId])
+        validAppointments.map((a) => [a.clientId._id.toString(), a.clientId])
       ).values()
     );
 
     if (!uniqueClients.length) {
       return sendResponse(
-        res, 
-        404, 
-        { count: 0 }, 
-        "Aucun client avec un rendez-vous accepté trouvé."
+        res,
+        404,
+        { count: 0 },
+        "Aucun client avec un rendez-vous accepté trouvé" +
+          (firstName || lastName ? " pour les critères de recherche spécifiés." : ".")
       );
     }
 
     sendResponse(
-      res, 
-      200, 
-      { 
+      res,
+      200,
+      {
         count: uniqueClients.length,
-        clients: uniqueClients 
+        clients: uniqueClients,
       },
-      `${uniqueClients.length} client(s) trouvé(s) avec des rendez-vous acceptés.`
+      `${uniqueClients.length} client(s) trouvé(s) avec des rendez-vous acceptés` +
+        (firstName || lastName ? " pour les critères de recherche spécifiés." : ".")
     );
   } catch (error) {
     console.error("[getClientsWithAcceptedAppointmentsForVeterinaire] Error:", error);

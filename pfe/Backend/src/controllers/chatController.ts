@@ -46,9 +46,7 @@ export const handleMulterError = (err: unknown, req: Request, res: Response, nex
   }
 };
 
-/**
- * Envoi d'un message (texte ou média) avec création automatique de chat
- */
+
 export const sendMessage = async (req: Request, res: Response): Promise<void> => {
     try {
       const { senderId, recipientId, content } = req.body;
@@ -201,62 +199,146 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     }
   };
 
-/**
- * Récupération des conversations d'un utilisateur
- */
+
+interface ConversationQuery {
+  page?: string;
+  firstName?: string;
+  lastName?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 export const getConversations = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
+    const { page = "1", firstName, lastName, startDate, endDate } = req.query as ConversationQuery;
 
+    // Validate userId
     if (!validateObjectId(userId)) {
-      res.status(400).json({ error: 'ID utilisateur invalide' });
+      res.status(400).json({ error: "ID utilisateur invalide" });
       return;
     }
 
     const userObjectId = new Types.ObjectId(userId);
 
-    // Récupération des conversations avec les infos de base
-    const conversations = await Chat.find({ participants: userObjectId })
-      .populate('participants', USER_SELECT_FIELDS)
-      .populate({
-        path: 'lastMessage',
-        populate: { path: 'sender', select: USER_SELECT_FIELDS }
-      })
-      .sort({ updatedAt: -1 });
+    // Validate date filters
+    let dateFilter: any = {};
+    if (startDate || endDate) {
+      if (startDate && isNaN(Date.parse(startDate))) {
+        res.status(400).json({ error: "startDate invalide, utilisez un format ISO 8601" });
+        return;
+      }
+      if (endDate && isNaN(Date.parse(endDate))) {
+        res.status(400).json({ error: "endDate invalide, utilisez un format ISO 8601" });
+        return;
+      }
+      if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+        res.status(400).json({ error: "startDate ne peut pas être postérieur à endDate" });
+        return;
+      }
+      dateFilter = {
+        createdAt: {
+          ...(startDate && { $gte: new Date(startDate) }),
+          ...(endDate && { $lte: new Date(endDate) }),
+        },
+      };
+    }
 
-    // Calcul des messages non lus pour chaque conversation
+    // Pagination parameters
+    const limit = 10;
+    const pageNumber = Math.max(parseInt(page, 10), 1); // Ensure page is at least 1
+    const skip = (pageNumber - 1) * limit;
+
+    // Build filter for participants (firstName or lastName)
+    const participantFilter: any = { _id: { $ne: userObjectId } }; // Exclude the user themselves
+    if (firstName || lastName) {
+      const nameFilters: any[] = [];
+      if (firstName) {
+        nameFilters.push({ firstName: { $regex: firstName, $options: "i" } });
+      }
+      if (lastName) {
+        nameFilters.push({ lastName: { $regex: lastName, $options: "i" } });
+      }
+      participantFilter.$or = nameFilters;
+    }
+
+    // Find users matching the name filter
+    const matchingUsers = await User.find(participantFilter).select("_id");
+    const matchingUserIds = matchingUsers.map((user) => user._id);
+
+    // Find chatIds with messages in the specified time range
+    let chatIdsWithMessages: Types.ObjectId[] = [];
+    if (startDate || endDate) {
+      const messages = await Message.find({
+        ...dateFilter,
+        chatId: { $in: await Chat.find({ participants: userObjectId }).distinct("_id") },
+      }).distinct("chatId");
+      chatIdsWithMessages = messages.map((id) => new Types.ObjectId(id.toString()));
+    }
+
+    // Build query for conversations
+    const conversationQuery: any = {
+      participants: { $all: [userObjectId], $in: matchingUserIds.length ? matchingUserIds : undefined },
+      ...(chatIdsWithMessages.length && { _id: { $in: chatIdsWithMessages } }),
+    };
+
+    // Get total count of matching conversations for pagination
+    const totalConversations = await Chat.countDocuments(conversationQuery);
+
+    // Fetch conversations with pagination
+    const conversations = await Chat.find(conversationQuery)
+      .populate("participants", USER_SELECT_FIELDS)
+      .populate({
+        path: "lastMessage",
+        populate: { path: "sender", select: USER_SELECT_FIELDS },
+      })
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Calculate unread message counts for each conversation
     const conversationsWithUnreadCount = await Promise.all(
       conversations.map(async (conversation) => {
         const unreadCount = await Message.countDocuments({
           chatId: conversation._id,
           readBy: { $ne: userObjectId },
-          sender: { $ne: userObjectId }
+          sender: { $ne: userObjectId },
         });
 
         return {
           ...conversation.toObject(),
-          unreadCount
+          unreadCount,
         };
       })
     );
 
-    res.status(200).json(conversationsWithUnreadCount);
+    // Prepare response with pagination metadata
+    res.status(200).json({
+      conversations: conversationsWithUnreadCount,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalConversations / limit),
+      totalConversations,
+    });
   } catch (error) {
-    console.error('Erreur récupération conversations:', error);
-    res.status(500).json({ error: 'Erreur serveur interne' });
+    console.error("Erreur récupération conversations:", error);
+    res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
-
 /**
  * Récupération des messages d'un chat
  */
+interface MessageQuery {
+  page?: string;
+}
+
 export const getMessages = async (req: Request, res: Response): Promise<void> => {
   try {
     const { chatId, userId } = req.params;
+    const { page = "1" } = req.query as MessageQuery;
 
     // Validation des IDs
     if (!validateObjectId(chatId) || !validateObjectId(userId)) {
-      res.status(400).json({ error: 'Format des IDs invalide' });
+      res.status(400).json({ error: "Format des IDs invalide" });
       return;
     }
 
@@ -266,35 +348,48 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
     // Vérification de l'existence du chat
     const chat = await Chat.findById(chatObjectId);
     if (!chat) {
-      res.status(404).json({ error: 'Chat non trouvé' });
+      res.status(404).json({ error: "Chat non trouvé" });
       return;
     }
 
     // Vérification de la participation
-    const isParticipant = chat.participants.some(participant => 
+    const isParticipant = chat.participants.some((participant) =>
       participant.toString() === userObjectId.toString()
     );
 
     if (!isParticipant) {
-      res.status(403).json({ error: 'Utilisateur non participant à ce chat' });
+      res.status(403).json({ error: "Utilisateur non participant à ce chat" });
       return;
     }
 
-    // Récupération des messages
-    const messages = await Message.find({ chatId: chatObjectId })
-      .populate('sender', USER_SELECT_FIELDS)
-      .sort({ createdAt: 1 });
+    // Pagination parameters
+    const limit = 15;
+    const pageNumber = Math.max(parseInt(page, 10), 1); // Ensure page is at least 1
+    const skip = (pageNumber - 1) * limit;
 
-    res.status(200).json(messages);
+    // Get total count of messages for pagination
+    const totalMessages = await Message.countDocuments({ chatId: chatObjectId });
+
+    // Récupération des messages avec pagination
+    const messages = await Message.find({ chatId: chatObjectId })
+      .populate("sender", USER_SELECT_FIELDS)
+      .sort({ createdAt: 1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Prepare response with pagination metadata
+    res.status(200).json({
+      messages,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalMessages / limit),
+      totalMessages,
+    });
   } catch (error) {
-    console.error('Erreur récupération messages:', error);
-    res.status(500).json({ error: 'Erreur serveur interne' });
+    console.error("Erreur récupération messages:", error);
+    res.status(500).json({ error: "Erreur serveur interne" });
   }
 };
 
-/**
- * Marquage des messages comme lus
- */
 export const markMessagesAsRead = async (req: Request, res: Response): Promise<void> => {
   try {
     const { chatId, userId, messageIds } = req.body;
