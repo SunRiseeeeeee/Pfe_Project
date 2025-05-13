@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:vetapp_v1/models/token_storage.dart';
 import 'package:http_parser/http_parser.dart' show MediaType;
 import 'dart:convert';
@@ -230,7 +231,8 @@ class PostService {
   // Check if user is a veterinarian
   static Future<bool> _isVeterinarian() async {
     final role = await TokenStorage.getUserRoleFromToken();
-    return role?.toLowerCase() == 'veterinarian';
+    debugPrint('PostService: Checking role: $role');
+    return role != null && ['veterinaire', 'veterinarian'].contains(role.toLowerCase());
   }
 
   // Create a new post with media file (veterinarians only)

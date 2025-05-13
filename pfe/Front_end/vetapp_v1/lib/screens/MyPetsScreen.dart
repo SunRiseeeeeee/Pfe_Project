@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:vetapp_v1/services/pet_service.dart';
 import 'package:vetapp_v1/screens/AddPetScreen.dart';
 import 'package:dio/dio.dart';
+import 'dart:io' show File;
 
 import 'PetDetailsScreen.dart';
 
@@ -41,6 +42,27 @@ class _PetsScreenState extends State<PetsScreen> {
     if (result != null) {
       _refreshPets();
     }
+  }
+
+  // Method to determine the correct ImageProvider for pet pictures
+  ImageProvider getPetPictureProvider(String? picture) {
+    debugPrint('Loading pet picture: $picture');
+    if (picture == null || picture.isEmpty) {
+      return const AssetImage('assets/default_pet.png');
+    }
+    // Check if the picture is a local file path
+    if (picture.startsWith('/data/') || picture.startsWith('file://')) {
+      final path = picture.startsWith('file://') ? picture.substring(7) : picture;
+      final file = File(path);
+      if (file.existsSync()) {
+        return FileImage(file);
+      } else {
+        debugPrint('Local pet picture does not exist: $path');
+        return const AssetImage('assets/default_pet.png');
+      }
+    }
+    // Use NetworkImage for remote URLs
+    return NetworkImage(picture);
   }
 
   @override
@@ -87,54 +109,52 @@ class _PetsScreenState extends State<PetsScreen> {
                 childAspectRatio: 0.9,
               ),
               itemCount: pets.length,
-          itemBuilder: (context, index) {
-          final pet = pets[index];
-          return GestureDetector(
-          onTap: () {
-          Navigator.push(
-          context,
-          MaterialPageRoute(
-          builder: (context) => PetDetailsScreen(pet: pet),
-          ),
+              itemBuilder: (context, index) {
+                final pet = pets[index];
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PetDetailsScreen(pet: pet),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 8,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 50,
+                          backgroundImage: getPetPictureProvider(pet['picture']),
+                          backgroundColor: Colors.grey[200],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          pet['name'] ?? 'Unnamed',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
           );
-          },
-          child: Container(
-          decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-          BoxShadow(
-          color: Colors.black12,
-          blurRadius: 8,
-          offset: Offset(0, 4),
-          ),
-          ],
-          ),
-          child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-          CircleAvatar(
-          radius: 50,
-          backgroundImage: pet['picture'] != null
-          ? NetworkImage(pet['picture'])
-              : const AssetImage('assets/default_pet.png') as ImageProvider,
-          backgroundColor: Colors.grey[200],
-          ),
-          const SizedBox(height: 12),
-          Text(
-          pet['name'] ?? 'Unnamed',
-          style: GoogleFonts.poppins(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          ),
-          ),
-          ],
-          ),
-          ),
-          );
-          },
-
-          ));
         },
       ),
       floatingActionButton: FloatingActionButton(

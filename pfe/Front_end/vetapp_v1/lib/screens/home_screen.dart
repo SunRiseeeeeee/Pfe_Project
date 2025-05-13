@@ -6,6 +6,7 @@ import 'package:vetapp_v1/screens/fypscreen.dart';
 import 'package:vetapp_v1/screens/profile_screen.dart';
 import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
 import 'package:vetapp_v1/screens/MyPetsScreen.dart';
+import 'package:vetapp_v1/screens/client_screen.dart';
 import '../models/token_storage.dart';
 import 'package:dio/dio.dart';
 
@@ -60,14 +61,55 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  String? userRole;
 
-  final List<Widget> _screens = const [
-    HomeContent(),           // 0 - Home
-    AppointmentScreen(),     // 1 - Appointment
-    PetsScreen(),           // 2 - Pets
-    FypScreen(),        // 3 - Message
-    ProfileScreen(),        // 4 - Profile
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadUserRole();
+  }
+
+  Future<void> _loadUserRole() async {
+    try {
+      final rawRole = await TokenStorage.getUserRoleFromToken();
+      print('Raw role from TokenStorage: $rawRole');
+      final normalizedRole = rawRole?.toLowerCase().trim();
+      setState(() {
+        userRole = normalizedRole ?? 'pet_owner';
+        if (normalizedRole == 'vet' || normalizedRole == 'veterinaire') {
+          userRole = 'veterinarian';
+        }
+        print('Final userRole: $userRole');
+      });
+    } catch (e) {
+      print('Error fetching user role: $e');
+      setState(() {
+        userRole = 'pet_owner';
+        print('Final userRole (error): $userRole');
+      });
+    }
+  }
+
+  // Screens based on user role
+  List<Widget> get _screens {
+    if (userRole == 'veterinarian' || userRole == 'secretary') {
+      return const [
+        HomeContent(),           // 0 - Home
+        AppointmentScreen(),     // 1 - Appointment
+        ClientScreen(),         // 2 - Client
+        FypScreen(),            // 3 - Fyp
+        ProfileScreen(),        // 4 - Profile
+      ];
+    } else {
+      return const [
+        HomeContent(),           // 0 - Home
+        AppointmentScreen(),     // 1 - Appointment
+        PetsScreen(),           // 2 - Pets
+        FypScreen(),            // 3 - Fyp
+        ProfileScreen(),        // 4 - Profile
+      ];
+    }
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -78,7 +120,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: userRole == null
+          ? const Center(child: CircularProgressIndicator())
+          : _screens[_selectedIndex],
       bottomNavigationBar: _buildCustomBottomNavigationBar(),
     );
   }
@@ -116,7 +160,8 @@ class _HomeScreenState extends State<HomeScreen> {
           unselectedFontSize: 10,
           showSelectedLabels: true,
           showUnselectedLabels: true,
-          items: [
+          items: userRole == 'veterinarian' || userRole == 'secretary'
+              ? [
             BottomNavigationBarItem(
               icon: Icon(Icons.home, size: 28),
               label: 'Home',
@@ -126,7 +171,35 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Appointment',
             ),
             BottomNavigationBarItem(
-              icon: _BigPawIcon(isSelected: _selectedIndex == 2),
+              icon: _CustomNavIcon(
+                icon: Icons.people,
+                isSelected: _selectedIndex == 2,
+              ),
+              label: 'Client',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.stacked_bar_chart, size: 28),
+              label: 'Fyp',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person, size: 28),
+              label: 'Profile',
+            ),
+          ]
+              : [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home, size: 28),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.calendar_today, size: 28),
+              label: 'Appointment',
+            ),
+            BottomNavigationBarItem(
+              icon: _CustomNavIcon(
+                icon: Icons.pets,
+                isSelected: _selectedIndex == 2,
+              ),
               label: 'Pets',
             ),
             BottomNavigationBarItem(
@@ -144,10 +217,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _BigPawIcon extends StatelessWidget {
+class _CustomNavIcon extends StatelessWidget {
+  final IconData icon;
   final bool isSelected;
 
-  const _BigPawIcon({required this.isSelected});
+  const _CustomNavIcon({
+    required this.icon,
+    required this.isSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +240,7 @@ class _BigPawIcon extends StatelessWidget {
           ),
         ),
         Icon(
-          Icons.pets,
+          icon,
           size: 36,
           color: isSelected ? Colors.deepPurple : Colors.grey,
         ),
@@ -183,7 +260,7 @@ class _HomeContentState extends State<HomeContent> {
   int currentPage = 1;
   String? locationFilter;
   String? specialtyFilter;
-  String? nameFilter; // New: For name-based search
+  String? nameFilter;
   int limit = 10;
   String sort = "desc";
   late Future<Map<String, dynamic>> veterinariansFuture;
@@ -192,7 +269,6 @@ class _HomeContentState extends State<HomeContent> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
 
-  // List of specialties including "Chirurgie canine"
   final List<String> specialties = [
     'General Practice',
     'Surgery',
@@ -351,7 +427,7 @@ class _HomeContentState extends State<HomeContent> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.search),
-                      onPressed: _showSearchDialog, // Updated to open search dialog
+                      onPressed: _showSearchDialog,
                     ),
                     IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
                   ],
@@ -454,7 +530,6 @@ class _HomeContentState extends State<HomeContent> {
                 List<Veterinarian> veterinarians = [];
                 List<String?> specializations = [];
 
-                // Parse veterinarians and store specializations
                 for (var json in veterinariansData) {
                   veterinarians.add(Veterinarian.fromJson(json));
                   final details = json['details'] as Map<String, dynamic>?;
@@ -462,7 +537,6 @@ class _HomeContentState extends State<HomeContent> {
                   specializations.add(specialty);
                 }
 
-                // Client-side filtering for name, location, and specialty
                 if (nameFilter != null && nameFilter!.isNotEmpty) {
                   final lowerCaseNameFilter = nameFilter!.toLowerCase();
                   veterinarians = veterinarians.asMap().entries.where((entry) {
@@ -550,10 +624,12 @@ class _HomeContentState extends State<HomeContent> {
                                       width: double.infinity,
                                       fit: BoxFit.cover,
                                       errorBuilder: (context, error, stackTrace) {
-                                        return Image.asset('assets/images/default_avatar.png', width: double.infinity, fit: BoxFit.cover);
+                                        return Image.asset('assets/images/default_avatar.png',
+                                            width: double.infinity, fit: BoxFit.cover);
                                       },
                                     )
-                                        : Image.asset('assets/images/default_avatar.png', width: double.infinity, fit: BoxFit.cover),
+                                        : Image.asset('assets/images/default_avatar.png',
+                                        width: double.infinity, fit: BoxFit.cover),
                                   ),
                                 ),
                                 Padding(
@@ -562,7 +638,8 @@ class _HomeContentState extends State<HomeContent> {
                                     children: [
                                       Text(
                                         '${vet.firstName} ${vet.lastName}',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Poppins', fontSize: 14),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold, fontFamily: 'Poppins', fontSize: 14),
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -570,7 +647,8 @@ class _HomeContentState extends State<HomeContent> {
                                       const SizedBox(height: 4),
                                       Text(
                                         vet.location,
-                                        style: const TextStyle(fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
+                                        style: const TextStyle(
+                                            fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -579,7 +657,8 @@ class _HomeContentState extends State<HomeContent> {
                                         const SizedBox(height: 4),
                                         Text(
                                           specialization,
-                                          style: const TextStyle(fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
+                                          style: const TextStyle(
+                                              fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
                                           textAlign: TextAlign.center,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -614,9 +693,7 @@ class _HomeContentState extends State<HomeContent> {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.arrow_back),
-                              onPressed: currentPage > 1
-                                  ? () => _refreshVeterinarians(currentPage - 1)
-                                  : null,
+                              onPressed: currentPage > 1 ? () => _refreshVeterinarians(currentPage - 1) : null,
                             ),
                             Text('Page $currentPage of ${responseData['totalPages']}'),
                             IconButton(
@@ -739,7 +816,9 @@ class _HomeContentState extends State<HomeContent> {
             ElevatedButton(
               onPressed: () {
                 setState(() {
-                  locationFilter = tempLocationFilter != null && tempLocationFilter!.isNotEmpty ? tempLocationFilter?.trim() : null;
+                  locationFilter = tempLocationFilter != null && tempLocationFilter!.isNotEmpty
+                      ? tempLocationFilter?.trim()
+                      : null;
                   specialtyFilter = tempSpecialtyFilter;
                   _locationController.text = locationFilter ?? '';
                   _refreshVeterinarians(1);
@@ -900,7 +979,8 @@ class _AutoSlidingPageViewState extends State<AutoSlidingPageView> {
                   const SizedBox(height: 10),
                   ElevatedButton(
                     onPressed: () {},
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.deepPurple),
+                    style:
+                    ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.deepPurple),
                     child: const Text('Discover', style: TextStyle(fontFamily: 'Poppins')),
                   ),
                 ],
