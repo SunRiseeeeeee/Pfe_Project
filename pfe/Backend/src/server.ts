@@ -14,9 +14,11 @@ import ReviewRatingRoutes from "./routes/ReviewRatingRoutes";
 import animalFicheRoutes from "./routes/animalFicheRoutes";
 import postRoutes from "./routes/postRoutes";
 import chatRoutes from "./routes/chatRoutes";
+import notificationRoutes from "./routes/notificationRoutes"; // Added
 import { setupSwagger } from "./swaggerConfig";
 import { initializeSocket } from "./controllers/chatController";
 import { socketAuthMiddleware } from "./middlewares/authMiddleware";
+import { startReminderCronJob } from "./services/notificationService"; // Added
 
 dotenv.config();
 
@@ -39,7 +41,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // Connexion à MongoDB
 connectDB()
-  .then(() => console.log("Connecté à MongoDB"))
+  .then(() => {
+    console.log("Connecté à MongoDB");
+    // Start the notification cron job
+    startReminderCronJob(io);
+  })
   .catch(err => console.error("❌ Erreur de connexion MongoDB :", err));
 
 // Montée des routes
@@ -52,7 +58,8 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/reviews", ReviewRatingRoutes);
 app.use("/api/posts", postRoutes);
-app.use("/api", chatRoutes); // Added chat routes
+app.use("/api/chat", chatRoutes); // Updated to be more specific
+app.use("/api/notifications", notificationRoutes); // Added
 
 // Initialize Socket.IO in ChatController
 initializeSocket(io);

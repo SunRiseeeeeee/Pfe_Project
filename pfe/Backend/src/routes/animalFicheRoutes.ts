@@ -12,6 +12,10 @@ router.get("/:id", (req, res) => {
 router.post("/", (req, res) => {
   AnimalFicheController.createFiche(req, res);
 });
+// Récupérer une fiche animalière par ID d'animal
+router.get("/animal/:animalId/fiche", (req, res) => {
+  AnimalFicheController.getFicheByAnimalId(req, res);
+});
 
 // Supprimer une fiche animalière par ID
 router.delete("/:id", (req, res) => {

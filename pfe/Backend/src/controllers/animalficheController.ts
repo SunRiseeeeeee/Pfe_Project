@@ -76,6 +76,21 @@ const AnimalFicheController = {
       res.status(500).json({ message: `Erreur lors de la récupération de la fiche : ${(error as Error).message}` });
     }
   },
+    // ✅ Récupérer une fiche par ID d'animal
+    async getFicheByAnimalId(req: Request, res: Response) {
+      try {
+        const { animalId } = req.params;
+        const fiche = await AnimalFiche.findOne({ animal: animalId }).populate("animal veterinarian client");
+  
+        if (!fiche) {
+          return res.status(404).json({ message: "Aucune fiche trouvée pour cet animal" });
+        }
+  
+        res.status(200).json(fiche);
+      } catch (error) {
+        res.status(500).json({ message: `Erreur lors de la récupération de la fiche : ${(error as Error).message}` });
+      }
+    },
 
   // ✅ Supprimer une fiche par ID
   async deleteFiche(req: Request, res: Response) {

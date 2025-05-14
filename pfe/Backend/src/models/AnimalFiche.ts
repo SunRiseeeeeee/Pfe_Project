@@ -67,7 +67,7 @@ const AnimalFicheSchema: Schema = new Schema(
     },
     client: {
       type: Schema.Types.ObjectId,
-      ref: "Client",
+      ref: "User",
       required: true,
     },
     creationDate: {
@@ -110,7 +110,7 @@ const AnimalFicheSchema: Schema = new Schema(
         notes: { type: String },
       },
     ],
-
+                                                                            
     appointments: [
       {
         appointmentDate: { type: Date, required: true },

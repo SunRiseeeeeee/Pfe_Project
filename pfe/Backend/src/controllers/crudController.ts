@@ -10,7 +10,7 @@ import Secretaire from '../models/User'; // Ajuste le chemin selon ta structure
 import path from "path";
 import fs from 'fs';
 import Review from "../models/Review";
-
+import Rating from "../models/Rating";
 
 declare global {
   namespace Express {
@@ -230,6 +230,8 @@ export const deleteUser: ExpressController = async (req, res) => {
     });
   }
 };
+
+
 export const getVeterinarians: ExpressController = async (req, res) => {
   try {
     const { 
@@ -271,20 +273,27 @@ export const getVeterinarians: ExpressController = async (req, res) => {
     // Debug : Log du filtre généré pour vérifier la bonne structure
     console.log("Filtre généré : ", filter);
 
-    // Pipeline d'agrégation pour calculer l'averageRating
+    // Pipeline d'agrégation pour calculer la moyenne des évaluations et le nombre de critiques
     const aggregationPipeline = [
       { $match: filter },
       {
         $lookup: {
-          from: "reviews",
+          from: "ratings", // Assurez-vous que la collection s'appelle "ratings"
           localField: "_id",
-          foreignField: "veterinarian",
-          as: "reviews",
+          foreignField: "veterinarian", // Assurez-vous que ce champ existe dans le modèle Rating
+          as: "ratings",
         },
       },
       {
         $addFields: {
-          averageRating: { $avg: "$reviews.rating" }
+          averageRating: {
+            $cond: { 
+              if: { $gt: [{ $size: "$ratings" }, 0] }, 
+              then: { $avg: "$ratings.rating" }, 
+              else: 0 
+            }
+          },
+          reviewCount: { $size: "$ratings" }, // Nombre de critiques
         },
       },
       {
@@ -294,7 +303,7 @@ export const getVeterinarians: ExpressController = async (req, res) => {
         $project: {
           password: 0,
           refreshToken: 0,
-          reviews: 0,
+          ratings: 0, // On ne retourne pas les détails des évaluations
         }
       },
       {
@@ -331,6 +340,9 @@ export const getVeterinarians: ExpressController = async (req, res) => {
     });
   }
 };
+
+
+
 export const getSecretariensByVeterinaire: RequestHandler = async (req, res, next) => {
   try {
     // Vérification de la connexion MongoDB

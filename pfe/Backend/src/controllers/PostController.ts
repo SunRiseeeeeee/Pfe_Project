@@ -201,14 +201,21 @@ export const deletePost = async (req: Request, res: Response): Promise<Response>
 // 📌 Récupérer tous les posts d'un vétérinaire
 export const getVeterinairePosts = async (req: Request, res: Response): Promise<Response> => {
   const { veterinaireId } = req.params;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const commentsLimit = parseInt(req.query.commentsLimit as string) || 15;
+  const skip = (page - 1) * limit;
 
   if (!veterinaireId) {
     return res.status(400).json({ message: "Le champ veterinaireId est requis." });
   }
 
   try {
+    // Requête pour les posts avec pagination
     const posts = await Post.find({ veterinaireId })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .populate([
         {
           path: 'createdBy',
@@ -219,13 +226,40 @@ export const getVeterinairePosts = async (req: Request, res: Response): Promise<
           path: 'reactions.userId',
           model: 'User',
           select: 'firstName lastName profilePicture'
+        },
+        {
+          path: 'comments',
+          options: {
+            sort: { createdAt: -1 },
+            limit: commentsLimit
+          },
+          populate: {
+            path: 'userId',
+            model: 'User',
+            select: 'firstName lastName profilePicture'
+          }
         }
       ]);
 
-    const host = `${req.protocol}://${req.get('host')}`;
-    const response = posts.map(formatPostResponse(host));
+    // Requête pour le nombre total de posts
+    const totalPosts = await Post.countDocuments({ veterinaireId });
+    const totalPages = Math.ceil(totalPosts / limit);
 
-    return res.status(200).json(response);
+    const host = `${req.protocol}://${req.get('host')}`;
+    const formattedPosts = posts.map(formatPostResponse(host));
+
+    return res.status(200).json({
+      posts: formattedPosts,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalPosts,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+        commentsLimit
+      }
+    });
   } catch (err: any) {
     console.error("Erreur getVeterinairePosts:", err);
     return res.status(500).json({
@@ -234,12 +268,21 @@ export const getVeterinairePosts = async (req: Request, res: Response): Promise<
     });
   }
 };
-
 // 📌 Récupérer tous les posts
 export const getAllPosts = async (req: Request, res: Response): Promise<Response> => {
   try {
+    // Pagination des posts
+    const postsPage = parseInt(req.query.postsPage as string) || 1;
+    const postsLimit = parseInt(req.query.postsLimit as string) || 10;
+    const postsSkip = (postsPage - 1) * postsLimit;
+
+    // Pagination des commentaires
+    const commentsLimit = parseInt(req.query.commentsLimit as string) || 15;
+
     const posts = await Post.find()
       .sort({ createdAt: -1 })
+      .skip(postsSkip)
+      .limit(postsLimit)
       .populate([
         {
           path: 'veterinaireId',
@@ -250,13 +293,44 @@ export const getAllPosts = async (req: Request, res: Response): Promise<Response
           path: 'reactions.userId',
           model: 'User',
           select: 'firstName lastName profilePicture'
+        },
+        {
+          path: 'comments',
+          options: {
+            sort: { createdAt: -1 },
+            limit: commentsLimit
+          },
+          populate: {
+            path: 'userId',
+            model: 'User',
+            select: 'firstName lastName profilePicture'
+          }
         }
       ]);
 
-    const host = `${req.protocol}://${req.get('host')}`;
-    const response = posts.map(formatPostResponse(host));
+    // Comptage total des posts
+    const totalPosts = await Post.countDocuments();
+    const totalPostsPages = Math.ceil(totalPosts / postsLimit);
 
-    return res.status(200).json(response);
+    const host = `${req.protocol}://${req.get('host')}`;
+    const formattedPosts = posts.map(formatPostResponse(host));
+
+    return res.status(200).json({
+      posts: formattedPosts,
+      pagination: {
+        posts: {
+          currentPage: postsPage,
+          totalPages: totalPostsPages,
+          totalPosts,
+          limit: postsLimit,
+          hasNextPage: postsPage < totalPostsPages,
+          hasPreviousPage: postsPage > 1
+        },
+        comments: {
+          limit: commentsLimit
+        }
+      }
+    });
   } catch (err: any) {
     console.error("Erreur getAllPosts:", err);
     return res.status(500).json({
@@ -265,7 +339,6 @@ export const getAllPosts = async (req: Request, res: Response): Promise<Response
     });
   }
 };
-
 // 📌 Gestion des réactions
 export const addReaction = async (req: Request, res: Response): Promise<Response> => {
   const { postId } = req.params;

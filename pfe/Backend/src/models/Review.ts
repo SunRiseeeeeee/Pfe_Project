@@ -1,53 +1,23 @@
-import mongoose, { Schema, Document, Types } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
 export interface IReview extends Document {
-  client: Types.ObjectId;
-  veterinarian: Types.ObjectId;
-  rating?: number;
-  review?: string;
-  ratingCount: number; // Nombre de votes supplémentaires sur cet avis
+  client: mongoose.Types.ObjectId;
+  veterinarian: mongoose.Types.ObjectId;
+  review: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const ReviewSchema: Schema = new Schema<IReview>(
+const ReviewSchema: Schema = new Schema(
   {
-    client: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    veterinarian: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    rating: {
-      type: Number,
-      min: 1,
-      max: 5,
-      required: false,
-    },
-    review: {
-      type: String,
-      trim: true,
-      required: false,
-    },
-    // Nouveau compteur de votes sur cet avis
-    ratingCount: {
-      type: Number,
-      default: 0,
-      min: 0,
-      required: true,
-    },
+    client: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    veterinarian: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    review: { type: String, required: true, minlength: 10, maxlength: 500 },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Un client ne peut avoir qu'un seul review par vétérinaire
-ReviewSchema.index({ client: 1, veterinarian: 1 }, { unique: true });
+// Index for efficient sorting by createdAt
+ReviewSchema.index({ veterinarian: 1, createdAt: -1 });
 
-const Review = mongoose.model<IReview>("Review", ReviewSchema);
-export default Review;
+export default mongoose.model<IReview>("Review", ReviewSchema);
