@@ -40,12 +40,10 @@ router.get('/veterinaire/:veterinaireId', async (req, res) => {
 router.get('/', async (req, res) => {
   await getAllPosts(req, res);
 });
-
 // Ajouter ou mettre à jour une réaction à un post
 router.post('/:postId/reaction', async (req, res) => {
   await addReaction(req, res);
 });
-
 // Supprimer une réaction d'un post
 router.delete('/:postId/reaction', async (req, res) => {
   await deleteReaction(req, res);
