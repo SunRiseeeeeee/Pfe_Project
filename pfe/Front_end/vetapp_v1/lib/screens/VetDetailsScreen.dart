@@ -6,6 +6,7 @@ import 'package:vetapp_v1/services/review_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vetapp_v1/screens/bookAppointment.dart';
 import 'dart:convert';
+import '../models/token_storage.dart'; // Added for role checking
 
 class VetDetailsScreen extends StatefulWidget {
   final Veterinarian vet;
@@ -20,11 +21,13 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   bool isFavorite = false;
   int reviewCount = 0;
   double averageRating = 0.0;
+  String? _userRole;
 
   @override
   void initState() {
     super.initState();
     fetchReviewData();
+    _loadUserRole(); // Load user role
   }
 
   void fetchReviewData() async {
@@ -37,6 +40,13 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     } else {
       print('Failed to load reviews: ${response['message']}');
     }
+  }
+
+  void _loadUserRole() async {
+    final role = await TokenStorage.getUserRoleFromToken();
+    setState(() {
+      _userRole = role;
+    });
   }
 
   void navigateToReviews() async {
@@ -251,7 +261,8 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: Padding(
+      bottomNavigationBar: _userRole == 'client' // Show button only for clients
+          ? Padding(
         padding: const EdgeInsets.all(16.0),
         child: ElevatedButton(
           onPressed: () {
@@ -280,7 +291,8 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
             style: TextStyle(fontSize: 16, color: Colors.white),
           ),
         ),
-      ),
+      )
+          : null,
     );
   }
 

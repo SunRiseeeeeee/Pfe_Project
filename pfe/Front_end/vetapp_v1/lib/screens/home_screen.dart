@@ -7,6 +7,7 @@ import 'package:vetapp_v1/screens/profile_screen.dart';
 import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
 import 'package:vetapp_v1/screens/MyPetsScreen.dart';
 import 'package:vetapp_v1/screens/client_screen.dart';
+import 'package:vetapp_v1/screens/vet_appointment_screen.dart';
 import '../models/token_storage.dart';
 import 'package:dio/dio.dart';
 
@@ -95,17 +96,17 @@ class _HomeScreenState extends State<HomeScreen> {
     if (userRole == 'veterinarian' || userRole == 'secretary') {
       return const [
         HomeContent(),           // 0 - Home
-        AppointmentScreen(),     // 1 - Appointment
-        ClientScreen(),         // 2 - Client
-        FypScreen(),            // 3 - Fyp
+        VetAppointmentScreen(),     // 1 - Appointment
+        FypScreen(),             // 3 - Fyp
+        VetClientScreen(),         // 2 - Client
         ProfileScreen(),        // 4 - Profile
       ];
     } else {
       return const [
         HomeContent(),           // 0 - Home
         AppointmentScreen(),     // 1 - Appointment
-        PetsScreen(),           // 2 - Pets
         FypScreen(),            // 3 - Fyp
+        PetsScreen(),           // 2 - Pets
         ProfileScreen(),        // 4 - Profile
       ];
     }
@@ -170,16 +171,15 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(Icons.calendar_today, size: 28),
               label: 'Appointment',
             ),
+
             BottomNavigationBarItem(
-              icon: _CustomNavIcon(
-                icon: Icons.people,
-                isSelected: _selectedIndex == 2,
-              ),
-              label: 'Client',
+              icon: _CustomNavIcon(icon :Icons.stacked_bar_chart, isSelected: _selectedIndex == 2,),
+              label: 'Fyp',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.stacked_bar_chart, size: 28),
-              label: 'Fyp',
+
+              icon: Icon(Icons.people, size: 28,),
+              label: 'Client',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person, size: 28),
@@ -196,16 +196,17 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Appointment',
             ),
             BottomNavigationBarItem(
-              icon: _CustomNavIcon(
-                icon: Icons.pets,
-                isSelected: _selectedIndex == 2,
-              ),
-              label: 'Pets',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.stacked_bar_chart, size: 28),
+              icon: _CustomNavIcon(icon :Icons.stacked_bar_chart, isSelected: _selectedIndex == 2,),
               label: 'Fyp',
             ),
+            BottomNavigationBarItem(
+
+                icon: Icon(Icons.pets, size: 28,),
+
+
+              label: 'Pets',
+            ),
+
             BottomNavigationBarItem(
               icon: Icon(Icons.person, size: 28),
               label: 'Profile',

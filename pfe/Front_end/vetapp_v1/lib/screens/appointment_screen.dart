@@ -103,7 +103,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                 behavior: SnackBarBehavior.floating,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ));
-              _loadAppointments();
+          _loadAppointments();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
