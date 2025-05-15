@@ -4,14 +4,14 @@ import {
   getConversations,
   getMessages,
   markMessagesAsRead,
-  handleMulterError
+
 } from '../controllers/chatController';
 import { chatUpload } from '../middlewares/uploadMiddleware';
 
 const router = express.Router();
 
 // Envoi de message avec création automatique de chat si nécessaire
-router.post('/messages', chatUpload.single('file'), sendMessage, handleMulterError);
+router.post('/messages', chatUpload.single('file'), sendMessage, );
 
 // Marquer les messages comme lus
 router.post('/messages/read', markMessagesAsRead);
