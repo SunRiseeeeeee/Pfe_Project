@@ -486,7 +486,7 @@ export const signupHandler = (role: UserRole): RequestHandler => {
           ...(role === UserRole.SECRETAIRE && { veterinaireId }),
           isActive: true,
           rating: role === UserRole.VETERINAIRE ? 0 : undefined,
-          reviews: []
+          
         };
 
         // Création de l'utilisateur

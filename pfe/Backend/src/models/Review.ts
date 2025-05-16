@@ -17,7 +17,8 @@ const ReviewSchema: Schema = new Schema(
   { timestamps: true }
 );
 
-// Index for efficient sorting by createdAt
+// Index for efficient sorting by createdAt when fetching reviews for a veterinarian
+// Note: No unique index on { client, veterinarian } to allow multiple reviews from the same client
 ReviewSchema.index({ veterinarian: 1, createdAt: -1 });
 
 export default mongoose.model<IReview>("Review", ReviewSchema);
