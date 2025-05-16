@@ -1,5 +1,8 @@
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 import '../models/service.dart';
 import '../services/service_service.dart';
 
@@ -25,11 +28,31 @@ class _ServiceScreenState extends State<ServiceScreen> {
     });
   }
 
+  Future<bool> _requestPermission() async {
+    PermissionStatus status;
+    if (Platform.isAndroid) {
+      status = await Permission.storage.request();
+      if (!status.isGranted) {
+        status = await Permission.photos.request();
+      }
+    } else {
+      status = await Permission.photos.request();
+    }
+    if (status.isGranted) {
+      return true;
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Permission to access photos is required')),
+      );
+      return false;
+    }
+  }
+
   void _showServiceDialog({Service? service}) {
     final isEdit = service != null;
     final nameController = TextEditingController(text: service?.name ?? '');
     final descriptionController = TextEditingController(text: service?.description ?? '');
-    final imageUrlController = TextEditingController(text: service?.image ?? '');
+    File? selectedImage;
 
     showDialog(
       context: context,
@@ -59,13 +82,37 @@ class _ServiceScreenState extends State<ServiceScreen> {
                       maxLines: 3,
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      controller: imageUrlController,
-                      decoration: const InputDecoration(
-                        labelText: 'Image URL (optional)',
-                        border: OutlineInputBorder(),
-                        hintText: 'e.g., http://192.168.1.18:3000/uploads/services/image.jpg',
-                      ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (!await _requestPermission()) return;
+
+                        final picker = ImagePicker();
+                        try {
+                          final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                          if (pickedFile != null) {
+                            final file = File(pickedFile.path);
+                            if (await file.exists()) {
+                              setDialogState(() {
+                                selectedImage = file;
+                                print('Selected image: ${selectedImage!.path}');
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Image selected successfully')),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Selected image is invalid or inaccessible')),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          print('Error picking image: $e');
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to pick image: $e')),
+                          );
+                        }
+                      },
+                      child: Text(selectedImage == null ? 'Pick Image' : 'Image Selected'),
                     ),
                   ],
                 ),
@@ -81,8 +128,6 @@ class _ServiceScreenState extends State<ServiceScreen> {
               onPressed: () async {
                 final name = nameController.text.trim();
                 final description = descriptionController.text.trim();
-                final imageUrl = imageUrlController.text.trim().isEmpty ? null : imageUrlController.text.trim();
-
                 if (name.isEmpty || description.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Name and description are required')),
@@ -97,13 +142,13 @@ class _ServiceScreenState extends State<ServiceScreen> {
                       id: service!.id,
                       name: name,
                       description: description,
-                      imageUrl: imageUrl,
+                      image: selectedImage,
                     );
                   } else {
                     result = await ServiceService.createService(
                       name: name,
                       description: description,
-                      imageUrl: imageUrl,
+                      image: selectedImage,
                     );
                   }
                 } catch (e) {

@@ -1,4 +1,4 @@
-
+import 'dart:io';
 import 'package:dio/dio.dart';
 import '../models/service.dart';
 import '../models/token_storage.dart';
@@ -35,7 +35,7 @@ class ServiceService {
   static Future<Map<String, dynamic>> createService({
     required String name,
     String? description,
-    String? imageUrl,
+    File? image,
   }) async {
     try {
       final token = await TokenStorage.getToken();
@@ -56,10 +56,20 @@ class ServiceService {
       final formData = FormData.fromMap({
         'name': name,
         if (description != null) 'description': description,
-        if (imageUrl != null) 'image': imageUrl,
       });
 
-      print('Creating service with data: ${formData.fields}');
+      if (image != null && await image.exists()) {
+        final imagePath = image.path;
+        final imageFilename = imagePath.toLowerCase().endsWith('.png') ? 'images.png' : 'images.jpg';
+        formData.files.add(MapEntry(
+          'image',
+          await MultipartFile.fromFile(
+            imagePath,
+            filename: imageFilename,
+          ),
+        ));
+        print('Creating service with data: ${formData.fields}, image: $imagePath, filename: $imageFilename');
+      }
 
       final response = await _dio.post(
         baseUrl,
@@ -82,14 +92,17 @@ class ServiceService {
       print('Error creating service: $e');
       if (e is DioException && e.response != null) {
         print('Server response: ${e.response?.data}');
+        final errorMessage = e.response?.data['message'] ?? 'Failed to create service: Server error';
         return {
           'success': false,
-          'message': e.response?.data['message'] ?? 'Error creating service: $e',
+          'message': errorMessage.contains('ENOENT')
+              ? 'Failed to save image: Check backend multer configuration in serviceMulterConfig.ts and ensure the server runs under the correct user (e.g., baade)'
+              : errorMessage,
         };
       }
       return {
         'success': false,
-        'message': 'Error creating service: $e',
+        'message': 'Failed to create service: $e',
       };
     }
   }
@@ -123,7 +136,7 @@ class ServiceService {
     required String id,
     String? name,
     String? description,
-    String? imageUrl,
+    File? image,
   }) async {
     try {
       final token = await TokenStorage.getToken();
@@ -141,20 +154,30 @@ class ServiceService {
         };
       }
 
-      if (name == null && description == null && imageUrl == null) {
+      if (name == null && description == null && image == null) {
         return {
           'success': false,
-          'message': 'At least one field (name, description, or image URL) must be provided',
+          'message': 'At least one field (name, description, or image) must be provided',
         };
       }
 
       final formData = FormData.fromMap({
         if (name != null) 'name': name,
         if (description != null) 'description': description,
-        if (imageUrl != null) 'image': imageUrl,
       });
 
-      print('Updating service with data: ${formData.fields}');
+      if (image != null && await image.exists()) {
+        final imagePath = image.path;
+        final imageFilename = imagePath.toLowerCase().endsWith('.png') ? 'images.png' : 'images.jpg';
+        formData.files.add(MapEntry(
+          'image',
+          await MultipartFile.fromFile(
+            imagePath,
+            filename: imageFilename,
+          ),
+        ));
+        print('Updating service with data: ${formData.fields}, image: $imagePath, filename: $imageFilename');
+      }
 
       final response = await _dio.put(
         '$baseUrl/$id',
@@ -177,14 +200,17 @@ class ServiceService {
       print('Error updating service: $e');
       if (e is DioException && e.response != null) {
         print('Server response: ${e.response?.data}');
+        final errorMessage = e.response?.data['message'] ?? 'Failed to update service: Server error';
         return {
           'success': false,
-          'message': e.response?.data['message'] ?? 'Error updating service: $e',
+          'message': errorMessage.contains('ENOENT')
+              ? 'Failed to save image: Check backend multer configuration in serviceMulterConfig.ts and ensure the server runs under the correct user (e.g., baade)'
+              : errorMessage,
         };
       }
       return {
         'success': false,
-        'message': 'Error updating service: $e',
+        'message': 'Failed to update service: $e',
       };
     }
   }
