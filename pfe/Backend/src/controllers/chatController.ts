@@ -126,9 +126,8 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     let messageContent = content ? content.trim() : '';
 
     if (file) {
-      const url = `/uploads/chats/${file.filename}`;
-      messageContent = url;
-
+  const url = `${req.protocol}://${req.get('host')}/uploads/chats/${file.filename}`;
+  messageContent = url;
       if (file.mimetype.startsWith('image/')) messageType = MessageType.IMAGE;
       else if (file.mimetype.startsWith('video/')) messageType = MessageType.VIDEO;
       else if (file.mimetype.startsWith('audio/')) messageType = MessageType.AUDIO;
@@ -198,23 +197,43 @@ export const getConversations = async (req: Request, res: Response): Promise<voi
   try {
     const { userId } = req.params;
     const { page = '1', search } = req.query;
+
     if (!validateObjectId(userId)) {
       res.status(400).json({ error: 'ID utilisateur invalide' });
       return;
     }
+
     const userObj = new Types.ObjectId(userId);
     const pageNum = Math.max(parseInt(page as string, 10) || 1, 1);
     const limit = 10;
     const skip = (pageNum - 1) * limit;
 
+    // Récupération du rôle de l'utilisateur (CLIENT, VETERINAIRE, SECRETAIRE)
+    const currentUser = await User.findById(userObj).select('role');
+    if (!currentUser) {
+      res.status(404).json({ error: 'Utilisateur non trouvé' });
+      return;
+    }
+
+const isClient = currentUser.role === ('CLIENT' as UserRole);
+const isVeterinaireOrSecretaire = ['VETERINAIRE', 'SECRETAIRE'].includes(currentUser.role as UserRole);
+
+
+    // Construction de la requête de recherche
     const query: any = { participants: userObj };
+
     if (search) {
+
+      const searchRole = isClient ? ['VETERINAIRE'] : ['CLIENT'];
+      
       const users = await User.find({
+        role: { $in: searchRole },
         $or: [
           { firstName: { $regex: search as string, $options: 'i' } },
           { lastName: { $regex: search as string, $options: 'i' } }
         ]
       }).distinct('_id');
+
       query.participants = { $all: [userObj], $in: users };
     }
 
