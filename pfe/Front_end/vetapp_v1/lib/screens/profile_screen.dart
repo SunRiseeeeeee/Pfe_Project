@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +7,10 @@ import '../services/auth_service.dart';
 import '../main.dart';
 import 'EditProfileScreen.dart';
 import 'login.dart';
+import 'secretary_screen.dart';
+import 'add_admin_screen.dart';
+import 'add_veterinary_screen.dart';
+import '../models/token_storage.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -20,6 +23,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? userData;
   bool isLoading = true;
   String? errorMessage;
+  bool isVeterinarian = false;
+  bool isAdmin = false;
 
   final UserService _userService = UserService();
   final AuthService _authService = AuthService();
@@ -41,7 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       final data = await _userService.getUserById(userId);
-      print("Fetched user data: $data");  // Print the full response
+      print("Fetched user data: $data"); // Print the full response
 
       setState(() {
         userData = data;
@@ -55,6 +60,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _initializeVeterinarianStatus() async {
+    try {
+      final role = await TokenStorage.getUserRoleFromToken();
+      print('ProfileScreen: User role: $role');
+      setState(() {
+        isVeterinarian = role != null && ['veterinaire', 'veterinarian'].contains(role.toLowerCase());
+      });
+    } catch (e) {
+      print('ProfileScreen: Error fetching role: $e');
+    }
+  }
+
+  Future<void> _initializeAdminStatus() async {
+    try {
+      final role = await TokenStorage.getUserRoleFromToken();
+      print('ProfileScreen: User role: $role');
+      setState(() {
+        isAdmin = role != null && role.toLowerCase() == 'admin';
+      });
+    } catch (e) {
+      print('ProfileScreen: Error fetching admin role: $e');
+    }
+  }
 
   Future<void> deleteAccount() async {
     try {
@@ -81,6 +109,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     fetchUserDetails();
+    _initializeVeterinarianStatus();
+    _initializeAdminStatus();
   }
 
   @override
@@ -111,13 +141,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _buildInfoRow(Icons.email, 'Email', userData?['email'] ?? '', context),
                 _buildInfoRow(Icons.phone, 'Phone', userData?['phoneNumber'] ?? '', context),
                 _buildInfoRow(
-                    Icons.location_on,
-                    'Location',
-                    '${userData?['address']?['street'] ?? ''}, ${userData?['address']?['city'] ?? ''}, ${userData?['address']?['state'] ?? ''}, ${userData?['address']?['country'] ?? ''}, ${userData?['address']?['postalCode'] ?? ''}',
-                    context
+                  Icons.location_on,
+                  'Location',
+                  '${userData?['address']?['street'] ?? ''}, ${userData?['address']?['city'] ?? ''}, ${userData?['address']?['state'] ?? ''}, ${userData?['address']?['country'] ?? ''}, ${userData?['address']?['postalCode'] ?? ''}',
+                  context,
                 ),
-
-
+                if (isVeterinarian) ...[
+                  const SizedBox(height: 24),
+                  _buildVeterinarianSection(context),
+                ],
                 const SizedBox(height: 24),
                 _buildSectionTitle('Preferences', context),
                 _buildPreferenceRow(Icons.notifications, 'Notifications', userData?['notificationsEnabled'] ?? false, null, context),
@@ -135,6 +167,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     MaterialPageRoute(builder: (context) => const EditProfileScreen()),
                   );
                 }, context),
+                if (isVeterinarian)
+                  _buildActionButton(Icons.person_add, 'My Secretary', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const SecretaryScreen()),
+                    );
+                  }, context),
+                if (isAdmin)
+                  _buildActionButton(Icons.admin_panel_settings, 'Add New Admin', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AddAdminScreen()),
+                    );
+                  }, context),
+                if (isAdmin)
+                  _buildActionButton(Icons.medical_services, 'Add Veterinary', () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AddVeterinaryScreen()),
+                    );
+                  }, context),
                 _buildActionButton(Icons.logout, 'Log Out', () async {
                   try {
                     await _authService.logout();
@@ -176,7 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           profileUrl != null && profileUrl.isNotEmpty
               ? CircleAvatar(
             radius: 50,
-            backgroundImage:  FileImage(File(profileUrl)),
+            backgroundImage: FileImage(File(profileUrl)),
           )
               : const CircleAvatar(
             radius: 50,
@@ -202,6 +255,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildVeterinarianSection(BuildContext context) {
+    final details = userData?['details'] ?? {};
+    final specialization = details['specialization'] ?? 'Not specified';
+    final services = (details['services'] as List<dynamic>?)?.join(', ') ?? 'Not specified';
+    final workingHours = List<Map<String, dynamic>>.from(details['workingHours'] ?? []);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Veterinarian Details', context),
+        _buildInfoRow(Icons.medical_services, 'Specialization', specialization, context),
+        _buildInfoRow(Icons.list, 'Services', services, context),
+        const SizedBox(height: 12),
+        _buildSectionTitle('Working Hours', context),
+        if (workingHours.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'No working hours specified',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          )
+        else
+          ...workingHours.map((workingHour) {
+            final day = workingHour['day'] ?? 'Unknown';
+            final start = workingHour['start'] ?? 'N/A';
+            final end = workingHour['end'] ?? 'N/A';
+            final pauseStart = workingHour['pauseStart'];
+            final pauseEnd = workingHour['pauseEnd'];
+            final pause = (pauseStart != null && pauseEnd != null) ? 'Pause: $pauseStart - $pauseEnd' : 'No pause';
+            final hoursText = '$day: $start - $end, $pause';
+
+            return _buildInfoRow(Icons.access_time, 'Hours', hoursText, context);
+          }).toList(),
+      ],
     );
   }
 

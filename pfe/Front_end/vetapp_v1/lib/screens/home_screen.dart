@@ -8,8 +8,12 @@ import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
 import 'package:vetapp_v1/screens/MyPetsScreen.dart';
 import 'package:vetapp_v1/screens/client_screen.dart';
 import 'package:vetapp_v1/screens/vet_appointment_screen.dart';
+import 'package:vetapp_v1/screens/vets_screen.dart';
+import 'package:vetapp_v1/screens/service_screen.dart'; // Import ServiceScreen
 import '../models/token_storage.dart';
 import 'package:dio/dio.dart';
+import '../models/service.dart';
+import '../services/service_service.dart';
 
 class VetService {
   static const String baseUrl = "http://192.168.1.18:3000/api/users/veterinarians";
@@ -91,23 +95,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Screens based on user role
   List<Widget> get _screens {
-    if (userRole == 'veterinarian' || userRole == 'secretary') {
+    if (userRole == 'admin') {
+      return [
+        HomeContent(onServiceChanged: () => setState(() {})), // Pass callback
+        const ServiceScreen(),
+        const FypScreen(),
+        const VetsScreen(),
+        const ProfileScreen(),
+      ];
+    } else if (userRole == 'veterinarian' || userRole == 'secretary') {
       return const [
-        HomeContent(),           // 0 - Home
-        VetAppointmentScreen(),     // 1 - Appointment
-        FypScreen(),             // 3 - Fyp
-        VetClientScreen(),         // 2 - Client
-        ProfileScreen(),        // 4 - Profile
+        HomeContent(),
+        VetAppointmentScreen(),
+        FypScreen(),
+        VetClientScreen(),
+        ProfileScreen(),
       ];
     } else {
       return const [
-        HomeContent(),           // 0 - Home
-        AppointmentScreen(),     // 1 - Appointment
-        FypScreen(),            // 3 - Fyp
-        PetsScreen(),           // 2 - Pets
-        ProfileScreen(),        // 4 - Profile
+        HomeContent(),
+        AppointmentScreen(),
+        FypScreen(),
+        PetsScreen(),
+        ProfileScreen(),
       ];
     }
   }
@@ -161,7 +172,30 @@ class _HomeScreenState extends State<HomeScreen> {
           unselectedFontSize: 10,
           showSelectedLabels: true,
           showUnselectedLabels: true,
-          items: userRole == 'veterinarian' || userRole == 'secretary'
+          items: userRole == 'admin'
+              ? [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home, size: 28),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.room_service, size: 28),
+              label: 'Service',
+            ),
+            BottomNavigationBarItem(
+              icon: _CustomNavIcon(icon: Icons.stacked_bar_chart, isSelected: _selectedIndex == 2),
+              label: 'Fyp',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.local_hospital, size: 28),
+              label: 'Vets',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person, size: 28),
+              label: 'Profile',
+            ),
+          ]
+              : userRole == 'veterinarian' || userRole == 'secretary'
               ? [
             BottomNavigationBarItem(
               icon: Icon(Icons.home, size: 28),
@@ -171,14 +205,12 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(Icons.calendar_today, size: 28),
               label: 'Appointment',
             ),
-
             BottomNavigationBarItem(
-              icon: _CustomNavIcon(icon :Icons.stacked_bar_chart, isSelected: _selectedIndex == 2,),
+              icon: _CustomNavIcon(icon: Icons.stacked_bar_chart, isSelected: _selectedIndex == 2),
               label: 'Fyp',
             ),
             BottomNavigationBarItem(
-
-              icon: Icon(Icons.people, size: 28,),
+              icon: Icon(Icons.people, size: 28),
               label: 'Client',
             ),
             BottomNavigationBarItem(
@@ -196,17 +228,13 @@ class _HomeScreenState extends State<HomeScreen> {
               label: 'Appointment',
             ),
             BottomNavigationBarItem(
-              icon: _CustomNavIcon(icon :Icons.stacked_bar_chart, isSelected: _selectedIndex == 2,),
+              icon: _CustomNavIcon(icon: Icons.stacked_bar_chart, isSelected: _selectedIndex == 2),
               label: 'Fyp',
             ),
             BottomNavigationBarItem(
-
-                icon: Icon(Icons.pets, size: 28,),
-
-
+              icon: Icon(Icons.pets, size: 28),
               label: 'Pets',
             ),
-
             BottomNavigationBarItem(
               icon: Icon(Icons.person, size: 28),
               label: 'Profile',
@@ -251,7 +279,8 @@ class _CustomNavIcon extends StatelessWidget {
 }
 
 class HomeContent extends StatefulWidget {
-  const HomeContent({super.key});
+  final VoidCallback? onServiceChanged; // Callback for service changes
+  const HomeContent({super.key, this.onServiceChanged});
 
   @override
   _HomeContentState createState() => _HomeContentState();
@@ -265,6 +294,7 @@ class _HomeContentState extends State<HomeContent> {
   int limit = 10;
   String sort = "desc";
   late Future<Map<String, dynamic>> veterinariansFuture;
+  Future<Map<String, dynamic>>? servicesFuture;
   String? username;
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
@@ -293,6 +323,7 @@ class _HomeContentState extends State<HomeContent> {
       limit: limit,
       sort: sort,
     );
+    servicesFuture = ServiceService.getAllServices();
     _loadUsername();
   }
 
@@ -490,225 +521,13 @@ class _HomeContentState extends State<HomeContent> {
                   ],
                 ),
               ),
-            FutureBuilder<Map<String, dynamic>>(
-              future: veterinariansFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  debugPrint('FutureBuilder error: ${snapshot.error}');
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
-                        const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: () => _refreshVeterinarians(currentPage),
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                final Map<String, dynamic>? responseData = snapshot.data;
-                debugPrint('API response: $responseData');
-                if (responseData == null || responseData['veterinarians'] == null || responseData['veterinarians'].isEmpty) {
-                  String message = 'No veterinarians found.';
-                  if (nameFilter != null && nameFilter!.isNotEmpty) {
-                    message = 'No veterinarians found with name $nameFilter.';
-                  }
-                  if (locationFilter != null && locationFilter!.isNotEmpty) {
-                    message = 'No veterinarians found in $locationFilter.';
-                  }
-                  if (specialtyFilter != null) {
-                    message += ' with specialty $specialtyFilter.';
-                  }
-                  return Center(child: Text(message, style: const TextStyle(fontSize: 16, color: Colors.grey)));
-                }
-                List<dynamic> veterinariansData = responseData['veterinarians'];
-                List<Veterinarian> veterinarians = [];
-                List<String?> specializations = [];
-
-                for (var json in veterinariansData) {
-                  veterinarians.add(Veterinarian.fromJson(json));
-                  final details = json['details'] as Map<String, dynamic>?;
-                  final specialty = details != null ? details['specialty']?.toString() : null;
-                  specializations.add(specialty);
-                }
-
-                if (nameFilter != null && nameFilter!.isNotEmpty) {
-                  final lowerCaseNameFilter = nameFilter!.toLowerCase();
-                  veterinarians = veterinarians.asMap().entries.where((entry) {
-                    final vet = entry.value;
-                    final firstName = vet.firstName.toLowerCase();
-                    final lastName = vet.lastName.toLowerCase();
-                    return firstName.contains(lowerCaseNameFilter) || lastName.contains(lowerCaseNameFilter);
-                  }).map((entry) => entry.value).toList();
-                  specializations = veterinarians.asMap().entries.where((entry) {
-                    final vet = entry.value;
-                    final firstName = vet.firstName.toLowerCase();
-                    final lastName = vet.lastName.toLowerCase();
-                    return firstName.contains(lowerCaseNameFilter) || lastName.contains(lowerCaseNameFilter);
-                  }).map((entry) => specializations[entry.key]).toList();
-                }
-                if (locationFilter != null && locationFilter!.isNotEmpty) {
-                  veterinarians = veterinarians.asMap().entries.where((entry) {
-                    final vet = entry.value;
-                    final location = vet.location.toLowerCase();
-                    return location.contains(locationFilter!.toLowerCase());
-                  }).map((entry) => entry.value).toList();
-                  specializations = veterinarians.asMap().entries.where((entry) {
-                    final vet = entry.value;
-                    final location = vet.location.toLowerCase();
-                    return location.contains(locationFilter!.toLowerCase());
-                  }).map((entry) => specializations[entry.key]).toList();
-                }
-                if (specialtyFilter != null && specialtyFilter!.isNotEmpty) {
-                  final filtered = veterinarians.asMap().entries.where((entry) {
-                    final index = entry.key;
-                    final specialization = specializations[index];
-                    return specialization != null && specialization.toLowerCase() == specialtyFilter!.toLowerCase();
-                  }).toList();
-                  veterinarians = filtered.map((entry) => entry.value).toList();
-                  specializations = filtered.map((entry) => specializations[entry.key]).toList();
-                }
-
-                if (veterinarians.isEmpty) {
-                  String message = 'No veterinarians found.';
-                  if (nameFilter != null && nameFilter!.isNotEmpty) {
-                    message = 'No veterinarians found with name $nameFilter.';
-                  }
-                  if (locationFilter != null && locationFilter!.isNotEmpty) {
-                    message = 'No veterinarians found in $locationFilter.';
-                  }
-                  if (specialtyFilter != null) {
-                    message += ' with specialty $specialtyFilter.';
-                  }
-                  return Center(child: Text(message, style: const TextStyle(fontSize: 16, color: Colors.grey)));
-                }
-
-                return Column(
-                  children: [
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 3 / 4,
-                      ),
-                      itemCount: veterinarians.length,
-                      itemBuilder: (context, index) {
-                        final vet = veterinarians[index];
-                        final specialization = specializations[index];
-                        return GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => VetDetailsScreen(vet: vet)),
-                            );
-                          },
-                          child: Card(
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: ClipRRect(
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                                    child: vet.profilePicture != null
-                                        ? Image.network(
-                                      vet.profilePicture!,
-                                      width: double.infinity,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Image.asset('assets/images/default_avatar.png',
-                                            width: double.infinity, fit: BoxFit.cover);
-                                      },
-                                    )
-                                        : Image.asset('assets/images/default_avatar.png',
-                                        width: double.infinity, fit: BoxFit.cover),
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        '${vet.firstName} ${vet.lastName}',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold, fontFamily: 'Poppins', fontSize: 14),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        vet.location,
-                                        style: const TextStyle(
-                                            fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (specialization != null) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          specialization,
-                                          style: const TextStyle(
-                                              fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
-                                          textAlign: TextAlign.center,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          const Icon(Icons.star, color: Colors.amber, size: 16),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${vet.averageRating.toStringAsFixed(1)}/5',
-                                            style: const TextStyle(fontSize: 13, fontFamily: 'Poppins'),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    if (responseData['totalPages'] != null && responseData['totalPages'] > 1)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back),
-                              onPressed: currentPage > 1 ? () => _refreshVeterinarians(currentPage - 1) : null,
-                            ),
-                            Text('Page $currentPage of ${responseData['totalPages']}'),
-                            IconButton(
-                              icon: const Icon(Icons.arrow_forward),
-                              onPressed: currentPage < responseData['totalPages']
-                                  ? () => _refreshVeterinarians(currentPage + 1)
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                );
-              },
+            VeterinarianList(
+              veterinariansFuture: veterinariansFuture,
+              currentPage: currentPage,
+              locationFilter: locationFilter,
+              specialtyFilter: specialtyFilter,
+              nameFilter: nameFilter,
+              onPageChange: _refreshVeterinarians,
             ),
             const SizedBox(height: 24),
           ],
@@ -835,40 +654,113 @@ class _HomeContentState extends State<HomeContent> {
   }
 
   Widget _buildServicesSection() {
-    return Column(
-      children: [
-        SizedBox(
-          height: 150,
-          child: Row(
-            children: [
-              Expanded(flex: 6, child: _buildServiceCard('Vaccinations', 'assets/images/vac.jpg')),
-              const SizedBox(width: 10),
-              Expanded(flex: 4, child: _buildServiceCard('Grooming', 'assets/images/grooming.jpg')),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 150,
-          child: Row(
-            children: [
-              Expanded(flex: 4, child: _buildServiceCard('Walking', 'assets/images/walking.jpg')),
-              const SizedBox(width: 10),
-              Expanded(flex: 6, child: _buildServiceCard('Training', 'assets/images/training.jpg')),
-            ],
-          ),
-        ),
-      ],
+    if (servicesFuture == null) {
+      return const Center(child: Text('Services not loaded'));
+    }
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: servicesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          print('Service fetch error: ${snapshot.error}');
+          return const Center(child: Text('Error loading services'));
+        }
+        if (!snapshot.hasData || !snapshot.data!['success']) {
+          print('Service fetch failed: ${snapshot.data?['message']}');
+          return Center(
+            child: Text(snapshot.data?['message'] ?? 'Failed to load services'),
+          );
+        }
+
+        final services = snapshot.data!['services'] as List<Service>;
+        if (services.isEmpty) {
+          return const Center(child: Text('No services available'));
+        }
+
+        final displayServices = services.take(4).toList();
+
+        return Column(
+          children: [
+            SizedBox(
+              height: 150,
+              child: Row(
+                children: [
+                  if (displayServices.length > 0)
+                    Expanded(
+                      flex: 6,
+                      child: _buildServiceCard(displayServices[0]),
+                    )
+                  else
+                    Expanded(flex: 6, child: _buildPlaceholderCard()),
+                  const SizedBox(width: 10),
+                  if (displayServices.length > 1)
+                    Expanded(
+                      flex: 4,
+                      child: _buildServiceCard(displayServices[1]),
+                    )
+                  else
+                    Expanded(flex: 4, child: _buildPlaceholderCard()),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 150,
+              child: Row(
+                children: [
+                  if (displayServices.length > 2)
+                    Expanded(
+                      flex: 4,
+                      child: _buildServiceCard(displayServices[2]),
+                    )
+                  else
+                    Expanded(flex: 4, child: _buildPlaceholderCard()),
+                  const SizedBox(width: 10),
+                  if (displayServices.length > 3)
+                    Expanded(
+                      flex: 6,
+                      child: _buildServiceCard(displayServices[3]),
+                    )
+                  else
+                    Expanded(flex: 6, child: _buildPlaceholderCard()),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildServiceCard(String title, String imageUrl) {
+  Widget _buildServiceCard(Service service) {
+    final imageUrl = service.image != null && service.image!.isNotEmpty
+        ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.1.18:3000')
+        : null;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset(imageUrl, fit: BoxFit.cover),
+          imageUrl != null
+              ? Image.network(
+            imageUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('Image load error for $imageUrl: $error');
+              return Container(
+                color: Colors.grey,
+                child: const Icon(Icons.image_not_supported, color: Colors.white),
+              );
+            },
+          )
+              : Container(
+            color: Colors.grey,
+            child: const Icon(Icons.image_not_supported, color: Colors.white),
+          ),
           Container(
             alignment: Alignment.bottomLeft,
             padding: const EdgeInsets.all(8),
@@ -880,8 +772,42 @@ class _HomeContentState extends State<HomeContent> {
               ),
             ),
             child: Text(
-              title,
+              service.name,
               style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlaceholderCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            color: Colors.grey,
+            child: const Icon(Icons.image_not_supported, color: Colors.white),
+          ),
+          Container(
+            alignment: Alignment.bottomLeft,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.black.withOpacity(0.6), Colors.transparent],
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+              ),
+            ),
+            child: const Text(
+              'No Service',
+              style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
                 fontFamily: 'Poppins',
@@ -980,8 +906,10 @@ class _AutoSlidingPageViewState extends State<AutoSlidingPageView> {
                   const SizedBox(height: 10),
                   ElevatedButton(
                     onPressed: () {},
-                    style:
-                    ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.deepPurple),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.deepPurple,
+                    ),
                     child: const Text('Discover', style: TextStyle(fontFamily: 'Poppins')),
                   ),
                 ],

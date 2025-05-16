@@ -28,6 +28,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _stateController;
   late TextEditingController _countryController;
   late TextEditingController _postalCodeController;
+  late TextEditingController _descriptionController;
+  late TextEditingController _specializationController;
+  late TextEditingController _servicesController;
+  List<Map<String, dynamic>> _workingHours = [];
+  List<Map<String, TextEditingController>> _workingHourControllers = [];
   File? _profileImage;
 
   @override
@@ -46,6 +51,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _stateController = TextEditingController();
     _countryController = TextEditingController();
     _postalCodeController = TextEditingController();
+    _descriptionController = TextEditingController();
+    _specializationController = TextEditingController();
+    _servicesController = TextEditingController();
   }
 
   void _loadUserData() {
@@ -74,6 +82,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _stateController.dispose();
     _countryController.dispose();
     _postalCodeController.dispose();
+    _descriptionController.dispose();
+    _specializationController.dispose();
+    _servicesController.dispose();
+    for (var controllers in _workingHourControllers) {
+      controllers['day']?.dispose();
+      controllers['start']?.dispose();
+      controllers['pauseStart']?.dispose();
+      controllers['pauseEnd']?.dispose();
+      controllers['end']?.dispose();
+    }
   }
 
   Future<void> _fetchUserData(String userId) async {
@@ -106,12 +124,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _stateController.text = address['state'] ?? '';
     _countryController.text = address['country'] ?? '';
     _postalCodeController.text = address['postalCode'] ?? '';
+
+    if (user['role'] == 'veterinaire') {
+      final details = user['details'] ?? {};
+      _descriptionController.text = user['description'] ?? '';
+      _specializationController.text = details['specialization'] ?? '';
+      _servicesController.text = (details['services'] as List<dynamic>?)?.join(', ') ?? '';
+      _workingHours = List<Map<String, dynamic>>.from(details['workingHours'] ?? []);
+      _workingHourControllers = _workingHours.map((workingHour) {
+        return {
+          'day': TextEditingController(text: workingHour['day']),
+          'start': TextEditingController(text: workingHour['start']),
+          'pauseStart': TextEditingController(text: workingHour['pauseStart']),
+          'pauseEnd': TextEditingController(text: workingHour['pauseEnd']),
+          'end': TextEditingController(text: workingHour['end']),
+        };
+      }).toList();
+    }
   }
 
   bool _hasChanges() {
     if (_userData.isEmpty) return false;
 
     final currentAddress = _userData['address'] ?? {};
+    final currentDetails = _userData['details'] ?? {};
 
     // Check text fields
     final textFieldsChanged =
@@ -124,12 +160,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _countryController.text != (currentAddress['country'] ?? '') ||
             _postalCodeController.text != (currentAddress['postalCode'] ?? '');
 
+    // Check veterinarian-specific fields
+    final vetFieldsChanged = _userData['role'] == 'veterinaire' &&
+        (_descriptionController.text != (_userData['description'] ?? '') ||
+            _specializationController.text != (currentDetails['specialization'] ?? '') ||
+            _servicesController.text != (currentDetails['services'] as List<dynamic>?)?.join(', ') ||
+            _workingHours.toString() != (currentDetails['workingHours'] ?? []).toString());
+
     // Check profile image
     final imageChanged =
         (_profileImage != null && _profileImage!.path != _originalProfileImagePath) ||
             (_profileImage == null && _originalProfileImagePath != null);
 
-    return textFieldsChanged || imageChanged;
+    return textFieldsChanged || vetFieldsChanged || imageChanged;
   }
 
   Future<void> _updateProfile() async {
@@ -146,13 +189,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final userId = await _getUserId();
       if (userId == null) throw Exception('User ID not found');
 
-      await _userService.updateUser(
-        firstName: _firstNameController.text,
-        lastName: _lastNameController.text,
-        phoneNumber: _phoneNumberController.text,
-        address: _buildAddressData(),
-        profilePicture: _profileImage?.path,
-      );
+      final updatedData = {
+        'firstName': _firstNameController.text,
+        'lastName': _lastNameController.text,
+        'phoneNumber': _phoneNumberController.text,
+        'address': _buildAddressData(),
+        if (_profileImage != null) 'profilePicture': _profileImage!.path,
+      };
+
+      if (_userData['role'] == 'veterinaire') {
+        updatedData['description'] = _descriptionController.text;
+        updatedData['details'] = {
+          'specialization': _specializationController.text,
+          'services': _servicesController.text.split(',').map((s) => s.trim()).toList(),
+          'workingHours': _workingHours,
+        };
+      }
+
+      await _userService.updateUser(updatedData);
 
       if (mounted) {
         _showSnackBar('Profile updated successfully');
@@ -194,6 +248,31 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  void _addWorkingHour() {
+    setState(() {
+      _workingHours.add({
+        'day': 'Monday',
+        'start': '08:00',
+        'pauseStart': null,
+        'pauseEnd': null,
+        'end': '18:00',
+      });
+      _workingHourControllers.add({
+        'day': TextEditingController(text: 'Monday'),
+        'start': TextEditingController(text: '08:00'),
+        'pauseStart': TextEditingController(),
+        'pauseEnd': TextEditingController(),
+        'end': TextEditingController(text: '18:00'),
+      });
+    });
+  }
+
+  void _updateWorkingHour(int index, String key, String? value) {
+    setState(() {
+      _workingHours[index][key] = value;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -223,6 +302,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               _buildPersonalInfoSection(theme),
               const SizedBox(height: 24),
               _buildAddressSection(theme),
+              if (_userData['role'] == 'veterinaire') ...[
+                const SizedBox(height: 24),
+                _buildVeterinarianSection(theme),
+              ],
               const SizedBox(height: 32),
               _buildSaveButton(colorScheme),
             ],
@@ -365,12 +448,223 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  Widget _buildVeterinarianSection(ThemeData theme) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Veterinarian Details', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 16),
+            _buildTextFormField(
+              controller: _descriptionController,
+              label: 'Description',
+              icon: Icons.description,
+              isRequired: true,
+            ),
+            const SizedBox(height: 12),
+            _buildTextFormField(
+              controller: _specializationController,
+              label: 'Specialization',
+              icon: Icons.medical_services,
+              isRequired: true,
+            ),
+            const SizedBox(height: 12),
+            _buildTextFormField(
+              controller: _servicesController,
+              label: 'Services (comma-separated)',
+              icon: Icons.list,
+              isRequired: true,
+            ),
+            const SizedBox(height: 16),
+            Text('Working Hours', style: theme.textTheme.titleMedium),
+            ..._workingHours.asMap().entries.map((entry) {
+              final index = entry.key;
+              final workingHour = entry.value;
+              return _buildWorkingHourRow(index, workingHour, theme);
+            }).toList(),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _addWorkingHour,
+              child: const Text('Add Working Hour'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkingHourRow(int index, Map<String, dynamic> workingHour, ThemeData theme) {
+    final controllers = _workingHourControllers[index];
+    final List<String> days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          children: [
+            DropdownButtonFormField<String>(
+              value: workingHour['day'],
+              decoration: InputDecoration(
+                labelText: 'Day',
+                prefixIcon: const Icon(Icons.calendar_today),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              items: days.map((day) {
+                return DropdownMenuItem<String>(
+                  value: day,
+                  child: Text(day),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  _updateWorkingHour(index, 'day', value);
+                  controllers['day']!.text = value;
+                }
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select a day';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: controllers['start'],
+                    decoration: InputDecoration(
+                      labelText: 'Start Time',
+                      prefixIcon: const Icon(Icons.access_time),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    keyboardType: TextInputType.datetime,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter start time';
+                      }
+                      if (!RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d$').hasMatch(value)) {
+                        return 'Enter valid time (HH:MM)';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) => _updateWorkingHour(index, 'start', value),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: controllers['end'],
+                    decoration: InputDecoration(
+                      labelText: 'End Time',
+                      prefixIcon: const Icon(Icons.access_time),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    keyboardType: TextInputType.datetime,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Please enter end time';
+                      }
+                      if (!RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d$').hasMatch(value)) {
+                        return 'Enter valid time (HH:MM)';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) => _updateWorkingHour(index, 'end', value),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: controllers['pauseStart'],
+                    decoration: InputDecoration(
+                      labelText: 'Pause Start (optional)',
+                      prefixIcon: const Icon(Icons.pause),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    keyboardType: TextInputType.datetime,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return null;
+                      if (!RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d$').hasMatch(value)) {
+                        return 'Enter valid time (HH:MM)';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) => _updateWorkingHour(index, 'pauseStart', value.isEmpty ? null : value),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: controllers['pauseEnd'],
+                    decoration: InputDecoration(
+                      labelText: 'Pause End (optional)',
+                      prefixIcon: const Icon(Icons.play_arrow),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    keyboardType: TextInputType.datetime,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) return null;
+                      if (!RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d$').hasMatch(value)) {
+                        return 'Enter valid time (HH:MM)';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) => _updateWorkingHour(index, 'pauseEnd', value.isEmpty ? null : value),
+                  ),
+                ),
+              ],
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _workingHours.removeAt(index);
+                  _workingHourControllers.removeAt(index);
+                });
+              },
+              child: const Text('Remove'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTextFormField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     bool isRequired = false,
     TextInputType keyboardType = TextInputType.text,
+    Function(String)? onChanged,
   }) {
     return TextFormField(
       controller: controller,
@@ -390,6 +684,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         return null;
       }
           : null,
+      onChanged: onChanged,
     );
   }
 

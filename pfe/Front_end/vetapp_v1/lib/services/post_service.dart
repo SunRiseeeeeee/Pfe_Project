@@ -44,14 +44,12 @@ class Veterinaire {
   final String firstName;
   final String lastName;
   final String? profilePicture;
-  final String? location;
 
   Veterinaire({
     required this.id,
     required this.firstName,
     required this.lastName,
     this.profilePicture,
-    this.location,
   });
 
   factory Veterinaire.fromJson(Map<String, dynamic> json) {
@@ -60,7 +58,6 @@ class Veterinaire {
       firstName: json['firstName']?.toString() ?? 'Unknown',
       lastName: json['lastName']?.toString() ?? '',
       profilePicture: json['profilePicture']?.toString(),
-      location: json['location']?.toString(),
     );
   }
 }
@@ -207,7 +204,12 @@ class PostService {
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
+        debugPrint('PostService: Sending request to ${options.uri}');
         return handler.next(options);
+      },
+      onResponse: (response, handler) {
+        debugPrint('PostService: Received response from ${response.requestOptions.uri}');
+        return handler.next(response);
       },
       onError: (DioException e, handler) {
         String message = 'An error occurred';
@@ -218,6 +220,7 @@ class PostService {
         } else if (e.type == DioExceptionType.receiveTimeout) {
           message = 'Server took too long to respond.';
         }
+        debugPrint('PostService: Error on ${e.requestOptions.uri}: $message');
         return handler.reject(DioException(
           requestOptions: e.requestOptions,
           response: e.response,
@@ -235,21 +238,50 @@ class PostService {
     return role != null && ['veterinaire', 'veterinarian'].contains(role.toLowerCase());
   }
 
+  // Check if user is an admin
+  static Future<bool> _isAdmin() async {
+    final role = await TokenStorage.getUserRoleFromToken();
+    debugPrint('PostService: Checking if admin, role: $role');
+    return role != null && role.toLowerCase() == 'admin';
+  }
+
+  // Determine MIME type based on file extension
+  static String _getMimeType(String filePath) {
+    final extension = filePath.toLowerCase().split('.').last;
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'mp4':
+      case 'mov':
+        return 'video/mp4';
+      case 'avi':
+        return 'video/avi';
+      case 'mpeg':
+        return 'video/mpeg';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
   // Create a new post with media file (veterinarians only)
   static Future<Post> createPost({
     required String veterinaireId,
     required File media,
     required String description,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot create posts.');
+    }
     if (!await _isVeterinarian()) {
       throw PostServiceException('Only veterinarians can create posts.');
     }
     _initializeDio();
     try {
       final fileName = media.path.split('/').last;
-      final mimeType = fileName.contains('.mp4') || fileName.contains('.mov')
-          ? 'video/mp4'
-          : 'image/jpeg';
+      final mimeType = _getMimeType(media.path);
       final formData = FormData.fromMap({
         'media': await MultipartFile.fromFile(
           media.path,
@@ -271,7 +303,7 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error creating post: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error creating post: ${e.message}',
       );
     }
   }
@@ -283,6 +315,9 @@ class PostService {
     File? media,
     String? description,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot update posts.');
+    }
     if (!await _isVeterinarian()) {
       throw PostServiceException('Only veterinarians can update posts.');
     }
@@ -294,10 +329,7 @@ class PostService {
           'media': await MultipartFile.fromFile(
             media.path,
             filename: media.path.split('/').last,
-            contentType: MediaType.parse(
-                media.path.contains('.mp4') || media.path.contains('.mov')
-                    ? 'video/mp4'
-                    : 'image/jpeg'),
+            contentType: MediaType.parse(_getMimeType(media.path)),
           ),
       });
 
@@ -313,7 +345,7 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error updating post: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error updating post: ${e.message}',
       );
     }
   }
@@ -323,6 +355,9 @@ class PostService {
     required String veterinaireId,
     required String postId,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot delete posts.');
+    }
     if (!await _isVeterinarian()) {
       throw PostServiceException('Only veterinarians can delete posts.');
     }
@@ -334,7 +369,7 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error deleting post: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error deleting post: ${e.message}',
       );
     }
   }
@@ -342,12 +377,22 @@ class PostService {
   // Get posts for a specific veterinarian (open to all)
   static Future<List<Post>> getVeterinairePosts({
     required String veterinaireId,
+    int page = 1,
+    int limit = 10,
+    int commentsLimit = 15,
   }) async {
     _initializeDio();
     try {
-      final response = await _dio.get('/veterinaire/$veterinaireId');
+      final response = await _dio.get(
+        '/veterinaire/$veterinaireId',
+        queryParameters: {
+          'page': page,
+          'limit': limit,
+          'commentsLimit': commentsLimit,
+        },
+      );
       if (response.statusCode == 200) {
-        return (response.data as List<dynamic>)
+        return (response.data['posts'] as List<dynamic>)
             .map((post) => Post.fromJson(post as Map<String, dynamic>))
             .toList();
       } else {
@@ -355,18 +400,29 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error fetching veterinarian posts: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error fetching veterinarian posts: ${e.message}',
       );
     }
   }
 
   // Get all posts (for FYP, open to all)
-  static Future<List<Post>> getAllPosts() async {
+  static Future<List<Post>> getAllPosts({
+    int page = 1,
+    int limit = 10,
+    int commentsLimit = 15,
+  }) async {
     _initializeDio();
     try {
-      final response = await _dio.get('/');
+      final response = await _dio.get(
+        '/',
+        queryParameters: {
+          'postsPage': page,
+          'postsLimit': limit,
+          'commentsLimit': commentsLimit,
+        },
+      );
       if (response.statusCode == 200) {
-        return (response.data as List<dynamic>)
+        return (response.data['posts'] as List<dynamic>)
             .map((post) => Post.fromJson(post as Map<String, dynamic>))
             .toList();
       } else {
@@ -374,17 +430,20 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error fetching posts: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error fetching posts: ${e.message}',
       );
     }
   }
 
-  // Add or update a reaction to a post (open to all)
+  // Add or update a reaction to a post (non-admins only)
   static Future<Reaction> addReaction({
     required String postId,
     required String userId,
     required String type,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot add reactions.');
+    }
     _initializeDio();
     try {
       final response = await _dio.post(
@@ -398,16 +457,19 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error adding reaction: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error adding reaction: ${e.message}',
       );
     }
   }
 
-  // Delete a reaction from a post (open to all)
+  // Delete a reaction from a post (non-admins only)
   static Future<void> deleteReaction({
     required String postId,
     required String userId,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot delete reactions.');
+    }
     _initializeDio();
     try {
       final response = await _dio.delete(
@@ -419,7 +481,7 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error deleting reaction: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error deleting reaction: ${e.message}',
       );
     }
   }
@@ -444,17 +506,20 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error fetching reactions summary: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error fetching reactions summary: ${e.message}',
       );
     }
   }
 
-  // Add a comment to a post (open to all)
+  // Add a comment to a post (non-admins only)
   static Future<Comment> addComment({
     required String postId,
     required String userId,
     required String content,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot add comments.');
+    }
     _initializeDio();
     try {
       final response = await _dio.post(
@@ -468,17 +533,20 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error adding comment: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error adding comment: ${e.message}',
       );
     }
   }
 
-  // Update a comment (open to all, assuming user owns the comment)
+  // Update a comment (non-admins only)
   static Future<Comment> updateComment({
     required String postId,
     required String commentId,
     required String content,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot update comments.');
+    }
     _initializeDio();
     try {
       final response = await _dio.put(
@@ -492,16 +560,19 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error updating comment: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error updating comment: ${e.message}',
       );
     }
   }
 
-  // Delete a comment (open to all, assuming user owns the comment)
+  // Delete a comment (non-admins only)
   static Future<void> deleteComment({
     required String postId,
     required String commentId,
   }) async {
+    if (await _isAdmin()) {
+      throw PostServiceException('Admins cannot delete comments.');
+    }
     _initializeDio();
     try {
       final response = await _dio.delete('/$postId/comment/$commentId');
@@ -510,7 +581,7 @@ class PostService {
       }
     } on DioException catch (e) {
       throw PostServiceException(
-        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error deleting comment: ${e.error?.toString() ?? 'Unknown error'}',
+        e.error is PostServiceException ? (e.error as PostServiceException).message : 'Error deleting comment: ${e.message}',
       );
     }
   }
