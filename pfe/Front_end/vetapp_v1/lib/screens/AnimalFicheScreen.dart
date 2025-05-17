@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../services/client_service.dart'; // For Animal
 import '../services/pet_file_service.dart';
-import '../services/client_service.dart';
 
 class AnimalFicheScreen extends StatefulWidget {
   final Animal animal;
@@ -64,15 +64,15 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
 
     try {
       AnimalFiche? fiche;
+      // Try fetching by ficheId if provided
       if (widget.ficheId != null && widget.ficheId!.isNotEmpty) {
         debugPrint('Loading fiche with ficheId: ${widget.ficheId}');
         fiche = await _petFileService.fetchFicheById(widget.ficheId!);
-      } else {
-        debugPrint('No ficheId provided, attempting to fetch by animalId: ${widget.animal.id}');
+      }
+      // Always try fetching by animalId, as ficheId may not be available
+      if (fiche == null) {
+        debugPrint('No ficheId or fiche not found, fetching by animalId: ${widget.animal.id}');
         fiche = await _petFileService.fetchFicheByAnimalId(widget.animal.id);
-        if (fiche == null) {
-          debugPrint('No fiche found for animalId: ${widget.animal.id}. Prompting to create a new fiche.');
-        }
       }
 
       setState(() {
@@ -93,15 +93,13 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
           _allergies = fiche.allergies ?? [];
           _recommendedNextVisit = fiche.recommendedNextVisit;
         } else {
-          _errorMessage = 'No fiche found. Please create a new fiche.';
+          debugPrint('No fiche found for animalId: ${widget.animal.id}. Ready to create a new fiche.');
         }
       });
     } catch (e) {
       debugPrint('Error loading fiche: $e');
       setState(() {
-        _errorMessage = e.toString().contains('404')
-            ? 'Fiche not found for the provided ID. Please create a new fiche.'
-            : 'Failed to load fiche: $e. Please try again.';
+        _errorMessage = 'Failed to load fiche: $e. Please try again.';
       });
     } finally {
       setState(() {
@@ -210,6 +208,67 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
     }
   }
 
+  Future<void> _deleteFiche() async {
+    if (_fiche == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Fiche'),
+        content: Text('Are you sure you want to delete the medical fiche for ${widget.animal.name}? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      await _petFileService.deleteFiche(_fiche!.id);
+      debugPrint('Deleted fiche with ID: ${_fiche!.id}');
+      setState(() {
+        _fiche = null;
+        _weightController.clear();
+        _heightController.clear();
+        _temperatureController.clear();
+        _dietController.clear();
+        _behaviorNotesController.clear();
+        _medicalHistoryController.clear();
+        _generalNotesController.clear();
+        _allergiesController.clear();
+        _vaccinations.clear();
+        _treatments.clear();
+        _examinations.clear();
+        _appointments.clear();
+        _allergies.clear();
+        _recommendedNextVisit = null;
+      });
+    } catch (e) {
+      debugPrint('Error deleting fiche: $e');
+      setState(() {
+        _errorMessage = 'Failed to delete fiche: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   Future<void> _addVaccination() async {
     final nameController = TextEditingController();
     DateTime? date = DateTime.now();
@@ -238,7 +297,10 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                     firstDate: DateTime(2000),
                     lastDate: DateTime.now(),
                   );
-                  if (picked != null) date = picked;
+                  if (picked != null) {
+                    date = picked;
+                    (context as Element).markNeedsBuild(); // Force rebuild dialog
+                  }
                 },
               ),
               ListTile(
@@ -250,7 +312,10 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                     firstDate: DateTime.now(),
                     lastDate: DateTime(2030),
                   );
-                  if (picked != null) nextDueDate = picked;
+                  if (picked != null) {
+                    nextDueDate = picked;
+                    (context as Element).markNeedsBuild(); // Force rebuild dialog
+                  }
                 },
               ),
               TextField(
@@ -299,7 +364,7 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
     DateTime? startDate = DateTime.now();
     DateTime? endDate;
     final dosageController = TextEditingController();
-    final freqencyController = TextEditingController();
+    final frequencyController = TextEditingController();
     final notesController = TextEditingController();
 
     final result = await showDialog<bool>(
@@ -324,7 +389,10 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                     firstDate: DateTime(2000),
                     lastDate: DateTime.now(),
                   );
-                  if (picked != null) startDate = picked;
+                  if (picked != null) {
+                    startDate = picked;
+                    (context as Element).markNeedsBuild(); // Force rebuild dialog
+                  }
                 },
               ),
               ListTile(
@@ -336,7 +404,10 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                     firstDate: DateTime.now(),
                     lastDate: DateTime(2030),
                   );
-                  if (picked != null) endDate = picked;
+                  if (picked != null) {
+                    endDate = picked;
+                    (context as Element).markNeedsBuild(); // Force rebuild dialog
+                  }
                 },
               ),
               TextField(
@@ -344,7 +415,7 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                 decoration: const InputDecoration(labelText: 'Dosage'),
               ),
               TextField(
-                controller: freqencyController,
+                controller: frequencyController,
                 decoration: const InputDecoration(labelText: 'Frequency'),
               ),
               TextField(
@@ -383,7 +454,7 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
           startDate: startDate!,
           endDate: endDate,
           dosage: dosageController.text.trim().isNotEmpty ? dosageController.text.trim() : null,
-          frequency: freqencyController.text.trim().isNotEmpty ? freqencyController.text.trim() : null,
+          frequency: frequencyController.text.trim().isNotEmpty ? frequencyController.text.trim() : null,
           notes: notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
         ));
       });
@@ -418,7 +489,10 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                     firstDate: DateTime(2000),
                     lastDate: DateTime.now(),
                   );
-                  if (picked != null) date = picked;
+                  if (picked != null) {
+                    date = picked;
+                    (context as Element).markNeedsBuild(); // Force rebuild dialog
+                  }
                 },
               ),
               TextField(
@@ -468,6 +542,13 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
   }
 
   Future<void> _addAppointment() async {
+    if (_fiche == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please create a fiche first')),
+      );
+      return;
+    }
+
     DateTime? appointmentDate = DateTime.now();
     final diagnosisController = TextEditingController();
 
@@ -488,7 +569,10 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                     firstDate: DateTime(2000),
                     lastDate: DateTime(2030),
                   );
-                  if (picked != null) appointmentDate = picked;
+                  if (picked != null) {
+                    appointmentDate = picked;
+                    (context as Element).markNeedsBuild(); // Force rebuild dialog
+                  }
                 },
               ),
               TextField(
@@ -514,11 +598,31 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
 
     if (result == true) {
       setState(() {
-        _appointments.add(AppointmentRecord(
+        _isLoading = true;
+        _errorMessage = '';
+      });
+
+      try {
+        final updatedFiche = await _petFileService.addAppointment(
+          ficheId: _fiche!.id,
           appointmentDate: appointmentDate!,
           diagnosis: diagnosisController.text.trim().isNotEmpty ? diagnosisController.text.trim() : null,
-        ));
-      });
+        );
+        debugPrint('Added appointment to fiche: ${_fiche!.id}');
+        setState(() {
+          _fiche = updatedFiche;
+          _appointments = updatedFiche.appointments ?? [];
+        });
+      } catch (e) {
+        debugPrint('Error adding appointment: $e');
+        setState(() {
+          _errorMessage = 'Failed to add appointment: $e';
+        });
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -590,7 +694,8 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
             }
             return Chip(
               label: Text(displayText),
-              onDeleted: () {
+              onDeleted: _isEditing
+                  ? () {
                 setState(() {
                   if (item is Vaccination) _vaccinations.remove(item);
                   if (item is Treatment) _treatments.remove(item);
@@ -598,12 +703,13 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
                   if (item is AppointmentRecord) _appointments.remove(item);
                   if (item is String) _allergies.remove(item);
                 });
-              },
+              }
+                  : null,
             );
           }).toList(),
         ),
         const SizedBox(height: 8),
-        if (_isEditing)
+        if (_isEditing || title == 'Appointments')
           ElevatedButton(
             onPressed: () => addFunction(),
             child: Text('Add $title'),
@@ -615,6 +721,8 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    debugPrint('Building UI: isLoading=$_isLoading, isEditing=$_isEditing, fiche=${_fiche != null}, errorMessage=$_errorMessage');
+
     return Scaffold(
       backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
@@ -625,340 +733,365 @@ class _AnimalFicheScreenState extends State<AnimalFicheScreen> {
         centerTitle: true,
         elevation: 0,
         actions: [
-          if (_fiche != null && !_isEditing)
+          if (_fiche != null && !_isEditing) ...[
             IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () {
                 setState(() {
                   _isEditing = true;
+                  debugPrint('Edit button pressed, set _isEditing to true');
                 });
               },
             ),
-        ],
-      ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
-          : _errorMessage.isNotEmpty
-          ? Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage,
-              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.error),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _isEditing ? _createOrUpdateFiche : _loadFiche,
-              child: const Text('Retry'),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: _deleteFiche,
             ),
           ],
-        ),
+        ],
+      ),
+      floatingActionButton: _fiche == null && !_isEditing
+          ? FloatingActionButton.extended(
+        onPressed: () {
+          debugPrint('FloatingActionButton pressed for creating fiche');
+          setState(() {
+            _isEditing = true;
+            debugPrint('Set _isEditing to true, should show form');
+          });
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Create Fiche'),
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: theme.colorScheme.onPrimary,
       )
-          : SingleChildScrollView(
+          : null,
+      body: _isLoading
+          ? Center(child: CircularProgressIndicator(color: theme.colorScheme.primary))
+          : _isEditing
+          ? SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Card(
+        child: Builder(
+          builder: (context) {
+            debugPrint('Rendering form UI');
+            return Card(
               elevation: 2,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: _fiche == null && !_isEditing
-                    ? Column(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'No Medical Fiche Found',
+                      'Create Medical Fiche',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: theme.colorScheme.primary,
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'Create a medical fiche for ${widget.animal.name}.',
-                      style: theme.textTheme.bodyMedium,
+                    TextField(
+                      controller: _weightController,
+                      decoration: const InputDecoration(
+                        labelText: 'Weight (kg)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _isEditing = true;
-                        });
-                      },
-                      style: theme.elevatedButtonTheme.style,
-                      child: Text(
-                        'Create Fiche',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.onPrimary,
+                    TextField(
+                      controller: _heightController,
+                      decoration: const InputDecoration(
+                        labelText: 'Height (cm)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _temperatureController,
+                      decoration: const InputDecoration(
+                        labelText: 'Temperature (°C)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _dietController,
+                      decoration: const InputDecoration(
+                        labelText: 'Diet',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _behaviorNotesController,
+                      decoration: const InputDecoration(
+                        labelText: 'Behavior Notes',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _medicalHistoryController,
+                      decoration: const InputDecoration(
+                        labelText: 'Medical History',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 4,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _generalNotesController,
+                      decoration: const InputDecoration(
+                        labelText: 'General Notes',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 4,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _allergiesController,
+                            decoration: const InputDecoration(
+                              labelText: 'Add Allergy',
+                              border: OutlineInputBorder(),
+                            ),
+                            onSubmitted: (_) => _addAllergy(),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: _addAllergy,
+                        ),
+                      ],
                     ),
-                  ],
-                )
-                    : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Medical Fiche',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
+                    _buildListSection(
+                      'Allergies',
+                      _allergies,
+                      'No allergies added',
+                      _addAllergy,
                     ),
                     const SizedBox(height: 16),
-                    if (_isEditing)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextField(
-                            controller: _weightController,
-                            decoration: const InputDecoration(
-                              labelText: 'Weight (kg)',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _heightController,
-                            decoration: const InputDecoration(
-                              labelText: 'Height (cm)',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _temperatureController,
-                            decoration: const InputDecoration(
-                              labelText: 'Temperature (°C)',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _dietController,
-                            decoration: const InputDecoration(
-                              labelText: 'Diet',
-                              border: OutlineInputBorder(),
-                            ),
-                            maxLines: 2,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _behaviorNotesController,
-                            decoration: const InputDecoration(
-                              labelText: 'Behavior Notes',
-                              border: OutlineInputBorder(),
-                            ),
-                            maxLines: 2,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _medicalHistoryController,
-                            decoration: const InputDecoration(
-                              labelText: 'Medical History',
-                              border: OutlineInputBorder(),
-                            ),
-                            maxLines: 4,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _generalNotesController,
-                            decoration: const InputDecoration(
-                              labelText: 'General Notes',
-                              border: OutlineInputBorder(),
-                            ),
-                            maxLines: 4,
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _allergiesController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Add Allergy',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onSubmitted: (_) => _addAllergy(),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                icon: const Icon(Icons.add),
-                                onPressed: _addAllergy,
-                              ),
-                            ],
-                          ),
-                          _buildListSection(
-                            'Allergies',
-                            _allergies,
-                            'No allergies added',
-                            _addAllergy,
-                          ),
-                          const SizedBox(height: 16),
-                          ListTile(
-                            title: Text(
-                              _recommendedNextVisit == null
-                                  ? 'Recommended Next Visit'
-                                  : 'Next Visit: ${DateFormat.yMMMd().format(_recommendedNextVisit!)}',
-                            ),
-                            trailing: const Icon(Icons.calendar_today),
-                            onTap: () async {
-                              final picked = await showDatePicker(
-                                context: context,
-                                initialDate: DateTime.now(),
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime(2030),
-                              );
-                              if (picked != null) {
-                                setState(() {
-                                  _recommendedNextVisit = picked;
-                                });
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Vaccinations',
-                            _vaccinations,
-                            'No vaccinations added',
-                            _addVaccination,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Treatments',
-                            _treatments,
-                            'No treatments added',
-                            _addTreatment,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Examinations',
-                            _examinations,
-                            'No examinations added',
-                            _addExamination,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Appointments',
-                            _appointments,
-                            'No appointments added',
-                            _addAppointment,
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _isEditing = false;
-                                    if (_fiche == null) {
-                                      _weightController.clear();
-                                      _heightController.clear();
-                                      _temperatureController.clear();
-                                      _dietController.clear();
-                                      _behaviorNotesController.clear();
-                                      _medicalHistoryController.clear();
-                                      _generalNotesController.clear();
-                                      _allergiesController.clear();
-                                      _vaccinations.clear();
-                                      _treatments.clear();
-                                      _examinations.clear();
-                                      _appointments.clear();
-                                      _allergies.clear();
-                                      _recommendedNextVisit = null;
-                                    }
-                                  });
-                                },
-                                child: const Text('Cancel'),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: _createOrUpdateFiche,
-                                style: theme.elevatedButtonTheme.style,
-                                child: Text(
-                                  _fiche == null ? 'Create' : 'Update',
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: theme.colorScheme.onPrimary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      )
-                    else
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildInfoRow(Icons.fitness_center, 'Weight', _fiche!.weight?.toString() ?? 'N/A'),
-                          _buildInfoRow(Icons.height, 'Height', _fiche!.height?.toString() ?? 'N/A'),
-                          _buildInfoRow(Icons.thermostat, 'Temperature', _fiche!.temperature?.toString() ?? 'N/A'),
-                          _buildInfoRow(Icons.restaurant, 'Diet', _fiche!.diet ?? 'N/A'),
-                          _buildInfoRow(Icons.notes, 'Behavior Notes', _fiche!.behaviorNotes ?? 'N/A'),
-                          _buildInfoRow(Icons.medical_services, 'Medical History', _fiche!.medicalHistory ?? 'N/A'),
-                          _buildInfoRow(Icons.note, 'General Notes', _fiche!.generalNotes ?? 'N/A'),
-                          _buildInfoRow(Icons.calendar_today, 'Created', DateFormat.yMMMd().format(_fiche!.creationDate)),
-                          _buildInfoRow(Icons.update, 'Last Updated', DateFormat.yMMMd().format(_fiche!.lastUpdate)),
-                          _buildInfoRow(
-                            Icons.event,
-                            'Recommended Next Visit',
-                            _fiche!.recommendedNextVisit != null
-                                ? DateFormat.yMMMd().format(_fiche!.recommendedNextVisit!)
-                                : 'N/A',
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Allergies',
-                            _fiche!.allergies ?? [],
-                            'No allergies',
-                                () {},
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Vaccinations',
-                            _fiche!.vaccinations ?? [],
-                            'No vaccinations',
-                                () {},
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Treatments',
-                            _fiche!.treatments ?? [],
-                            'No treatments',
-                                () {},
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Examinations',
-                            _fiche!.examinations ?? [],
-                            'No examinations',
-                                () {},
-                          ),
-                          const SizedBox(height: 16),
-                          _buildListSection(
-                            'Appointments',
-                            _fiche!.appointments ?? [],
-                            'No appointments',
-                                () {},
-                          ),
-                        ],
+                    ListTile(
+                      title: Text(
+                        _recommendedNextVisit == null
+                            ? 'Recommended Next Visit'
+                            : 'Next Visit: ${DateFormat.yMMMd().format(_recommendedNextVisit!)}',
                       ),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _recommendedNextVisit = picked;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildListSection(
+                      'Vaccinations',
+                      _vaccinations,
+                      'No vaccinations added',
+                      _addVaccination,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildListSection(
+                      'Treatments',
+                      _treatments,
+                      'No treatments added',
+                      _addTreatment,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildListSection(
+                      'Examinations',
+                      _examinations,
+                      'No examinations added',
+                      _addExamination,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildListSection(
+                      'Appointments',
+                      _appointments,
+                      'No appointments added',
+                      _addAppointment,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _isEditing = false;
+                              if (_fiche == null) {
+                                _weightController.clear();
+                                _heightController.clear();
+                                _temperatureController.clear();
+                                _dietController.clear();
+                                _behaviorNotesController.clear();
+                                _medicalHistoryController.clear();
+                                _generalNotesController.clear();
+                                _allergiesController.clear();
+                                _vaccinations.clear();
+                                _treatments.clear();
+                                _examinations.clear();
+                                _appointments.clear();
+                                _allergies.clear();
+                                _recommendedNextVisit = null;
+                              }
+                            });
+                          },
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: _createOrUpdateFiche,
+                          style: theme.elevatedButtonTheme.style,
+                          child: Text(
+                            _fiche == null ? 'Create' : 'Update',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.onPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
+            );
+          },
+        ),
+      )
+          : _fiche == null
+          ? SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No Medical Fiche Found',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Create a medical fiche for ${widget.animal.name}.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    debugPrint('In-card Create Fiche button pressed');
+                    setState(() {
+                      _isEditing = true;
+                      debugPrint('Set _isEditing to true, should show form');
+                    });
+                  },
+                  style: theme.elevatedButtonTheme.style,
+                  child: Text(
+                    'Create Fiche',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onPrimary,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
+        ),
+      )
+          : SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Medical Fiche',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildInfoRow(Icons.fitness_center, 'Weight', _fiche!.weight?.toString() ?? 'N/A'),
+                _buildInfoRow(Icons.height, 'Height', _fiche!.height?.toString() ?? 'N/A'),
+                _buildInfoRow(Icons.thermostat, 'Temperature', _fiche!.temperature?.toString() ?? 'N/A'),
+                _buildInfoRow(Icons.restaurant, 'Diet', _fiche!.diet ?? 'N/A'),
+                _buildInfoRow(Icons.notes, 'Behavior Notes', _fiche!.behaviorNotes ?? 'N/A'),
+                _buildInfoRow(Icons.medical_services, 'Medical History', _fiche!.medicalHistory ?? 'N/A'),
+                _buildInfoRow(Icons.note, 'General Notes', _fiche!.generalNotes ?? 'N/A'),
+                _buildInfoRow(Icons.calendar_today, 'Created', DateFormat.yMMMd().format(_fiche!.creationDate)),
+                _buildInfoRow(Icons.update, 'Last Updated', DateFormat.yMMMd().format(_fiche!.lastUpdate)),
+                _buildInfoRow(
+                  Icons.event,
+                  'Recommended Next Visit',
+                  _fiche!.recommendedNextVisit != null
+                      ? DateFormat.yMMMd().format(_fiche!.recommendedNextVisit!)
+                      : 'N/A',
+                ),
+                const SizedBox(height: 16),
+                _buildListSection(
+                  'Allergies',
+                  _fiche!.allergies ?? [],
+                  'No allergies',
+                      () {},
+                ),
+                const SizedBox(height: 16),
+                _buildListSection(
+                  'Vaccinations',
+                  _fiche!.vaccinations ?? [],
+                  'No vaccinations',
+                      () {},
+                ),
+                const SizedBox(height: 16),
+                _buildListSection(
+                  'Treatments',
+                  _fiche!.treatments ?? [],
+                  'No treatments',
+                      () {},
+                ),
+                const SizedBox(height: 16),
+                _buildListSection(
+                  'Examinations',
+                  _fiche!.examinations ?? [],
+                  'No examinations',
+                      () {},
+                ),
+                const SizedBox(height: 16),
+                _buildListSection(
+                  'Appointments',
+                  _fiche!.appointments ?? [],
+                  'No appointments',
+                  _addAppointment,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

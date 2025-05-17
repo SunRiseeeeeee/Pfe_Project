@@ -1,6 +1,8 @@
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../models/token_storage.dart';
+import '../services/client_service.dart'; // Import for Animal
 
 // Sub-models
 class Vaccination {
@@ -241,10 +243,32 @@ class PetFileService {
   }
 
   /// Fetches an AnimalFiche by animal ID.
-  /// Note: Backend does not support fetching by animalId, so this returns null.
   Future<AnimalFiche?> fetchFicheByAnimalId(String animalId) async {
-    debugPrint('fetchFicheByAnimalId: Backend does not support fetching by animalId ($animalId). Returning null.');
-    return null; // Backend lacks GET /animal/:animalId endpoint
+    try {
+      final headers = await _getHeaders();
+      debugPrint('Fetching fiche for animalId: $animalId');
+      final response = await _dio.get(
+        '$_baseUrl/animal/$animalId/fiche',
+        options: Options(headers: headers),
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('fetchFicheByAnimalId response: ${response.data}');
+        return AnimalFiche.fromJson(response.data);
+      }
+      debugPrint('fetchFicheByAnimalId failed: ${response.statusCode}');
+      return null;
+    } on DioException catch (e) {
+      debugPrint('DioException in fetchFicheByAnimalId: ${e.response?.data}');
+      if (e.response?.statusCode == 404) {
+        debugPrint('No fiche found for animalId: $animalId');
+        return null; // No fiche found
+      }
+      throw Exception('Error fetching fiche by animalId: ${e.response?.data['message'] ?? e.message}');
+    } catch (e) {
+      debugPrint('Unexpected error in fetchFicheByAnimalId: $e');
+      throw Exception('Unexpected error: $e');
+    }
   }
 
   /// Fetches an AnimalFiche by fiche ID.
@@ -397,6 +421,72 @@ class PetFileService {
       throw Exception('Error updating fiche: $errorMessage');
     } catch (e) {
       debugPrint('Unexpected error in updateFiche: $e');
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
+  /// Deletes an AnimalFiche by fiche ID.
+  Future<void> deleteFiche(String ficheId) async {
+    try {
+      final headers = await _getHeaders();
+      debugPrint('Deleting fiche with ficheId: $ficheId');
+      final response = await _dio.delete(
+        '$_baseUrl/$ficheId',
+        options: Options(headers: headers),
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('deleteFiche response: ${response.data}');
+        return;
+      }
+      throw Exception('Failed to delete fiche: ${response.statusCode}');
+    } on DioException catch (e) {
+      debugPrint('DioException in deleteFiche: ${e.response?.data}');
+      final errorMessage = e.response?.data is Map
+          ? e.response?.data['message'] ?? e.message
+          : e.response?.data?.toString() ?? e.message;
+      throw Exception('Error deleting fiche: $errorMessage');
+    } catch (e) {
+      debugPrint('Unexpected error in deleteFiche: $e');
+      throw Exception('Unexpected error: $e');
+    }
+  }
+
+  /// Adds an appointment to an AnimalFiche.
+  Future<AnimalFiche> addAppointment({
+    required String ficheId,
+    required DateTime appointmentDate,
+    String? diagnosis,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+      debugPrint('Adding appointment to ficheId: $ficheId');
+      final response = await _dio.post(
+        '$_baseUrl/$ficheId/appointments',
+        data: {
+          'appointmentDate': appointmentDate.toIso8601String(),
+          'diagnosis': diagnosis,
+        },
+        options: Options(headers: headers),
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('addAppointment response: ${response.data}');
+        if (response.data is Map<String, dynamic>) {
+          return AnimalFiche.fromJson(response.data);
+        } else {
+          throw Exception('Unexpected response format: ${response.data.runtimeType}');
+        }
+      }
+      throw Exception('Failed to add appointment: ${response.statusCode}');
+    } on DioException catch (e) {
+      debugPrint('DioException in addAppointment: ${e.response?.data}');
+      final errorMessage = e.response?.data is Map
+          ? e.response?.data['message'] ?? e.message
+          : e.response?.data?.toString() ?? e.message;
+      throw Exception('Error adding appointment: $errorMessage');
+    } catch (e) {
+      debugPrint('Unexpected error in addAppointment: $e');
       throw Exception('Unexpected error: $e');
     }
   }

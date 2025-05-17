@@ -6,7 +6,9 @@ import 'package:vetapp_v1/services/review_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vetapp_v1/screens/bookAppointment.dart';
 import 'dart:convert';
-import '../models/token_storage.dart'; // Added for role checking
+import 'dart:io';
+import '../models/token_storage.dart';
+import '../services/vet_service.dart';
 
 class VetDetailsScreen extends StatefulWidget {
   final Veterinarian vet;
@@ -27,7 +29,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   void initState() {
     super.initState();
     fetchReviewData();
-    _loadUserRole(); // Load user role
+    _loadUserRole();
   }
 
   void fetchReviewData() async {
@@ -38,7 +40,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         averageRating = response['averageRating'];
       });
     } else {
-      print('Failed to load reviews: ${response['message']}');
+      debugPrint('Failed to load reviews: ${response['message']}');
     }
   }
 
@@ -64,8 +66,46 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         ),
       );
     } else {
-      print("User ID not found in SharedPreferences");
+      debugPrint("User ID not found in SharedPreferences");
     }
+  }
+
+  void _deleteVeterinarian() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Veterinarian'),
+        content: Text(
+          'Are you sure you want to delete Dr. ${widget.vet.firstName} ${widget.vet.lastName}? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final result = await VetService.deleteVeterinarian(widget.vet.id);
+              Navigator.pop(context); // Close dialog
+              if (result['success']) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(result['message'])),
+                );
+                Navigator.pop(context); // Pop VetDetailsScreen
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(result['message'])),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   Map<String, dynamic> parseWorkingHours(String workingHoursString) {
@@ -130,6 +170,12 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String? profileUrl = widget.vet.profilePicture;
+    if (profileUrl != null && profileUrl.contains('localhost')) {
+      profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.18');
+    }
+    debugPrint('Vet profile picture: $profileUrl');
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -161,7 +207,8 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                       setState(() {
                         isFavorite = !isFavorite;
                       });
-                      print('${widget.vet.firstName} ${widget.vet.lastName} is now ${isFavorite ? "favorited" : "unfavorited"}');
+                      debugPrint(
+                          '${widget.vet.firstName} ${widget.vet.lastName} is now ${isFavorite ? "favorited" : "unfavorited"}');
                     },
                   ),
                 ],
@@ -171,11 +218,70 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                 tag: widget.vet.id,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
-                    widget.vet.profilePicture ?? 'https://via.placeholder.com/300x200',
+                  child: profileUrl != null && profileUrl.isNotEmpty
+                      ? profileUrl.startsWith('http')
+                      ? Image.network(
+                    profileUrl,
                     height: 200,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('Vet network image error for $profileUrl: $error');
+                      return Image.asset(
+                        'assets/images/default_avatar.png',
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          debugPrint('Vet asset error: $error');
+                          return Container(
+                            height: 200,
+                            width: double.infinity,
+                            color: Colors.grey,
+                            child: const Icon(Icons.person, color: Colors.white),
+                          );
+                        },
+                      );
+                    },
+                  )
+                      : Image.file(
+                    File(profileUrl),
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('Vet file image error for $profileUrl: $error');
+                      return Image.asset(
+                        'assets/images/default_avatar.png',
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          debugPrint('Vet asset error: $error');
+                          return Container(
+                            height: 200,
+                            width: double.infinity,
+                            color: Colors.grey,
+                            child: const Icon(Icons.person, color: Colors.white),
+                          );
+                        },
+                      );
+                    },
+                  )
+                      : Image.asset(
+                    'assets/images/default_avatar.png',
+                    height: 200,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      debugPrint('Vet asset error: $error');
+                      return Container(
+                        height: 200,
+                        width: double.infinity,
+                        color: Colors.grey,
+                        child: const Icon(Icons.person, color: Colors.white),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -242,57 +348,66 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                 formatWorkingHoursFromString(widget.vet.workingHours ?? ''),
                 style: const TextStyle(color: Colors.grey),
               ),
-              const SizedBox(height: 24),
-              Text(
-                'Fees',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _feeButton('Checkup'),
-                  _feeButton('Consultation'),
-                  _feeButton('Follow-Ups'),
-                ],
-              ),
+              
               const SizedBox(height: 24),
             ],
           ),
         ),
       ),
-      bottomNavigationBar: _userRole == 'client' // Show button only for clients
-          ? Padding(
+      bottomNavigationBar: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: ElevatedButton(
-          onPressed: () {
-            final workingHoursData = parseWorkingHours(widget.vet.workingHours ?? '');
-            final workingHoursJson = jsonEncode(workingHoursData['parsed']);
-            debugPrint('Passing working hours JSON to AppointmentsScreen: $workingHoursJson');
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => AppointmentsScreen(
-                  vet: widget.vet,
-                  workingHours: workingHoursJson,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_userRole == 'client') // Book Appointment button for clients
+              ElevatedButton(
+                onPressed: () {
+                  final workingHoursData = parseWorkingHours(widget.vet.workingHours ?? '');
+                  final workingHoursJson = jsonEncode(workingHoursData['parsed']);
+                  debugPrint('Passing working hours JSON to AppointmentsScreen: $workingHoursJson');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AppointmentsScreen(
+                        vet: widget.vet,
+                        workingHours: workingHoursJson,
+                      ),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple,
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Book Appointment',
+                  style: TextStyle(fontSize: 16, color: Colors.white),
                 ),
               ),
-            );
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.deepPurple,
-            minimumSize: const Size(double.infinity, 50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: const Text(
-            'Book Appointment',
-            style: TextStyle(fontSize: 16, color: Colors.white),
-          ),
+            if (_userRole == 'admin') // Delete button for admins
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: ElevatedButton(
+                  onPressed: _deleteVeterinarian,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Delete',
+                    style: TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                ),
+              ),
+          ],
         ),
-      )
-          : null,
+      ),
     );
   }
 
