@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import 'package:vetapp_v1/screens/landing_page.dart';
 import 'screens/login.dart';
 import 'theme.dart';
 
@@ -63,7 +64,7 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.buildLightTheme(),
       darkTheme: AppTheme.buildDarkTheme(),
       themeMode: themeProvider.themeMode,
-      home: LoginPage(),
+      home: LandingPage(),
     );
   }
 }
