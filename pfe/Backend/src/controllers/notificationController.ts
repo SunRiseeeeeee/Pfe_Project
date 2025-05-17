@@ -12,7 +12,7 @@ declare module "express" {
 export const getUserNotifications = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  
 ): Promise<void> => {
   try {
     const user = req.user;
@@ -33,7 +33,7 @@ export const getUserNotifications = async (
     });
   } catch (error) {
     console.error("[getUserNotifications] Error:", error);
-    next(error);
+    
   }
 };
 

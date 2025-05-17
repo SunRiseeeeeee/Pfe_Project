@@ -30,14 +30,14 @@ const createInAppNotification = async (
   console.log(`In-app notification created and emitted for appointment ${appointment._id} for user ${userId}`);
 };
 
-// Fonction pour vérifier et créer les notifications
+
 export const checkAndSendReminders = async (io: Server): Promise<void> => {
   try {
     const now = new Date();
     const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const in25Hours = new Date(now.getTime() + 25 * 60 * 60 * 1000);
 
-    // Trouver les rendez-vous acceptés dans les prochaines 24 à 25 heures
+  
     const upcomingAppointments = await Appointment.find({
       date: { $gte: in24Hours, $lte: in25Hours },
       status: AppointmentStatus.ACCEPTED,
@@ -61,7 +61,7 @@ export const checkAndSendReminders = async (io: Server): Promise<void> => {
           `${client.firstName} ${client.lastName}`
         );
 
-        // Marquer la notification comme envoyée
+
         appointment.notificationSent = true;
         await appointment.save();
       } else {
@@ -73,7 +73,7 @@ export const checkAndSendReminders = async (io: Server): Promise<void> => {
   }
 };
 
-// Planifier la tâche avec node-cron (toutes les heures)
+
 export const startReminderCronJob = (io: Server) => {
   cron.schedule("0 * * * *", () => {
     console.log("Checking for upcoming accepted appointments...");
