@@ -84,56 +84,135 @@ class _PetFormScreenState extends State<PetFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Pet'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: ListView(
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF800080)),
+      ),
+      prefixIconColor: const Color(0xFF800080),
+      suffixIconColor: const Color(0xFF800080),
+    );
+
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF800080),
+              Color(0xFF4B0082),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
             children: [
-              GestureDetector(
-                onTap: _pickImage,
-                child: CircleAvatar(
-                  radius: 60,
-                  backgroundImage: _selectedImage != null
-                      ? FileImage(_selectedImage!)
-                      : NetworkImage(widget.existingPet['picture'] ?? '') as ImageProvider,
-                  child: Align(
-                    alignment: Alignment.bottomRight,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.edit, size: 20, color: Colors.deepPurple),
+              // Custom Header with Back Arrow
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
                     ),
+                    const Expanded(
+                      child: Text(
+                        'Edit Pet',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+              // Image Picker Section
+              _buildImagePickerSection(),
+              // Content Section (Extended to bottom)
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(20),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildTextField(
+                                  controller: _nameController,
+                                  label: 'Name',
+                                  icon: Icons.pets,
+                                ),
+                                const SizedBox(height: 24),
+                                _buildTextField(
+                                  controller: _speciesController,
+                                  label: 'Species',
+                                  icon: Icons.category,
+                                ),
+                                const SizedBox(height: 24),
+                                _buildTextField(
+                                  controller: _breedController,
+                                  label: 'Breed',
+                                  icon: Icons.pets,
+                                ),
+                                const SizedBox(height: 24),
+                                _buildTextField(
+                                  controller: _genderController,
+                                  label: 'Gender',
+                                  icon: Icons.transgender,
+                                ),
+                                const SizedBox(height: 24),
+                                _buildTextField(
+                                  controller: _birthDateController,
+                                  label: 'Birth Date',
+                                  hint: 'YYYY-MM-DD',
+                                  icon: Icons.calendar_today,
+                                ),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Submit Button at the Bottom
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: _buildSubmitButton(),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              _buildTextField(controller: _nameController, label: 'Name'),
-              _buildTextField(controller: _speciesController, label: 'Species'),
-              _buildTextField(controller: _breedController, label: 'Breed'),
-              _buildTextField(controller: _genderController, label: 'Gender'),
-              _buildTextField(
-                controller: _birthDateController,
-                label: 'Birth Date',
-                hint: 'YYYY-MM-DD',
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Save Changes'),
               ),
             ],
           ),
@@ -142,21 +221,111 @@ class _PetFormScreenState extends State<PetFormScreen> {
     );
   }
 
+  Widget _buildImagePickerSection() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 10,bottom: 10),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: CircleAvatar(
+            radius: 60,
+            backgroundColor: Colors.grey[200],
+            backgroundImage: _selectedImage != null
+                ? FileImage(_selectedImage!)
+                : widget.existingPet['picture'] != null && widget.existingPet['picture'].isNotEmpty
+                ? NetworkImage(widget.existingPet['picture']) as ImageProvider
+                : const AssetImage('assets/default_pet.png'),
+          ),
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.camera_alt, color: Color(0xFF800080)),
+              onPressed: _pickImage,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     String? hint,
+    IconData? icon,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: TextFormField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    return TextFormField(
+      controller: controller,
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
         ),
-        validator: (value) => value == null || value.isEmpty ? 'Please enter $label' : null,
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF800080)),
+        ),
+        prefixIcon: icon != null ? Icon(icon, color: const Color(0xFF800080)) : null,
+        prefixIconColor: const Color(0xFF800080),
+        labelText: label,
+        hintText: hint,
+      ),
+      validator: (value) => value == null || value.isEmpty ? 'Please enter $label' : null,
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return InkWell(
+      onTap: _submit,
+      borderRadius: BorderRadius.circular(12),
+      splashColor: const Color(0xFF800080).withOpacity(0.2),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF800080), Color(0xFF4B0082)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 5,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Text(
+            'SAVE CHANGES',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+            ),
+          ),
+        ),
       ),
     );
   }

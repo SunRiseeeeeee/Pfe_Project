@@ -9,7 +9,8 @@ import 'package:vetapp_v1/screens/MyPetsScreen.dart';
 import 'package:vetapp_v1/screens/client_screen.dart';
 import 'package:vetapp_v1/screens/vet_appointment_screen.dart';
 import 'package:vetapp_v1/screens/vets_screen.dart';
-import 'package:vetapp_v1/screens/service_screen.dart'; // Import ServiceScreen
+import 'package:vetapp_v1/screens/service_screen.dart';
+import 'package:vetapp_v1/screens/chat_screen.dart';
 import '../models/token_storage.dart';
 import 'package:dio/dio.dart';
 import '../models/service.dart';
@@ -80,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       print('Raw role from TokenStorage: $rawRole');
       final normalizedRole = rawRole?.toLowerCase().trim();
       setState(() {
-        userRole = normalizedRole ?? 'pet_owner';
+        userRole = normalizedRole ?? 'client';
         if (normalizedRole == 'vet' || normalizedRole == 'veterinaire') {
           userRole = 'veterinarian';
         }
@@ -89,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       print('Error fetching user role: $e');
       setState(() {
-        userRole = 'pet_owner';
+        userRole = 'client';
         print('Final userRole (error): $userRole');
       });
     }
@@ -98,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> get _screens {
     if (userRole == 'admin') {
       return [
-        HomeContent(onServiceChanged: () => setState(() {})), // Pass callback
+        HomeContent(onServiceChanged: () => setState(() {})),
         const ServiceScreen(),
         const FypScreen(),
         const VetsScreen(),
@@ -129,14 +130,58 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _openChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ChatScreen()),
+    );
+  }
+
+  Future<bool> _onWillPop() async {
+    if (_selectedIndex != 0) {
+      // If not on the HomeContent tab, navigate back to it
+      setState(() {
+        _selectedIndex = 0;
+      });
+      return false; // Prevent popping the route
+    }
+    // If already on HomeContent, allow the default back action (e.g., exit app)
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: userRole == null
-          ? const Center(child: CircularProgressIndicator())
-          : _screens[_selectedIndex],
-      bottomNavigationBar: _buildCustomBottomNavigationBar(),
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        body: userRole == null
+            ? const Center(child: CircularProgressIndicator())
+            : _screens[_selectedIndex],
+        bottomNavigationBar: _buildCustomBottomNavigationBar(),
+        floatingActionButton: _buildFloatingActionButton(),
+      ),
     );
+  }
+
+  Widget? _buildFloatingActionButton() {
+    // Show FAB only on the HomeScreen (index 0) and for veterinarian, secretary, or pet_owner (client) roles
+    if (_selectedIndex != 0 || userRole == null || userRole == 'guest') {
+      return null;
+    }
+    if (userRole == 'veterinarian' || userRole == 'secretary' || userRole == 'client') {
+      return FloatingActionButton(
+        onPressed: _openChat,
+        backgroundColor: Colors.deepPurple,
+        elevation: 6,
+        child: const Icon(
+          Icons.chat,
+          color: Colors.white,
+          size: 28,
+        ),
+        tooltip: 'Chat',
+      );
+    }
+    return null;
   }
 
   Widget _buildCustomBottomNavigationBar() {
@@ -279,7 +324,7 @@ class _CustomNavIcon extends StatelessWidget {
 }
 
 class HomeContent extends StatefulWidget {
-  final VoidCallback? onServiceChanged; // Callback for service changes
+  final VoidCallback? onServiceChanged;
   const HomeContent({super.key, this.onServiceChanged});
 
   @override

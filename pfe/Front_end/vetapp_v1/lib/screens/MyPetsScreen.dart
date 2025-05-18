@@ -4,7 +4,6 @@ import 'package:vetapp_v1/services/pet_service.dart';
 import 'package:vetapp_v1/screens/AddPetScreen.dart';
 import 'package:dio/dio.dart';
 import 'dart:io' show File;
-
 import 'PetDetailsScreen.dart';
 
 class PetsScreen extends StatefulWidget {
@@ -44,13 +43,11 @@ class _PetsScreenState extends State<PetsScreen> {
     }
   }
 
-  // Method to determine the correct ImageProvider for pet pictures
   ImageProvider getPetPictureProvider(String? picture) {
     debugPrint('Loading pet picture: $picture');
     if (picture == null || picture.isEmpty) {
       return const AssetImage('assets/default_pet.png');
     }
-    // Check if the picture is a local file path
     if (picture.startsWith('/data/') || picture.startsWith('file://')) {
       final path = picture.startsWith('file://') ? picture.substring(7) : picture;
       final file = File(path);
@@ -61,107 +58,175 @@ class _PetsScreenState extends State<PetsScreen> {
         return const AssetImage('assets/default_pet.png');
       }
     }
-    // Use NetworkImage for remote URLs
     return NetworkImage(picture);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(80),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF800080),
+              Color(0xFF4B0082),
+            ],
+          ),
+        ),
         child: SafeArea(
-          child: Center(
-            child: Text(
-              'My Pets',
-              style: GoogleFonts.poppins(
-                fontSize: 28,
-                fontWeight: FontWeight.w600,
-                color: Colors.deepPurple,
-              ),
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Custom Header with Back Arrow
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'My Pets',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                    ],
+                  ),
+                ),
+                // Content Section
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(20),
+                  child: _petsFuture == null
+                      ? const Center(child: CircularProgressIndicator())
+                      : FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _petsFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      } else if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}'));
+                      } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(child: Text('You have no pets.'));
+                      }
+
+                      final pets = snapshot.data!;
+                      return RefreshIndicator(
+                        onRefresh: _refreshPets,
+                        child: GridView.builder(
+                          padding: const EdgeInsets.all(0),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 16.0,
+                            mainAxisSpacing: 16.0,
+                            childAspectRatio: 0.9,
+                          ),
+                          itemCount: pets.length,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemBuilder: (context, index) {
+                            final pet = pets[index];
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => PetDetailsScreen(pet: pet),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black12,
+                                      blurRadius: 8,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 50,
+                                      backgroundImage: getPetPictureProvider(pet['picture']),
+                                      backgroundColor: Colors.grey[200],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      pet['name'] ?? 'Unnamed',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF800080),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
-      body: _petsFuture == null
-          ? const Center(child: CircularProgressIndicator())
-          : FutureBuilder<List<Map<String, dynamic>>>(
-        future: _petsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('You have no pets.'));
-          }
-
-          final pets = snapshot.data!;
-          return RefreshIndicator(
-            onRefresh: _refreshPets,
-            child: GridView.builder(
-              padding: const EdgeInsets.all(16.0),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16.0,
-                mainAxisSpacing: 16.0,
-                childAspectRatio: 0.9,
-              ),
-              itemCount: pets.length,
-              itemBuilder: (context, index) {
-                final pet = pets[index];
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PetDetailsScreen(pet: pet),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 8,
-                          offset: Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircleAvatar(
-                          radius: 50,
-                          backgroundImage: getPetPictureProvider(pet['picture']),
-                          backgroundColor: Colors.grey[200],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          pet['name'] ?? 'Unnamed',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+      floatingActionButton: InkWell(
+        onTap: _navigateToAddPet,
+        borderRadius: BorderRadius.circular(28),
+        splashColor: const Color(0xFF800080).withOpacity(0.2),
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF800080), Color(0xFF4B0082)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _navigateToAddPet,
-        backgroundColor: Colors.purple[80],
-        child: const Icon(Icons.add),
-        tooltip: 'Add Pet',
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.add, color: Colors.white, size: 28),
+        ),
       ),
     );
   }

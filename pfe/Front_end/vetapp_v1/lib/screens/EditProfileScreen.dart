@@ -149,7 +149,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final currentAddress = _userData['address'] ?? {};
     final currentDetails = _userData['details'] ?? {};
 
-    // Check text fields
     final textFieldsChanged =
         _firstNameController.text != (_userData['firstName'] ?? '') ||
             _lastNameController.text != (_userData['lastName'] ?? '') ||
@@ -160,14 +159,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _countryController.text != (currentAddress['country'] ?? '') ||
             _postalCodeController.text != (currentAddress['postalCode'] ?? '');
 
-    // Check veterinarian-specific fields
     final vetFieldsChanged = _userData['role'] == 'veterinaire' &&
         (_descriptionController.text != (_userData['description'] ?? '') ||
             _specializationController.text != (currentDetails['specialization'] ?? '') ||
             _servicesController.text != (currentDetails['services'] as List<dynamic>?)?.join(', ') ||
             _workingHours.toString() != (currentDetails['workingHours'] ?? []).toString());
 
-    // Check profile image
     final imageChanged =
         (_profileImage != null && _profileImage!.path != _originalProfileImagePath) ||
             (_profileImage == null && _originalProfileImagePath != null);
@@ -275,40 +272,91 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profile'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _updateProfile,
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              _buildProfilePictureSection(),
-              const SizedBox(height: 24),
-              _buildPersonalInfoSection(theme),
-              const SizedBox(height: 24),
-              _buildAddressSection(theme),
-              if (_userData['role'] == 'veterinaire') ...[
-                const SizedBox(height: 24),
-                _buildVeterinarianSection(theme),
-              ],
-              const SizedBox(height: 32),
-              _buildSaveButton(colorScheme),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF800080),
+              Color(0xFF4B0082),
             ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Custom Header with Back Arrow on the Side
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Back arrow on the left
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                      ),
+                      // Centered title
+                      const Expanded(
+                        child: Text(
+                          'Edit Profile',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      // Placeholder to balance the layout (empty space on the right)
+                      const SizedBox(width: 48),
+                    ],
+                  ),
+                ),
+                // Profile Picture Section
+                _buildProfilePictureSection(),
+                // Content Section
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(20),
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildPersonalInfoSection(),
+                        const SizedBox(height: 24),
+                        _buildAddressSection(),
+                        if (_userData['role'] == 'veterinaire') ...[
+                          const SizedBox(height: 24),
+                          _buildVeterinarianSection(),
+                        ],
+                        const SizedBox(height: 32),
+                        _buildSaveButton(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -316,54 +364,69 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildProfilePictureSection() {
-    return Column(
+    return Stack(
+      alignment: Alignment.center,
       children: [
-        Stack(
-          alignment: Alignment.bottomRight,
-          children: [
-            CircleAvatar(
-              radius: 60,
-              backgroundColor: Colors.grey[200],
-              backgroundImage: _profileImage != null
-                  ? FileImage(_profileImage!)
-                  : _originalProfileImagePath != null
-                  ? NetworkImage(_originalProfileImagePath!)
-                  : null,
-              child: _profileImage == null && _originalProfileImagePath == null
-                  ? const Icon(Icons.person, size: 60, color: Colors.grey)
-                  : null,
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
               ),
-              child: IconButton(
-                icon: const Icon(Icons.camera_alt, color: Colors.white),
-                onPressed: _pickImage,
-              ),
-            ),
-          ],
+            ],
+          ),
+          child: CircleAvatar(
+            radius: 60,
+            backgroundColor: Colors.grey[200],
+            backgroundImage: _profileImage != null
+                ? FileImage(_profileImage!)
+                : _originalProfileImagePath != null
+                ? NetworkImage(_originalProfileImagePath!) as ImageProvider
+                : null,
+            child: _profileImage == null && _originalProfileImagePath == null
+                ? const Icon(Icons.person, size: 60, color: Colors.grey)
+                : null,
+          ),
         ),
-        TextButton(
-          onPressed: _pickImage,
-          child: const Text('Change Photo'),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.camera_alt, color: Color(0xFF800080)),
+              onPressed: _pickImage,
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildPersonalInfoSection(ThemeData theme) {
+  Widget _buildPersonalInfoSection() {
     return Card(
-      elevation: 2,
+      elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Personal Information', style: theme.textTheme.titleMedium),
+            const Text(
+              'Personal Information',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const Divider(color: Colors.grey, thickness: 0.5),
             const SizedBox(height: 16),
             _buildTextFormField(
               controller: _firstNameController,
@@ -392,16 +455,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildAddressSection(ThemeData theme) {
+  Widget _buildAddressSection() {
     return Card(
-      elevation: 2,
+      elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Address', style: theme.textTheme.titleMedium),
+            const Text(
+              'Address',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const Divider(color: Colors.grey, thickness: 0.5),
             const SizedBox(height: 16),
             _buildTextFormField(
               controller: _streetController,
@@ -448,16 +519,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildVeterinarianSection(ThemeData theme) {
+  Widget _buildVeterinarianSection() {
     return Card(
-      elevation: 2,
+      elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Veterinarian Details', style: theme.textTheme.titleMedium),
+            const Text(
+              'Veterinarian Details',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const Divider(color: Colors.grey, thickness: 0.5),
             const SizedBox(height: 16),
             _buildTextFormField(
               controller: _descriptionController,
@@ -480,16 +559,59 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               isRequired: true,
             ),
             const SizedBox(height: 16),
-            Text('Working Hours', style: theme.textTheme.titleMedium),
+            const Text(
+              'Working Hours',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const Divider(color: Colors.grey, thickness: 0.5),
             ..._workingHours.asMap().entries.map((entry) {
               final index = entry.key;
               final workingHour = entry.value;
-              return _buildWorkingHourRow(index, workingHour, theme);
+              return _buildWorkingHourRow(index, workingHour);
             }).toList(),
             const SizedBox(height: 12),
-            TextButton(
-              onPressed: _addWorkingHour,
-              child: const Text('Add Working Hour'),
+            InkWell(
+              onTap: _addWorkingHour,
+              borderRadius: BorderRadius.circular(12),
+              splashColor: const Color(0xFF800080).withOpacity(0.2),
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF800080), Color(0xFF4B0082)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 5,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add, color: Colors.white, size: 24),
+                    SizedBox(width: 8),
+                    Text(
+                      'Add Working Hour',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -497,7 +619,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildWorkingHourRow(int index, Map<String, dynamic> workingHour, ThemeData theme) {
+  Widget _buildWorkingHourRow(int index, Map<String, dynamic> workingHour) {
     final controllers = _workingHourControllers[index];
     final List<String> days = [
       'Monday',
@@ -511,15 +633,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             DropdownButtonFormField<String>(
               value: workingHour['day'],
               decoration: InputDecoration(
                 labelText: 'Day',
-                prefixIcon: const Icon(Icons.calendar_today),
+                labelStyle: TextStyle(color: Colors.grey[600]),
+                prefixIcon: const Icon(Icons.calendar_today, color: Color(0xFF800080)),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -543,7 +667,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -551,7 +675,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     controller: controllers['start'],
                     decoration: InputDecoration(
                       labelText: 'Start Time',
-                      prefixIcon: const Icon(Icons.access_time),
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      prefixIcon: const Icon(Icons.access_time, color: Color(0xFF800080)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -569,13 +694,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     onChanged: (value) => _updateWorkingHour(index, 'start', value),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
                     controller: controllers['end'],
                     decoration: InputDecoration(
                       labelText: 'End Time',
-                      prefixIcon: const Icon(Icons.access_time),
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      prefixIcon: const Icon(Icons.access_time, color: Color(0xFF800080)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -595,7 +721,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -603,7 +729,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     controller: controllers['pauseStart'],
                     decoration: InputDecoration(
                       labelText: 'Pause Start (optional)',
-                      prefixIcon: const Icon(Icons.pause),
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      prefixIcon: const Icon(Icons.pause, color: Color(0xFF800080)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -619,13 +746,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     onChanged: (value) => _updateWorkingHour(index, 'pauseStart', value.isEmpty ? null : value),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
                     controller: controllers['pauseEnd'],
                     decoration: InputDecoration(
                       labelText: 'Pause End (optional)',
-                      prefixIcon: const Icon(Icons.play_arrow),
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      prefixIcon: const Icon(Icons.play_arrow, color: Color(0xFF800080)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -643,14 +771,50 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               ],
             ),
-            TextButton(
-              onPressed: () {
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: () {
                 setState(() {
                   _workingHours.removeAt(index);
                   _workingHourControllers.removeAt(index);
                 });
               },
-              child: const Text('Remove'),
+              borderRadius: BorderRadius.circular(12),
+              splashColor: const Color(0xFF800080).withOpacity(0.2),
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF800080), Color(0xFF4B0082)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 5,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.delete, color: Colors.white, size: 24),
+                    SizedBox(width: 8),
+                    Text(
+                      'Remove',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -670,9 +834,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       controller: controller,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon),
+        labelStyle: TextStyle(color: Colors.grey[600]),
+        prefixIcon: Icon(icon, color: const Color(0xFF800080)),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFF800080)),
         ),
       ),
       keyboardType: keyboardType,
@@ -688,29 +857,48 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildSaveButton(ColorScheme colorScheme) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+  Widget _buildSaveButton() {
+    return InkWell(
+      onTap: _updateProfile,
+      borderRadius: BorderRadius.circular(12),
+      splashColor: const Color(0xFF800080).withOpacity(0.2),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF800080), Color(0xFF4B0082)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 5,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Center(
+          child: _isUpdating
+              ? const SizedBox(
+            height: 20,
+            width: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          )
+              : const Text(
+            'SAVE CHANGES',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+            ),
           ),
         ),
-        onPressed: _updateProfile,
-        child: _isUpdating
-            ? const SizedBox(
-          height: 20,
-          width: 20,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Colors.white,
-          ),
-        )
-            : const Text('SAVE CHANGES', style: TextStyle(fontSize: 16)),
       ),
     );
   }

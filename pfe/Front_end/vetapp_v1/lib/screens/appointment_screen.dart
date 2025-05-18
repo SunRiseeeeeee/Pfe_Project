@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:vetapp_v1/services/appointment_service.dart';
 import 'package:vetapp_v1/models/token_storage.dart';
 import 'package:vetapp_v1/screens/EditAppointmentScreen.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppointmentScreen extends StatefulWidget {
   const AppointmentScreen({super.key});
@@ -98,11 +99,12 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
         final response = await _appointmentService.deleteAppointment(appointmentId);
         if (response['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Appointment cancelled'),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ));
+            SnackBar(
+              content: const Text('Appointment cancelled'),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
           _loadAppointments();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -138,76 +140,127 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('My Appointments', style: TextStyle(fontWeight: FontWeight.bold)),
-          centerTitle: true,
-          elevation: 4,
-          shadowColor: Colors.black.withOpacity(0.1),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: _loadAppointments,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFF800080),
+                Color(0xFF4B0082),
+              ],
             ),
-          ],
-          bottom: TabBar(
-            onTap: (index) => setState(() => _currentTabIndex = index),
-            indicatorWeight: 3,
-            indicatorSize: TabBarIndicatorSize.label,
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            unselectedLabelStyle: const TextStyle(fontSize: 14),
-            tabs: const [
-              Tab(text: 'Upcoming'),
-              Tab(text: 'Past'),
-            ],
           ),
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage.isNotEmpty
-            ? Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 16),
-              Text(_errorMessage, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadAppointments,
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        )
-            : _filteredAppointments.isEmpty
-            ? Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.calendar_today, size: 48, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              Text(
-                'No appointments found',
-                style: TextStyle(color: Colors.grey[600], fontSize: 16),
-              ),
-            ],
-          ),
-        )
-            : RefreshIndicator(
-          displacement: 40,
-          edgeOffset: 20,
-          color: Theme.of(context).primaryColor,
-          onRefresh: _loadAppointments,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _filteredAppointments.length,
-            itemBuilder: (context, index) {
-              return _AppointmentCard(
-                appointment: _filteredAppointments[index],
-                onCancel: _cancelAppointment,
-                isPast: _currentTabIndex == 1,
-              );
-            },
+          child: SafeArea(
+            child: Column(
+              children: [
+                // Custom Header
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Appointments',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Content Section (Extended to bottom)
+                Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 10,
+                          offset: Offset(0, -5),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        TabBar(
+                          onTap: (index) => setState(() => _currentTabIndex = index),
+                          indicatorWeight: 3,
+                          indicatorSize: TabBarIndicatorSize.label,
+                          labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14),
+                          unselectedLabelStyle: GoogleFonts.poppins(fontSize: 14),
+                          tabs: const [
+                            Tab(text: 'Upcoming'),
+                            Tab(text: 'Past'),
+                          ],
+                        ),
+                        Expanded(
+                          child: _isLoading
+                              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800080)))
+                              : _errorMessage.isNotEmpty
+                              ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                                const SizedBox(height: 16),
+                                Text(_errorMessage, textAlign: TextAlign.center, style: GoogleFonts.poppins()),
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: _loadAppointments,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF800080),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: Text('Retry', style: GoogleFonts.poppins(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          )
+                              : _filteredAppointments.isEmpty
+                              ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.calendar_today, size: 48, color: Colors.grey[400]),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No appointments found',
+                                  style: GoogleFonts.poppins(color: Colors.grey[600], fontSize: 16),
+                                ),
+                              ],
+                            ),
+                          )
+                              : RefreshIndicator(
+                            displacement: 40,
+                            edgeOffset: 20,
+                            color: const Color(0xFF800080),
+                            onRefresh: _loadAppointments,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _filteredAppointments.length,
+                              itemBuilder: (context, index) {
+                                return _AppointmentCard(
+                                  appointment: _filteredAppointments[index],
+                                  onCancel: _cancelAppointment,
+                                  isPast: _currentTabIndex == 1,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -261,14 +314,14 @@ class _AppointmentCard extends StatelessWidget {
     }
 
     return Card(
-      elevation: 2,
+      elevation: 4,
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
       shadowColor: Colors.black.withOpacity(0.1),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         onTap: () {}, // Add tap effect
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -285,14 +338,17 @@ class _AppointmentCard extends StatelessWidget {
                       children: [
                         Text(
                           petName,
-                          style: theme.textTheme.titleMedium?.copyWith(
+                          style: GoogleFonts.poppins(
+                            fontSize: theme.textTheme.titleMedium?.fontSize,
                             fontWeight: FontWeight.bold,
+                            color: const Color(0xFF800080),
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'with $vetName',
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          style: GoogleFonts.poppins(
+                            fontSize: theme.textTheme.bodyMedium?.fontSize,
                             color: Colors.grey[600],
                           ),
                         ),
@@ -318,22 +374,22 @@ class _AppointmentCard extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Icon(Icons.calendar_today, size: 16, color: theme.primaryColor),
+                  Icon(Icons.calendar_today, size: 16, color: const Color(0xFF800080)),
                   const SizedBox(width: 8),
-                  Text('$formattedDate', style: theme.textTheme.bodyMedium),
+                  Text('$formattedDate', style: GoogleFonts.poppins(fontSize: theme.textTheme.bodyMedium?.fontSize)),
                   const SizedBox(width: 16),
-                  Icon(Icons.access_time, size: 16, color: theme.primaryColor),
+                  Icon(Icons.access_time, size: 16, color: const Color(0xFF800080)),
                   const SizedBox(width: 8),
-                  Text(formattedTime, style: theme.textTheme.bodyMedium),
+                  Text(formattedTime, style: GoogleFonts.poppins(fontSize: theme.textTheme.bodyMedium?.fontSize)),
                 ],
               ),
               if (appointment['type'] != null) ...[
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.category, size: 16, color: theme.primaryColor),
+                    Icon(Icons.category, size: 16, color: const Color(0xFF800080)),
                     const SizedBox(width: 8),
-                    Text('Type: ${appointment['type']}', style: theme.textTheme.bodyMedium),
+                    Text('Type: ${appointment['type']}', style: GoogleFonts.poppins(fontSize: theme.textTheme.bodyMedium?.fontSize)),
                   ],
                 ),
               ],
@@ -342,12 +398,12 @@ class _AppointmentCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.medical_services, size: 16, color: theme.primaryColor),
+                    Icon(Icons.medical_services, size: 16, color: const Color(0xFF800080)),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Services: ${(appointment['services'] as List).join(', ')}',
-                        style: theme.textTheme.bodyMedium,
+                        style: GoogleFonts.poppins(fontSize: theme.textTheme.bodyMedium?.fontSize),
                       ),
                     ),
                   ],
@@ -360,11 +416,12 @@ class _AppointmentCard extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.description, size: 16, color: theme.primaryColor),
+                        Icon(Icons.description, size: 16, color: const Color(0xFF800080)),
                         const SizedBox(width: 8),
                         Text(
                           'Description:',
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          style: GoogleFonts.poppins(
+                            fontSize: theme.textTheme.bodyMedium?.fontSize,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -375,7 +432,7 @@ class _AppointmentCard extends StatelessWidget {
                       padding: const EdgeInsets.only(left: 24),
                       child: Text(
                         appointment['caseDescription'],
-                        style: theme.textTheme.bodyMedium,
+                        style: GoogleFonts.poppins(fontSize: theme.textTheme.bodyMedium?.fontSize),
                       ),
                     ),
                   ],
@@ -396,7 +453,7 @@ class _AppointmentCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: const Text('CANCEL'),
+                        child: Text('CANCEL', style: GoogleFonts.poppins()),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
@@ -407,14 +464,14 @@ class _AppointmentCard extends StatelessWidget {
                               builder: (_) => EditAppointmentScreen(appointment: appointment),
                             ),
                           );
-
                         },
                         style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF800080),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        child: const Text('EDIT'),
+                        child: Text('EDIT', style: GoogleFonts.poppins(color: Colors.white)),
                       ),
                     ],
                   ),

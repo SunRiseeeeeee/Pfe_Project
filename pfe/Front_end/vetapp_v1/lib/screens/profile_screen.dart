@@ -46,7 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       final data = await _userService.getUserById(userId);
-      print("Fetched user data: $data"); // Print the full response
+      print("Fetched user data: $data");
 
       setState(() {
         userData = data;
@@ -119,93 +119,136 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isDarkMode = themeProvider.themeMode == ThemeMode.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (isLoading)
-              const Center(child: CircularProgressIndicator())
-            else if (errorMessage != null)
-              Center(child: Text(errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 16)))
-            else ...[
-                _buildProfileHeader(context),
-                const SizedBox(height: 24),
-                _buildSectionTitle('Personal Information', context),
-                _buildInfoRow(Icons.person, 'Full Name', '${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}', context),
-                _buildInfoRow(Icons.email, 'Email', userData?['email'] ?? '', context),
-                _buildInfoRow(Icons.phone, 'Phone', userData?['phoneNumber'] ?? '', context),
-                _buildInfoRow(
-                  Icons.location_on,
-                  'Location',
-                  '${userData?['address']?['street'] ?? ''}, ${userData?['address']?['city'] ?? ''}, ${userData?['address']?['state'] ?? ''}, ${userData?['address']?['country'] ?? ''}, ${userData?['address']?['postalCode'] ?? ''}',
-                  context,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF800080),
+              Color(0xFF4B0082),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                // Custom Header
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Profile',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildProfileHeader(context),
+                    ],
+                  ),
                 ),
-                if (isVeterinarian) ...[
-                  const SizedBox(height: 24),
-                  _buildVeterinarianSection(context),
-                ],
-                const SizedBox(height: 24),
-                _buildSectionTitle('Preferences', context),
-                _buildPreferenceRow(Icons.notifications, 'Notifications', userData?['notificationsEnabled'] ?? false, null, context),
-                _buildPreferenceRow(
-                  Icons.dark_mode,
-                  'Dark Mode',
-                  isDarkMode,
-                      (value) => themeProvider.toggleTheme(value),
-                  context,
+                // Content Section
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (isLoading)
+                        const Center(child: CircularProgressIndicator())
+                      else if (errorMessage != null)
+                        Center(child: Text(errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 16)))
+                      else ...[
+                          _buildSectionTitle('Personal Information', context),
+                          _buildInfoRow(Icons.person, 'Full Name', '${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}', context),
+                          _buildInfoRow(Icons.email, 'Email', userData?['email'] ?? '', context),
+                          _buildInfoRow(Icons.phone, 'Phone', userData?['phoneNumber'] ?? '', context),
+                          _buildInfoRow(
+                            Icons.location_on,
+                            'Location',
+                            '${userData?['address']?['street'] ?? ''}, ${userData?['address']?['city'] ?? ''}, ${userData?['address']?['state'] ?? ''}, ${userData?['address']?['country'] ?? ''}, ${userData?['address']?['postalCode'] ?? ''}',
+                            context,
+                          ),
+                          if (isVeterinarian) ...[
+                            const SizedBox(height: 24),
+                            _buildVeterinarianSection(context),
+                          ],
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Preferences', context),
+                          _buildPreferenceRow(Icons.notifications, 'Notifications', userData?['notificationsEnabled'] ?? false, null, context),
+                          _buildPreferenceRow(
+                            Icons.dark_mode,
+                            'Dark Mode',
+                            isDarkMode,
+                                (value) => themeProvider.toggleTheme(value),
+                            context,
+                          ),
+                          const SizedBox(height: 24),
+                          _buildActionButton(Icons.edit, 'Edit Profile', () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const EditProfileScreen()),
+                            );
+                          }, context),
+                          if (isVeterinarian)
+                            _buildActionButton(Icons.person_add, 'My Secretary', () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const SecretaryScreen()),
+                              );
+                            }, context),
+                          if (isAdmin)
+                            _buildActionButton(Icons.admin_panel_settings, 'Add New Admin', () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const AddAdminScreen()),
+                              );
+                            }, context),
+                          if (isAdmin)
+                            _buildActionButton(Icons.medical_services, 'Add Veterinary', () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const AddVeterinaryScreen()),
+                              );
+                            }, context),
+                          _buildActionButton(Icons.logout, 'Log Out', () async {
+                            try {
+                              await _authService.logout();
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                MaterialPageRoute(builder: (context) => LoginPage()),
+                                    (route) => false,
+                              );
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text("Logged out successfully")));
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Logout failed: $e')));
+                            }
+                          }, context),
+                          _buildActionButton(Icons.delete, 'Delete Your Account', deleteAccount, context),
+                        ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 24),
-                _buildActionButton(Icons.edit, 'Edit Profile', () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const EditProfileScreen()),
-                  );
-                }, context),
-                if (isVeterinarian)
-                  _buildActionButton(Icons.person_add, 'My Secretary', () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const SecretaryScreen()),
-                    );
-                  }, context),
-                if (isAdmin)
-                  _buildActionButton(Icons.admin_panel_settings, 'Add New Admin', () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AddAdminScreen()),
-                    );
-                  }, context),
-                if (isAdmin)
-                  _buildActionButton(Icons.medical_services, 'Add Veterinary', () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const AddVeterinaryScreen()),
-                    );
-                  }, context),
-                _buildActionButton(Icons.logout, 'Log Out', () async {
-                  try {
-                    await _authService.logout();
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (context) => LoginPage()),
-                          (route) => false,
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Logged out successfully")));
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Logout failed: $e')));
-                  }
-                }, context),
-                _buildActionButton(Icons.delete, 'Delete Your Account', deleteAccount, context),
               ],
-          ],
+            ),
+          ),
         ),
       ),
     );
@@ -217,44 +260,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
       profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.18');
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          profileUrl != null && profileUrl.isNotEmpty
-              ? CircleAvatar(
-            radius: 50,
-            backgroundImage: FileImage(File(profileUrl)),
-          )
-              : const CircleAvatar(
-            radius: 50,
-            backgroundImage: AssetImage('assets/images/default_avatar.png'),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            userData?['email'] ?? '',
-            style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 14),
-          ),
-          if (profileUrl == null || profileUrl.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Profile picture is missing',
-                style: TextStyle(color: Colors.red, fontSize: 14),
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
               ),
+            ],
+          ),
+          child: CircleAvatar(
+            radius: 60,
+            backgroundImage: profileUrl != null && profileUrl.isNotEmpty
+                ? FileImage(File(profileUrl))
+                : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
+          ),
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
             ),
-        ],
-      ),
+            child: IconButton(
+              icon: const Icon(Icons.camera_alt, color: Color(0xFF800080)),
+              onPressed: () {
+                // Add logic to change profile picture
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -268,10 +311,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionTitle('Veterinarian Details', context),
+        const Divider(color: Colors.grey, thickness: 0.5),
         _buildInfoRow(Icons.medical_services, 'Specialization', specialization, context),
         _buildInfoRow(Icons.list, 'Services', services, context),
         const SizedBox(height: 12),
         _buildSectionTitle('Working Hours', context),
+        const Divider(color: Colors.grey, thickness: 0.5),
         if (workingHours.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
@@ -298,13 +343,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildSectionTitle(String title, BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(
         title,
-        style: TextStyle(
-          fontSize: 18,
+        style: const TextStyle(
+          fontSize: 20,
           fontWeight: FontWeight.bold,
-          color: Theme.of(context).textTheme.titleLarge?.color,
+          color: Colors.black87,
         ),
       ),
     );
@@ -313,22 +358,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildInfoRow(IconData icon, String label, String value, BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 5,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Icon(icon, color: Theme.of(context).primaryColor, size: 24),
-          const SizedBox(width: 12),
+          Icon(icon, color: const Color(0xFF800080), size: 24),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 14)),
+                Text(
+                  label,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                ),
                 const SizedBox(height: 4),
-                Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                Text(
+                  value,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black87),
+                ),
               ],
             ),
           ),
@@ -340,25 +398,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildPreferenceRow(IconData icon, String label, bool isEnabled, Function(bool)? onChanged, BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 5,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             children: [
-              Icon(icon, color: Theme.of(context).primaryColor, size: 24),
-              const SizedBox(width: 12),
-              Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              Icon(icon, color: const Color(0xFF800080), size: 24),
+              const SizedBox(width: 16),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black87),
+              ),
             ],
           ),
           Switch(
             value: isEnabled,
             onChanged: onChanged,
-            activeColor: Theme.of(context).primaryColor,
+            activeColor: const Color(0xFF800080),
+            activeTrackColor: const Color(0xFF800080).withOpacity(0.5),
           ),
         ],
       ),
@@ -368,18 +437,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildActionButton(IconData icon, String label, VoidCallback onPressed, BuildContext context) {
     return InkWell(
       onTap: onPressed,
+      borderRadius: BorderRadius.circular(12),
+      splashColor: const Color(0xFF800080).withOpacity(0.2),
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 8),
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF800080), Color(0xFF4B0082)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
           borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 5,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            Icon(icon, color: Theme.of(context).primaryColor, size: 24),
-            const SizedBox(width: 12),
-            Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            Icon(icon, color: Colors.white, size: 24),
+            const SizedBox(width: 16),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white),
+            ),
           ],
         ),
       ),

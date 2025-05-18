@@ -673,7 +673,7 @@ class _FypScreenState extends State<FypScreen> {
           style: GoogleFonts.poppins(
             fontWeight: FontWeight.bold,
             fontSize: 24,
-            color: Colors.deepPurple,
+            color: Color(0xFF800080),
           ),
         ),
         centerTitle: true,
@@ -887,7 +887,7 @@ class _FypScreenState extends State<FypScreen> {
                   },
                   child: Text(
                     '$displayCommentCount comments',
-                    style: GoogleFonts.poppins(fontSize: 14, color: Colors.blueAccent),
+                    style: GoogleFonts.poppins(fontSize: 14, color: Color(0xFF800080)),
                   ),
                 ),
               ],
