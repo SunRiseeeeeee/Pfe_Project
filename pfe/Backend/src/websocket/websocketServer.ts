@@ -1,47 +1,24 @@
-import { Server as SocketIOServer, Socket } from 'socket.io';
-import http from 'http';
-import express, { Application } from 'express';
-import mongoose, { Types, Document } from 'mongoose';
+import WebSocket, { WebSocketServer } from 'ws';
+import mongoose, { Types } from 'mongoose';
 import Chat from '../models/Chat';
 import Message, { MessageType } from '../models/Message';
 import User from '../models/User';
 
-// Types
+const clients = new Map<string, WebSocket>();
+const wss = new WebSocketServer({ port: 3001 });
 
-interface IChat {
-  participants: Types.ObjectId[];
-  unreadCount: number;
-  lastMessage?: Types.ObjectId;
-  createdAt: Date;
-  updatedAt: Date;
-}
+/**
+ * Vérifie si un ID est un ObjectId valide de MongoDB.
+ */
+const isValidObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
 
-type IChatDocument = IChat & Document;
-
-const app: Application = express();
-const server = http.createServer(app);
-
-app.use(express.json());
-
-const io = new SocketIOServer(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true,
-  },
-  path: '/socket.io',
-  transports: ['websocket', 'polling'],
-  pingInterval: 10000,
-  pingTimeout: 5000,
-  cookie: false,
-});
-
-const isValidObjectId = (id: string) => mongoose.isValidObjectId(id);
-
-const handleChat = async (
+/**
+ * Récupère ou crée un chat automatiquement.
+ */
+const getOrCreateChat = async (
   senderId: string,
   veterinaireId: string
-): Promise<{ chat: IChatDocument; isNew: boolean }> => {
+): Promise<Types.ObjectId> => {
   if (!isValidObjectId(senderId) || !isValidObjectId(veterinaireId)) {
     throw new Error('Invalid user IDs');
   }
@@ -50,7 +27,6 @@ const handleChat = async (
   if (!veterinaire) throw new Error('Vétérinaire introuvable');
 
   const secretaires = await User.find({ role: 'SECRETAIRE', veterinaireId }).select('_id');
-
   const participants = [
     new Types.ObjectId(senderId),
     new Types.ObjectId(veterinaireId),
@@ -62,8 +38,8 @@ const handleChat = async (
   });
 
   if (existingChat) {
-    console.log(`Chat existant trouvé : ${existingChat._id}`);
-    return { chat: existingChat, isNew: false };
+    console.log(`✅ Chat existant trouvé : ${existingChat._id}`);
+    return existingChat.id;
   }
 
   const newChat = await Chat.create({
@@ -73,71 +49,83 @@ const handleChat = async (
     updatedAt: new Date(),
   });
 
-  console.log(`Nouveau chat créé : ${newChat._id}`);
-  return { chat: newChat, isNew: true };
+  console.log(`🆕 Nouveau chat créé : ${newChat._id}`);
+  return newChat.id;
 };
 
-io.on('connection', (socket: Socket) => {
-  console.log(`[SOCKET] Connecté : ${socket.id}`);
+/**
+ * Écoute des connexions WebSocket.
+ */
+wss.on('connection', (ws: WebSocket) => {
+  console.log('⚡ Client connecté.');
 
-  socket.on('sendMessage', async (payload, callback) => {
+  ws.on('message', async (message: string) => {
+    console.log(`💬 Message reçu : ${message}`);
+
     try {
-      const { senderId, veterinaireId, content } = payload;
+      const { senderId, veterinaireId, content, role } = JSON.parse(message);
 
       if (!senderId || !veterinaireId || !content) {
         throw new Error('senderId, veterinaireId et content sont requis.');
       }
 
-      const { chat, isNew } = await handleChat(senderId, veterinaireId);
+      // Enregistre le client s'il n'est pas déjà connecté
+      if (role === "VETERINAIRE") {
+        clients.set(veterinaireId, ws);
+        console.log(`Vétérinaire ${veterinaireId} connecté via WebSocket.`);
+      } else if (!clients.has(senderId)) {
+        clients.set(senderId, ws);
+        console.log(`Client ${senderId} connecté via WebSocket.`);
+      }
 
-      const message = await Message.create({
-        chatId: chat._id,
-        sender: senderId,
+      // Crée le chat s'il n'existe pas
+      const chatId = await getOrCreateChat(senderId, veterinaireId);
+
+      // Sauvegarde le message dans MongoDB
+      const newMessage = await Message.create({
+        chatId,
+        sender: new Types.ObjectId(senderId),
         type: MessageType.TEXT,
         content,
-        readBy: [senderId],
+        readBy: [],
       });
 
-      await chat.updateOne({
-        $set: { lastMessage: message._id, updatedAt: new Date() },
-        $inc: { unreadCount: 1 },
-      });
+      console.log(`💾 Message sauvegardé dans le chat : ${chatId}`);
 
-      // Important: participants est accessible sur l'instance chat
-      chat.participants.forEach((participantId) => {
-        io.to(participantId.toString()).emit('newMessage', {
-          chatId: chat._id,
-          message: message.toObject(),
-        });
-      });
+      // Envoi au vétérinaire s'il est connecté
+      const recipientSocket = clients.get(veterinaireId);
+      if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
+        recipientSocket.send(JSON.stringify({
+          senderId,
+          content,
+          timestamp: Date.now(),
+        }));
+        console.log(`📩 Message envoyé au vétérinaire ${veterinaireId}`);
+      } else {
+        console.log(`⚠️ Vétérinaire ${veterinaireId} non connecté.`);
+      }
 
-      console.log(`[SOCKET] Message diffusé aux participants`);
+      // Réponse au client
+      ws.send(JSON.stringify({
+        status: 'success',
+        message: `Message envoyé à ${veterinaireId}`,
+        chatId
+      }));
 
-      callback?.({
-        success: true,
-        data: {
-          chatId: chat._id,
-          messageId: message._id,
-          isNewChat: isNew,
-        },
-      });
-    } catch (error) {
-      console.error('[ERROR] sendMessage:', (error as Error).message);
-      callback?.({
-        success: false,
-        error: (error as Error).message,
-        statusCode: 500,
-      });
+    } catch (e) {
+      console.error('❌ Erreur de traitement:', (e as Error).message);
+      ws.send(JSON.stringify({
+        status: 'error',
+        message: (e as Error).message
+      }));
     }
   });
 
-  socket.on('disconnect', (reason) => {
-    console.log(`[SOCKET] Déconnecté : ${socket.id} Raison : ${reason}`);
+  ws.on('close', () => {
+    console.log('❌ Client déconnecté.');
   });
 });
 
-server.listen(3001, () => {
-  console.log('WebSocket en écoute sur ws://localhost:3001');
-});
-
-export { app, server, io };
+console.log('🌐 WebSocket en écoute sur ws://localhost:3001/');
+export { wss, clients };
+""

@@ -1,6 +1,8 @@
 import WebSocket, { WebSocketServer } from 'ws';
+import mongoose, { Types } from 'mongoose';
+import Chat from '../models/Chat';
 import Message, { MessageType } from '../models/Message';
-import mongoose from 'mongoose';
+import User from '../models/User';
 
 const clients = new Map<string, WebSocket>();
 const wss = new WebSocketServer({ port: 3001 });
@@ -10,6 +12,51 @@ const wss = new WebSocketServer({ port: 3001 });
  */
 const isValidObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
 
+/**
+ * Crée un chat automatiquement s'il n'existe pas déjà.
+ */
+const getOrCreateChat = async (
+  senderId: string,
+  veterinaireId: string
+): Promise<Types.ObjectId> => {
+  if (!isValidObjectId(senderId) || !isValidObjectId(veterinaireId)) {
+    throw new Error('Invalid user IDs');
+  }
+
+  const veterinaire = await User.findById(veterinaireId);
+  if (!veterinaire) throw new Error('Vétérinaire introuvable');
+
+  const secretaires = await User.find({ role: 'SECRETAIRE', veterinaireId }).select('_id');
+
+  const participants = [
+    new Types.ObjectId(senderId),
+    new Types.ObjectId(veterinaireId),
+    ...secretaires.map((s) => s._id),
+  ].sort();
+
+  const existingChat = await Chat.findOne({
+    participants: { $all: participants, $size: participants.length },
+  });
+
+  if (existingChat) {
+    console.log(`✅ Chat existant trouvé : ${existingChat._id}`);
+    return existingChat.id;
+  }
+
+  const newChat = await Chat.create({
+    participants,
+    unreadCount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  console.log(`🆕 Nouveau chat créé : ${newChat._id}`);
+  return newChat.id;
+};
+
+/**
+ * Écoute des connexions WebSocket.
+ */
 wss.on('connection', (ws: WebSocket) => {
   console.log('Client connecté.');
 
@@ -17,63 +64,60 @@ wss.on('connection', (ws: WebSocket) => {
     console.log(`Message reçu : ${message}`);
 
     try {
-      const parsedMessage = JSON.parse(message);
+      const { senderId, veterinaireId, content } = JSON.parse(message);
 
-      // 🔹 Enregistrement du client
-      if (parsedMessage.senderId) {
-        clients.set(parsedMessage.senderId, ws);
+      // Enregistrement du client
+      if (senderId) {
+        clients.set(senderId, ws);
         ws.send(JSON.stringify({
           status: 'success',
-          message: `Client ${parsedMessage.senderId} enregistré.`
+          message: `Client ${senderId} enregistré.`,
         }));
       }
 
-      // 🔹 Sauvegarde du message dans MongoDB et envoi au destinataire
-      if (parsedMessage.chatId && parsedMessage.content && parsedMessage.recipientId) {
-        
-        // ✅ Vérification des IDs
-        if (!isValidObjectId(parsedMessage.chatId) || !isValidObjectId(parsedMessage.senderId)) {
-          throw new Error("chatId ou senderId n'est pas un ObjectId valide");
-        }
-
-        const newMessage = new Message({
-          chatId: new mongoose.Types.ObjectId(parsedMessage.chatId),
-          sender: new mongoose.Types.ObjectId(parsedMessage.senderId),
-          type: MessageType.TEXT,
-          content: parsedMessage.content,
-          readBy: [],
-        });
-
-        await newMessage.save();
-        console.log('Message sauvegardé dans la base de données');
-
-        // 🔹 Envoi du message en temps réel au destinataire s'il est connecté
-        const recipientSocket = clients.get(parsedMessage.recipientId);
-
-        if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
-          recipientSocket.send(JSON.stringify({
-            senderId: parsedMessage.senderId,
-            content: parsedMessage.content,
-            timestamp: Date.now()
-          }));
-
-          console.log(`Message envoyé à ${parsedMessage.recipientId}`);
-        } else {
-          console.log(`${parsedMessage.recipientId} n'est pas connecté.`);
-        }
-
-        // 🔹 Accusé de réception à l'expéditeur
-        ws.send(JSON.stringify({
-          status: 'success',
-          message: `Message envoyé à ${parsedMessage.recipientId}`
-        }));
+      if (!senderId || !veterinaireId || !content) {
+        throw new Error('senderId, veterinaireId et content sont requis.');
       }
+
+      // Créer le chat s'il n'existe pas encore
+      const chatId = await getOrCreateChat(senderId, veterinaireId);
+
+      // Sauvegarde du message dans MongoDB
+      const newMessage = await Message.create({
+        chatId,
+        sender: new Types.ObjectId(senderId),
+        type: MessageType.TEXT,
+        content,
+        readBy: [],
+      });
+
+      console.log(`💾 Message sauvegardé : ${newMessage._id}`);
+
+      // Envoi du message au vétérinaire s'il est connecté
+      const recipientSocket = clients.get(veterinaireId);
+
+      if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
+        recipientSocket.send(JSON.stringify({
+          senderId,
+          content,
+          timestamp: Date.now(),
+        }));
+
+        console.log(`📩 Message envoyé au vétérinaire ${veterinaireId}`);
+      } else {
+        console.log(`⚠️ Vétérinaire ${veterinaireId} non connecté.`);
+      }
+
+      ws.send(JSON.stringify({
+        status: 'success',
+        message: `Message envoyé à ${veterinaireId}`,
+      }));
 
     } catch (e) {
-      console.error('Erreur de parsing JSON:', (e as Error).message);
+      console.error('Erreur de traitement:', (e as Error).message);
       ws.send(JSON.stringify({
         status: 'error',
-        message: `Erreur: ${(e as Error).message}`
+        message: (e as Error).message,
       }));
     }
   });
