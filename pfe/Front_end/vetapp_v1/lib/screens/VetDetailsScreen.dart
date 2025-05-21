@@ -348,7 +348,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                 formatWorkingHoursFromString(widget.vet.workingHours ?? ''),
                 style: const TextStyle(color: Colors.grey),
               ),
-              
               const SizedBox(height: 24),
             ],
           ),
