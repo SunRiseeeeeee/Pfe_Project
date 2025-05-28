@@ -173,7 +173,7 @@ ws.on('message', async (rawMessage: string) => {
           sender: new Types.ObjectId(senderId),
           type: MessageType.TEXT,
           content,
-          readBy: [],
+           readBy: [new Types.ObjectId(senderId)], 
           createdAt: new Date(),
           updatedAt: new Date(),
         });
