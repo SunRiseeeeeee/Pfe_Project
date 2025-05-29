@@ -3,6 +3,7 @@ import mongoose, { Types } from 'mongoose';
 import Chat from '../models/Chat';
 import Message, { MessageType } from '../models/Message';
 import User from '../models/User';
+import { UserRole } from '../models/User'; 
 
 const clients = new Map<string, WebSocket>();
 const wss = new WebSocketServer({ port: 3001 });
@@ -99,47 +100,87 @@ ws.on('message', async (rawMessage: string) => {
         break;
       }
 
-      case 'GET_CONVERSATIONS': {
-        const { userId } = data;
-        if (!userId) throw new Error('userId est requis pour GET_CONVERSATIONS');
-        if (!isValidObjectId(userId)) throw new Error('userId invalide');
 
-        const chats = await Chat.find({ participants: new Types.ObjectId(userId) })
-          .sort({ updatedAt: -1 })
-          .lean();
 
-        const conversations = await Promise.all(chats.map(async (chat) => {
-          const participants = await User.find({ _id: { $in: chat.participants } })
-            .select('firstName lastName role')
-            .lean();
+case 'GET_CONVERSATIONS': {
+  const { userId, role: rawRole, searchQuery } = data;
 
-          const lastMessage = await Message.findOne({ chatId: chat._id })
-            .sort({ createdAt: -1 })
-            .select('content sender createdAt')
-            .lean();
+  if (!userId || !rawRole) {
+    throw new Error('userId et role sont requis pour GET_CONVERSATIONS');
+  }
 
-          const unreadCount = await Message.countDocuments({
-            chatId: chat._id,
-            sender: { $ne: new Types.ObjectId(userId) },
-            readBy: { $ne: new Types.ObjectId(userId) },
-          });
+  if (!isValidObjectId(userId)) {
+    throw new Error('userId invalide');
+  }
 
-          return {
-            chatId: chat._id,
-            participants,
-            lastMessage,
-            updatedAt: chat.updatedAt,
-            unreadCount,
-          };
-        }));
+  // Normalisation du rôle en UserRole
+  const role = rawRole.toLowerCase() as UserRole;
 
-        ws.send(JSON.stringify({
-          status: 'success',
-          type: 'CONVERSATIONS_LIST',
-          conversations,
-        }));
-        break;
+  const chats = await Chat.find({ participants: new Types.ObjectId(userId) })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  const conversations = await Promise.all(
+    chats.map(async (chat) => {
+      const participants = await User.find({ _id: { $in: chat.participants } })
+        .select('firstName lastName role')
+        .lean();
+
+      const lastMessage = await Message.findOne({ chatId: chat._id })
+        .sort({ createdAt: -1 })
+        .select('content sender createdAt')
+        .lean();
+
+      const otherUser = participants.find(p => p._id.toString() !== userId);
+
+      // Si la recherche est active
+      if (searchQuery) {
+        const query = searchQuery.trim().toLowerCase();
+
+        // Filtrage selon les rôles
+        if (
+          (role === UserRole.CLIENT && otherUser?.role !== UserRole.VETERINAIRE) ||
+          ((role === UserRole.VETERINAIRE || role === UserRole.SECRETAIRE) && otherUser?.role !== UserRole.CLIENT)
+        ) {
+          return null;
+        }
+
+        const fullName = `${otherUser?.firstName ?? ''} ${otherUser?.lastName ?? ''}`.toLowerCase();
+        if (!fullName.includes(query)) {
+          return null;
+        }
       }
+
+      const unreadCount = await Message.countDocuments({
+        chatId: chat._id,
+        sender: { $ne: new Types.ObjectId(userId) },
+        readBy: { $ne: new Types.ObjectId(userId) },
+      });
+
+      return {
+        chatId: chat._id,
+        participants,
+        lastMessage,
+        updatedAt: chat.updatedAt,
+        unreadCount,
+      };
+    })
+  );
+
+  const filteredConversations = conversations.filter(Boolean);
+
+  ws.send(
+    JSON.stringify({
+      status: 'success',
+      type: 'CONVERSATIONS_LIST',
+      conversations: filteredConversations,
+    })
+  );
+
+  break;
+}
+
+
 
       case 'GET_MESSAGES': {
         const { chatId } = data;
