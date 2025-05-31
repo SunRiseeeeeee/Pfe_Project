@@ -257,7 +257,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildProfileHeader(BuildContext context) {
     String? profileUrl = userData?['profilePicture'];
     if (profileUrl != null && profileUrl.contains('localhost')) {
-      profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.18');
+      profileUrl = profileUrl.replaceFirst('localhost', '192.168.100.7');
     }
 
     return Stack(

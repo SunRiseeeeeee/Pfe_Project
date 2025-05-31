@@ -4,7 +4,7 @@ import '../models/service.dart';
 import '../models/token_storage.dart';
 
 class ServiceService {
-  static const String baseUrl = 'http://192.168.1.18:3000/api/services';
+  static const String baseUrl = 'http://192.168.100.7:3000/api/services';
   static final Dio _dio = Dio();
 
   // Fetch all services

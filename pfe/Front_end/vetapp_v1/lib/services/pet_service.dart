@@ -8,7 +8,7 @@ class PetService {
 
   PetService({required Dio dio})
       : dio = Dio(
-    BaseOptions(baseUrl: 'http://192.168.1.18:3000/api'), // ✅ Correct base URL
+    BaseOptions(baseUrl: 'http://192.168.100.7:3000/api'), // ✅ Correct base URL
   );
 
   // 🔹 Get the token from the TokenStorage
@@ -43,7 +43,7 @@ class PetService {
       for (var pet in pets) {
         final imagePath = pet['image'];
         if (imagePath != null && imagePath.toString().isNotEmpty) {
-          pet['imageUrl'] = 'http://192.168.1.18:3000/$imagePath'; // ✅ Ensure this matches your backend static path
+          pet['imageUrl'] = 'http://192.168.100.7:3000/$imagePath'; // ✅ Ensure this matches your backend static path
         } else {
           pet['imageUrl'] = null;
         }

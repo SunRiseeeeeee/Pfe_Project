@@ -5,7 +5,7 @@ import '../models/token_storage.dart';
 
 class AuthService {
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: "http://localhost:3000/api/auth",
+    baseUrl: "http://192.168.100.7:3000/api/auth",
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
   ));

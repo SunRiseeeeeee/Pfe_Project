@@ -533,7 +533,7 @@ class VeterinarianList extends StatelessWidget {
                 String? profileUrl = vet.profilePicture;
                 // Replace localhost with IP for network URLs
                 if (profileUrl != null && profileUrl.contains('localhost')) {
-                  profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.18');
+                  profileUrl = profileUrl.replaceFirst('localhost', '192.168.100.7');
                 }
                 debugPrint('Vet profile picture: $profileUrl');
                 return GestureDetector(

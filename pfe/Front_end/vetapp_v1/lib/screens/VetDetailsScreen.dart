@@ -172,7 +172,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   Widget build(BuildContext context) {
     String? profileUrl = widget.vet.profilePicture;
     if (profileUrl != null && profileUrl.contains('localhost')) {
-      profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.18');
+      profileUrl = profileUrl.replaceFirst('localhost', '192.168.100.7');
     }
     debugPrint('Vet profile picture: $profileUrl');
 

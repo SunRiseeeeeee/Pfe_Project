@@ -15,7 +15,7 @@ class PetsScreen extends StatefulWidget {
 
 class _PetsScreenState extends State<PetsScreen> {
   Future<List<Map<String, dynamic>>>? _petsFuture;
-  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api')));
+  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.100.7:3000/api')));
 
   @override
   void initState() {
@@ -30,7 +30,9 @@ class _PetsScreenState extends State<PetsScreen> {
   }
 
   Future<void> _refreshPets() async {
-    _loadPets();
+    setState(() {
+      _petsFuture = _petService.getUserPets(); // Ensure this fetches new pets
+    });
   }
 
   void _navigateToAddPet() async {
@@ -39,26 +41,88 @@ class _PetsScreenState extends State<PetsScreen> {
       MaterialPageRoute(builder: (context) => const AddPetScreen()),
     );
     if (result != null) {
+      debugPrint('AddPetScreen returned: $result'); // Debug to confirm return
       _refreshPets();
     }
   }
 
-  ImageProvider getPetPictureProvider(String? picture) {
+  Widget getPetPictureWidget(String? picture) {
     debugPrint('Loading pet picture: $picture');
-    if (picture == null || picture.isEmpty) {
-      return const AssetImage('assets/default_pet.png');
-    }
-    if (picture.startsWith('/data/') || picture.startsWith('file://')) {
-      final path = picture.startsWith('file://') ? picture.substring(7) : picture;
-      final file = File(path);
-      if (file.existsSync()) {
-        return FileImage(file);
-      } else {
-        debugPrint('Local pet picture does not exist: $path');
-        return const AssetImage('assets/default_pet.png');
+    String? pictureUrl = picture;
+    // Replace localhost and old IP with current IP for network URLs
+    if (pictureUrl != null) {
+      if (pictureUrl.contains('localhost')) {
+        pictureUrl = pictureUrl.replaceFirst('localhost', '192.168.100.7');
+      }
+      if (pictureUrl.contains('192.168.1.18')) {
+        pictureUrl = pictureUrl.replaceFirst('192.168.1.18', '192.168.100.7');
       }
     }
-    return NetworkImage(picture);
+    return pictureUrl != null && pictureUrl.isNotEmpty
+        ? pictureUrl.startsWith('http')
+        ? Image.network(
+      pictureUrl,
+      width: 100,
+      height: 100,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('Pet network image error for $pictureUrl: $error');
+        return Image.asset(
+          'assets/default_pet.png', // Reverted to original asset path
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            debugPrint('Pet asset error: $error');
+            return Container(
+              width: 100,
+              height: 100,
+              color: Colors.grey,
+              child: const Icon(Icons.pets, color: Colors.white),
+            );
+          },
+        );
+      },
+    )
+        : Image.file(
+      File(pictureUrl),
+      width: 100,
+      height: 100,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('Pet file image error for $pictureUrl: $error');
+        return Image.asset(
+          'assets/default_pet.png', // Reverted to original asset path
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            debugPrint('Pet asset error: $error');
+            return Container(
+              width: 100,
+              height: 100,
+              color: Colors.grey,
+              child: const Icon(Icons.pets, color: Colors.white),
+            );
+          },
+        );
+      },
+    )
+        : Image.asset(
+      'assets/default_pet.png', // Reverted to original asset path
+      width: 100,
+      height: 100,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        debugPrint('Pet asset error: $error');
+        return Container(
+          width: 100,
+          height: 100,
+          color: Colors.grey,
+          child: const Icon(Icons.pets, color: Colors.white),
+        );
+      },
+    );
   }
 
   @override
@@ -174,10 +238,8 @@ class _PetsScreenState extends State<PetsScreen> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    CircleAvatar(
-                                      radius: 50,
-                                      backgroundImage: getPetPictureProvider(pet['picture']),
-                                      backgroundColor: Colors.grey[200],
+                                    ClipOval(
+                                      child: getPetPictureWidget(pet['picture']),
                                     ),
                                     const SizedBox(height: 12),
                                     Text(

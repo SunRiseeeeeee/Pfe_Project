@@ -84,7 +84,7 @@ class Secretary {
 }
 
 class SecretaryService {
-  static const String baseUrl = 'http://192.168.1.18:3000/api';
+  static const String baseUrl = 'http://192.168.100.7:3000/api';
 
   // Fetch secretaries for a veterinarian
   Future<List<Secretary>> getSecretariesByVeterinaireId(String veterinaireId) async {

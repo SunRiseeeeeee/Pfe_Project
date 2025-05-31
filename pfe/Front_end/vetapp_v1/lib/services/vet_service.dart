@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 import '../models/token_storage.dart';
 
 class VetService {
-  static const String baseUrl = "http://192.168.1.18:3000/api/users";
+  static const String baseUrl = "http://192.168.100.7:3000/api/users";
   static final Dio _dio = Dio();
 
   static Future<Map<String, dynamic>> fetchVeterinarians({

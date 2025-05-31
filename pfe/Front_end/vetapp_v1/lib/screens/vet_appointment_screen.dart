@@ -577,7 +577,7 @@ class AppointmentDetailsScreen extends StatelessWidget {
         : 'Unknown Client';
     String? clientPicture = client['profilePicture']?.toString();
     if (clientPicture != null && clientPicture.contains('localhost')) {
-      clientPicture = clientPicture.replaceFirst('localhost', '192.168.1.18');
+      clientPicture = clientPicture.replaceFirst('localhost', '192.168.100.7');
     }
     final clientEmail = client['email']?.toString() ?? 'N/A';
     final clientPhone = client['phoneNumber']?.toString() ?? 'N/A';
@@ -610,7 +610,7 @@ class AppointmentDetailsScreen extends StatelessWidget {
     final petBirthdate = animal['birthDate'] != null
         ? DateFormat.yMMMd().format(DateTime.parse(animal['birthDate'].toString()).toLocal())
         : 'N/A';
-    final petPicture = animal['picture']?.toString() ?? 'http://192.168.1.18:3000/uploads/placeholder.png';
+    final petPicture = animal['picture']?.toString() ?? 'http://192.168.100.7:3000/uploads/placeholder.png';
 
     final status = appointment['status']?.toString().toLowerCase() ?? 'pending';
     Color statusColor;

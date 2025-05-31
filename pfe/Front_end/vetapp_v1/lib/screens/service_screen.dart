@@ -294,7 +294,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
                           itemBuilder: (context, index) {
                             final service = services[index];
                             final imageUrl = service.image != null && service.image!.isNotEmpty
-                                ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.1.18:3000')
+                                ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.100.7:3000')
                                 : null;
 
                             return Card(

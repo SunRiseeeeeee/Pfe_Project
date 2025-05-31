@@ -72,7 +72,7 @@ class Client {
       if (profilePicture.startsWith('/data/') || profilePicture.contains('/cache/')) {
         profilePicture = null; // Skip local cache paths
       } else if (!profilePicture.startsWith('http')) {
-        profilePicture = 'http://192.168.1.18:3000$profilePicture';
+        profilePicture = 'http://192.168.100.7:3000$profilePicture';
       }
     }
     profilePicture = profilePicture?.isEmpty == true ? null : profilePicture;
@@ -171,7 +171,7 @@ class Animal {
 
 class VetsClientService {
   final Dio _dio;
-  static const String _baseUrl = 'http://192.168.1.18:3000/api';
+  static const String _baseUrl = 'http://192.168.100.7:3000/api';
 
   VetsClientService({required Dio dio}) : _dio = dio;
 
