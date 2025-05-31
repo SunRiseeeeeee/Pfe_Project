@@ -9,34 +9,40 @@ declare module "express" {
   }
 }
 
-export const getUserNotifications = async (
-  req: Request,
-  res: Response,
-  
-): Promise<void> => {
+
+export const getUserNotifications = async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = req.user;
-    if (!user) {
-      res.status(401).json({ success: false, message: "Utilisateur non authentifié" });
+    const userId = req.params.userId;  // si tu passes l'ID client dans l'URL
+    if (!userId) {
+      res.status(400).json({ success: false, message: "ID utilisateur manquant" });
       return;
     }
 
-    const notifications = await Notification.find({ userId: user.id })
+    // Récupérer les notifications de l'utilisateur triées par date
+    const notifications = await Notification.find({ userId })
       .sort({ createdAt: -1 })
       .limit(50)
       .populate("appointmentId", "date type caseDescription");
+
+    // Compter le nombre de notifications non lues
+    const unreadCount = await Notification.countDocuments({ userId, read: false });
 
     res.status(200).json({
       success: true,
       notifications,
       count: notifications.length,
+      unreadCount,  // <-- nombre notifications non lues
     });
   } catch (error) {
     console.error("[getUserNotifications] Error:", error);
-    
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
+
+/**
+ * Marquer une notification comme lue via son ID
+ */
 export const markNotificationAsRead = async (
   req: Request,
   res: Response,
@@ -44,32 +50,31 @@ export const markNotificationAsRead = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const user = req.user;
-
-    if (!user) {
-      res.status(401).json({ success: false, message: "Utilisateur non authentifié" });
-      return;
-    }
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({ success: false, message: "ID de notification invalide" });
       return;
     }
 
-    const notification = await Notification.findOneAndUpdate(
-      { _id: id, userId: user.id },
+    const notification = await Notification.findByIdAndUpdate(
+      id,
       { read: true },
       { new: true }
     );
 
     if (!notification) {
-      res.status(404).json({ success: false, message: "Notification non trouvée ou non autorisée" });
+      res.status(404).json({ success: false, message: "Notification non trouvée" });
       return;
     }
 
-    res.status(200).json({ success: true, notification, message: "Notification marquée comme lue" });
+    res.status(200).json({
+      success: true,
+      notification,
+      message: "Notification marquée comme lue",
+    });
   } catch (error) {
     console.error("[markNotificationAsRead] Error:", error);
     next(error);
   }
 };
+

@@ -1,44 +1,53 @@
 import cron from "node-cron";
 import { Server } from "socket.io";
 import Appointment, { AppointmentStatus } from "../models/Appointment";
-import User from "../models/User";
 import Notification from "../models/Notification";
 
-// Fonction pour créer une notification in-app et émettre un événement Socket.IO
+// Fonction pour créer et envoyer une notification via Socket.IO
 const createInAppNotification = async (
   io: Server,
   userId: string,
-  appointment: any,
+  appointment: {
+    _id: string;
+    date: Date;
+    animalId: string;
+  },
   clientName: string
 ): Promise<void> => {
-  const appointmentDate = new Date(appointment.date).toLocaleString();
-  const notification = await Notification.create({
-    userId,
-    appointmentId: appointment._id,
-    message: `Bonjour ${clientName}, votre rendez-vous est prévu le ${appointmentDate}.`,
-  });
+  try {
+    const formattedDate = new Date(appointment.date).toLocaleString("fr-FR");
+    const message = `Bonjour ${clientName}, votre rendez-vous pour ${appointment.animalId} est prévu le ${formattedDate}.`;
 
-  // Émettre l'événement Socket.IO au client spécifique
-  io.to(userId).emit("newNotification", {
-    id: notification.id.toString(),
-    appointmentId: notification.appointmentId.toString(),
-    message: notification.message,
-    read: notification.read,
-    createdAt: notification.createdAt,
-  });
+    const notification = await Notification.create({
+      userId,
+      appointmentId: appointment._id,
+      message,
+    });
 
-  console.log(`In-app notification created and emitted for appointment ${appointment._id} for user ${userId}`);
+    io.to(userId).emit("newNotification", {
+      id: notification.id.toString(),
+      appointmentId: notification.appointmentId.toString(),
+      message: notification.message,
+      read: notification.read,
+      createdAt: notification.createdAt,
+    });
+
+    console.log(
+      `✅ Notification créée et envoyée pour le rendez-vous ${appointment._id} (user ${userId})`
+    );
+  } catch (error) {
+    console.error("[createInAppNotification] Erreur lors de la création ou de l'envoi :", error);
+  }
 };
 
-
+// Fonction principale pour vérifier les rendez-vous et envoyer les rappels
 export const checkAndSendReminders = async (io: Server): Promise<void> => {
   try {
     const now = new Date();
     const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const in25Hours = new Date(now.getTime() + 25 * 60 * 60 * 1000);
 
-  
-    const upcomingAppointments = await Appointment.find({
+    const appointments = await Appointment.find({
       date: { $gte: in24Hours, $lte: in25Hours },
       status: AppointmentStatus.ACCEPTED,
       notificationSent: false,
@@ -46,37 +55,39 @@ export const checkAndSendReminders = async (io: Server): Promise<void> => {
       .populate("clientId", "firstName lastName")
       .populate("animalId", "name");
 
-    console.log(`Found ${upcomingAppointments.length} upcoming accepted appointments`);
+    console.log(`📅 ${appointments.length} rendez-vous acceptés dans les prochaines 24h.`);
 
-    for (const appointment of upcomingAppointments) {
+    for (const appointment of appointments) {
       const client = appointment.clientId as any;
-      if (client) {
+      const animal = appointment.animalId as any;
+
+      if (client && client._id && animal && animal.name) {
         await createInAppNotification(
           io,
           client._id.toString(),
           {
-            ...appointment.toObject(),
-            animalId: (appointment.animalId as any)?.name || appointment.animalId,
+            _id: appointment.id.toString(),
+            date: appointment.date,
+            animalId: animal.name,
           },
           `${client.firstName} ${client.lastName}`
         );
 
-
         appointment.notificationSent = true;
         await appointment.save();
       } else {
-        console.warn(`Client not found for appointment ${appointment._id}`);
+        console.warn(`⚠️ Données manquantes pour le rendez-vous ${appointment._id}`);
       }
     }
   } catch (error) {
-    console.error("[checkAndSendReminders] Error:", error);
+    console.error("[checkAndSendReminders] Erreur :", error);
   }
 };
 
-
-export const startReminderCronJob = (io: Server) => {
+// Fonction qui démarre la tâche cron toutes les heures
+export const startReminderCronJob = (io: Server): void => {
   cron.schedule("0 * * * *", () => {
-    console.log("Checking for upcoming accepted appointments...");
+    console.log("🕐 Exécution du cron : Vérification des rappels de rendez-vous...");
     checkAndSendReminders(io);
   });
 };

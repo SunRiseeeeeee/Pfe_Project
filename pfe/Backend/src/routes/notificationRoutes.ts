@@ -4,7 +4,8 @@ import { getUserNotifications, markNotificationAsRead } from "../controllers/not
 
 const router = Router();
 
-router.get("/", getUserNotifications);
+router.get("/:userId", getUserNotifications);
+
 router.patch("/:id/read", markNotificationAsRead);
 
 export default router;
