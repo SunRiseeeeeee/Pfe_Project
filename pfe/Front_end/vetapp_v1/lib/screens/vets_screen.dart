@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
 import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
 import 'package:vetapp_v1/services/vet_service.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class VetsScreen extends StatefulWidget {
   const VetsScreen({super.key});
@@ -79,20 +80,21 @@ class _VetsScreenState extends State<VetsScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Filter Veterinarians'),
+          title: Text('Filter Veterinarians', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
           content: StatefulBuilder(
             builder: (context, setDialogState) {
               return SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Filter by Location'),
+                    Text('Filter by Location', style: GoogleFonts.poppins()),
                     TextField(
                       controller: _locationController,
                       decoration: const InputDecoration(
                         hintText: 'Enter location (e.g., Lyon)',
                         border: OutlineInputBorder(),
                       ),
+                      style: GoogleFonts.poppins(),
                       onChanged: (value) {
                         _debounceTimer?.cancel();
                         _debounceTimer = Timer(const Duration(milliseconds: 500), () {
@@ -103,20 +105,20 @@ class _VetsScreenState extends State<VetsScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    const Text('Filter by Specialty'),
+                    Text('Filter by Specialty', style: GoogleFonts.poppins()),
                     DropdownButton<String>(
                       value: tempSpecialtyFilter,
-                      hint: const Text('Select specialty'),
+                      hint: Text('Select specialty', style: GoogleFonts.poppins()),
                       isExpanded: true,
                       items: [
-                        const DropdownMenuItem<String>(
+                        DropdownMenuItem<String>(
                           value: null,
-                          child: Text('Any'),
+                          child: Text('Any', style: GoogleFonts.poppins()),
                         ),
                         ...specialties.map((String specialty) {
                           return DropdownMenuItem<String>(
                             value: specialty,
-                            child: Text(specialty),
+                            child: Text(specialty, style: GoogleFonts.poppins()),
                           );
                         }),
                       ],
@@ -142,11 +144,11 @@ class _VetsScreenState extends State<VetsScreen> {
                 });
                 Navigator.pop(context);
               },
-              child: const Text('Clear All'),
+              child: Text('Clear All', style: GoogleFonts.poppins(color: Colors.grey)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -160,7 +162,11 @@ class _VetsScreenState extends State<VetsScreen> {
                 });
                 Navigator.pop(context);
               },
-              child: const Text('Apply Filters'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF800080),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text('Apply Filters', style: GoogleFonts.poppins(color: Colors.white)),
             ),
           ],
         );
@@ -175,20 +181,21 @@ class _VetsScreenState extends State<VetsScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Search Veterinarians'),
+          title: Text('Search Veterinarians', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
           content: StatefulBuilder(
             builder: (context, setDialogState) {
               return SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Search by Name'),
+                    Text('Search by Name', style: GoogleFonts.poppins()),
                     TextField(
                       controller: _searchController,
                       decoration: const InputDecoration(
                         hintText: 'Enter first or last name (e.g., Pierre)',
                         border: OutlineInputBorder(),
                       ),
+                      style: GoogleFonts.poppins(),
                       onChanged: (value) {
                         _debounceTimer?.cancel();
                         _debounceTimer = Timer(const Duration(milliseconds: 500), () {
@@ -213,11 +220,11 @@ class _VetsScreenState extends State<VetsScreen> {
                 });
                 Navigator.pop(context);
               },
-              child: const Text('Clear'),
+              child: Text('Clear', style: GoogleFonts.poppins(color: Colors.grey)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
             ),
             ElevatedButton(
               onPressed: () {
@@ -228,7 +235,11 @@ class _VetsScreenState extends State<VetsScreen> {
                 });
                 Navigator.pop(context);
               },
-              child: const Text('Search'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF800080),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text('Search', style: GoogleFonts.poppins(color: Colors.white)),
             ),
           ],
         );
@@ -239,78 +250,139 @@ class _VetsScreenState extends State<VetsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Veterinarians', style: TextStyle(fontFamily: 'Poppins')),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _showSearchDialog,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF800080),
+              Color(0xFF4B0082),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: _showFilterDialog,
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        ),
+        child: SafeArea(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if ((locationFilter != null && locationFilter!.isNotEmpty) ||
-                  specialtyFilter != null ||
-                  (nameFilter != null && nameFilter!.isNotEmpty))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      if (nameFilter != null && nameFilter!.isNotEmpty)
-                        Chip(
-                          label: Text('Name: $nameFilter'),
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () {
-                            setState(() {
-                              nameFilter = null;
-                              _searchController.text = '';
-                              _refreshVeterinarians(1);
-                            });
-                          },
+              // Custom Header with Back Arrow and Action Icons
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                    ),
+                    Expanded(
+                      child: Text(
+                        'Veterinarians',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
-                      if (locationFilter != null && locationFilter!.isNotEmpty)
-                        Chip(
-                          label: Text('Location: $locationFilter'),
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () {
-                            setState(() {
-                              locationFilter = null;
-                              _locationController.text = '';
-                              _refreshVeterinarians(1);
-                            });
-                          },
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.search, color: Colors.white),
+                          onPressed: _showSearchDialog,
                         ),
-                      if (specialtyFilter != null)
-                        Chip(
-                          label: Text('Specialty: $specialtyFilter'),
-                          deleteIcon: const Icon(Icons.close, size: 16),
-                          onDeleted: () {
-                            setState(() {
-                              specialtyFilter = null;
-                              _refreshVeterinarians(1);
-                            });
-                          },
+                        IconButton(
+                          icon: const Icon(Icons.filter_list, color: Colors.white),
+                          onPressed: _showFilterDialog,
                         ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Content Section
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: Offset(0, -5),
+                      ),
                     ],
                   ),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if ((locationFilter != null && locationFilter!.isNotEmpty) ||
+                            specialtyFilter != null ||
+                            (nameFilter != null && nameFilter!.isNotEmpty))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Wrap(
+                              spacing: 8,
+                              children: [
+                                if (nameFilter != null && nameFilter!.isNotEmpty)
+                                  Chip(
+                                    label: Text('Name: $nameFilter', style: GoogleFonts.poppins()),
+                                    deleteIcon: const Icon(Icons.close, size: 16, color: Color(0xFF800080)),
+                                    backgroundColor: const Color(0xFF800080).withOpacity(0.1),
+                                    onDeleted: () {
+                                      setState(() {
+                                        nameFilter = null;
+                                        _searchController.text = '';
+                                        _refreshVeterinarians(1);
+                                      });
+                                    },
+                                  ),
+                                if (locationFilter != null && locationFilter!.isNotEmpty)
+                                  Chip(
+                                    label: Text('Location: $locationFilter', style: GoogleFonts.poppins()),
+                                    deleteIcon: const Icon(Icons.close, size: 16, color: Color(0xFF800080)),
+                                    backgroundColor: const Color(0xFF800080).withOpacity(0.1),
+                                    onDeleted: () {
+                                      setState(() {
+                                        locationFilter = null;
+                                        _locationController.text = '';
+                                        _refreshVeterinarians(1);
+                                      });
+                                    },
+                                  ),
+                                if (specialtyFilter != null)
+                                  Chip(
+                                    label: Text('Specialty: $specialtyFilter', style: GoogleFonts.poppins()),
+                                    deleteIcon: const Icon(Icons.close, size: 16, color: Color(0xFF800080)),
+                                    backgroundColor: const Color(0xFF800080).withOpacity(0.1),
+                                    onDeleted: () {
+                                      setState(() {
+                                        specialtyFilter = null;
+                                        _refreshVeterinarians(1);
+                                      });
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+                        VeterinarianList(
+                          veterinariansFuture: veterinariansFuture,
+                          currentPage: currentPage,
+                          locationFilter: locationFilter,
+                          specialtyFilter: specialtyFilter,
+                          nameFilter: nameFilter,
+                          onPageChange: _refreshVeterinarians,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              VeterinarianList(
-                veterinariansFuture: veterinariansFuture,
-                currentPage: currentPage,
-                locationFilter: locationFilter,
-                specialtyFilter: specialtyFilter,
-                nameFilter: nameFilter,
-                onPageChange: _refreshVeterinarians,
               ),
             ],
           ),
@@ -344,7 +416,7 @@ class VeterinarianList extends StatelessWidget {
       future: veterinariansFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator(color: Color(0xFF800080)));
         }
         if (snapshot.hasError) {
           debugPrint('FutureBuilder error: ${snapshot.error}');
@@ -352,11 +424,15 @@ class VeterinarianList extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                Text('Error: ${snapshot.error}', style: GoogleFonts.poppins(color: Colors.red)),
                 const SizedBox(height: 8),
                 ElevatedButton(
                   onPressed: () => onPageChange(currentPage),
-                  child: const Text('Retry'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF800080),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Text('Retry', style: GoogleFonts.poppins(color: Colors.white)),
                 ),
               ],
             ),
@@ -365,7 +441,7 @@ class VeterinarianList extends StatelessWidget {
         final Map<String, dynamic>? responseData = snapshot.data;
         debugPrint('API response: $responseData');
         if (responseData == null || responseData['veterinarians'] == null || responseData['veterinarians'].isEmpty) {
-          String message = 'No veterinarians школ found.';
+          String message = 'No veterinarians found.';
           if (nameFilter != null && nameFilter!.isNotEmpty) {
             message = 'No veterinarians found with name $nameFilter.';
           }
@@ -375,7 +451,7 @@ class VeterinarianList extends StatelessWidget {
           if (specialtyFilter != null) {
             message += ' with specialty $specialtyFilter.';
           }
-          return Center(child: Text(message, style: const TextStyle(fontSize: 16, color: Colors.grey)));
+          return Center(child: Text(message, style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
         }
         List<dynamic> veterinariansData = responseData['veterinarians'];
         List<Veterinarian> veterinarians = [];
@@ -436,7 +512,7 @@ class VeterinarianList extends StatelessWidget {
           if (specialtyFilter != null) {
             message += ' with specialty $specialtyFilter.';
           }
-          return Center(child: Text(message, style: const TextStyle(fontSize: 16, color: Colors.grey)));
+          return Center(child: Text(message, style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
         }
 
         return Column(
@@ -457,7 +533,7 @@ class VeterinarianList extends StatelessWidget {
                 String? profileUrl = vet.profilePicture;
                 // Replace localhost with IP for network URLs
                 if (profileUrl != null && profileUrl.contains('localhost')) {
-                  profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.18');
+                  profileUrl = profileUrl.replaceFirst('localhost', '192.168.100.7');
                 }
                 debugPrint('Vet profile picture: $profileUrl');
                 return GestureDetector(
@@ -540,8 +616,11 @@ class VeterinarianList extends StatelessWidget {
                             children: [
                               Text(
                                 '${vet.firstName} ${vet.lastName}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontFamily: 'Poppins', fontSize: 14),
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Colors.black,
+                                ),
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -549,8 +628,7 @@ class VeterinarianList extends StatelessWidget {
                               const SizedBox(height: 4),
                               Text(
                                 vet.location,
-                                style: const TextStyle(
-                                    fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
+                                style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -559,8 +637,7 @@ class VeterinarianList extends StatelessWidget {
                                 const SizedBox(height: 4),
                                 Text(
                                   specialization,
-                                  style: const TextStyle(
-                                      fontSize: 12, fontFamily: 'Poppins', color: Colors.grey),
+                                  style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
                                   textAlign: TextAlign.center,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -574,7 +651,7 @@ class VeterinarianList extends StatelessWidget {
                                   const SizedBox(width: 4),
                                   Text(
                                     '${vet.averageRating.toStringAsFixed(1)}/5',
-                                    style: const TextStyle(fontSize: 13, fontFamily: 'Poppins'),
+                                    style: GoogleFonts.poppins(fontSize: 13),
                                   ),
                                 ],
                               ),
@@ -594,12 +671,12 @@ class VeterinarianList extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.arrow_back),
+                      icon: const Icon(Icons.arrow_back, color: Color(0xFF800080)),
                       onPressed: currentPage > 1 ? () => onPageChange(currentPage - 1) : null,
                     ),
-                    Text('Page $currentPage of ${responseData['totalPages']}'),
+                    Text('Page $currentPage of ${responseData['totalPages']}', style: GoogleFonts.poppins()),
                     IconButton(
-                      icon: const Icon(Icons.arrow_forward),
+                      icon: const Icon(Icons.arrow_forward, color: Color(0xFF800080)),
                       onPressed: currentPage < responseData['totalPages']
                           ? () => onPageChange(currentPage + 1)
                           : null,

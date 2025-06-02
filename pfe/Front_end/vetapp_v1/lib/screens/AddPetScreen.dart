@@ -25,7 +25,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
   @override
   void initState() {
     super.initState();
-    Dio dio = Dio(BaseOptions(baseUrl: 'http://192.168.1.18:3000/api'));
+    Dio dio = Dio(BaseOptions(baseUrl: 'http://192.168.100.7:3000/api'));
     _petService = PetService(dio: dio);
   }
 
@@ -264,7 +264,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
       alignment: Alignment.center,
       children: [
         Container(
-          margin: const EdgeInsets.only(top: 20),
+          margin: const EdgeInsets.only(top: 10, bottom: 15),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [

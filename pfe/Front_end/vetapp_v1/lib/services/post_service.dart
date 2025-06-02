@@ -189,7 +189,7 @@ class Post {
 }
 
 class PostService {
-  static const String _baseUrl = "http://192.168.1.18:3000/api/posts";
+  static const String _baseUrl = "http://192.168.100.7:3000/api/posts";
   static final Dio _dio = Dio(BaseOptions(
     baseUrl: _baseUrl,
     connectTimeout: const Duration(seconds: 10),

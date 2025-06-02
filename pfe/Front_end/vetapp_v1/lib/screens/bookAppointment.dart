@@ -47,7 +47,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     debugPrint('initState: Initializing AppointmentsScreen, vetId: ${widget.vet.id}');
 
     final dio = Dio(BaseOptions(
-      baseUrl: 'http://192.168.1.18:3000/api',
+      baseUrl: 'http://192.168.100.7:3000/api',
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -766,7 +766,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           final String name = pet['name']?.toString() ?? 'Unnamed';
           final String? imagePath = pet['picture'];
           final String? imageUrl = imagePath != null && !imagePath.startsWith('http')
-              ? 'http://192.168.1.18:3000/api/uploads/animals/$imagePath'
+              ? 'http://192.168.100.7:3000/api/uploads/animals/$imagePath'
               : imagePath;
 
           return Padding(

@@ -70,7 +70,7 @@ class Client {
     String profilePicture = json['profilePicture']?.toString() ?? '';
     // Preserve local file paths; only normalize if it's a relative server path
     if (profilePicture.isNotEmpty && !profilePicture.startsWith('http') && !profilePicture.startsWith('/data/')) {
-      profilePicture = 'http://192.168.1.18:3000$profilePicture';
+      profilePicture = 'http://192.168.100.7:3000$profilePicture';
     }
     profilePicture = profilePicture.isEmpty ? '/data/placeholder.png' : profilePicture;
 
@@ -138,7 +138,7 @@ class Animal {
   factory Animal.fromJson(Map<String, dynamic> json) {
     String? picture = json['picture']?.toString() ?? json['profilePicture']?.toString();
     if (picture != null && !picture.startsWith('http')) {
-      picture = 'http://192.168.1.18:3000$picture';
+      picture = 'http://192.168.100.7:3000$picture';
     }
     return Animal(
       id: json['id']?.toString() ?? json['_id']?.toString() ?? '',
@@ -248,7 +248,7 @@ class Veterinarian {
 
 class ClientService {
   final Dio _dio;
-  static const String _baseUrl = 'http://192.168.1.18:3000/api/appointments';
+  static const String _baseUrl = 'http://192.168.100.7:3000/api/appointments';
 
   ClientService({required Dio dio}) : _dio = dio;
 

@@ -3,8 +3,8 @@ import '../models/token_storage.dart';
 
 class UserService {
   final Dio _dio = Dio();
-  final String _baseUrl = 'http://192.168.1.18:3000/api/users';
-  final String _authBaseUrl = 'http://192.168.1.18:3000/api/auth';
+  final String _baseUrl = 'http://192.168.100.7:3000/api/users';
+  final String _authBaseUrl = 'http://192.168.100.7:3000/api/auth';
 
   // Retrieve the user ID using the TokenStorage class
   Future<String?> _getUserId() async {

@@ -70,27 +70,27 @@ class ChatScreen extends StatelessWidget {
                           children: const [
                             ChatBubble(
                               message: 'Hello, I need to schedule an appointment for my dog.',
-                              sender: 'Client',
+                              sender: 'Adem Benali',
                               time: '03:00 PM',
                             ),
                             ChatBubble(
                               message: 'Sure, let me check the vet’s availability.',
-                              sender: 'Secretary',
+                              sender: 'Emma Carter',
                               time: '03:02 PM',
                             ),
                             ChatBubble(
                               message: 'I’m available at 4:00 PM today. Does that work?',
-                              sender: 'Vet',
+                              sender: 'Dr. Sarah Johnson',
                               time: '03:03 PM',
                             ),
                             ChatBubble(
                               message: 'Yes, that works! Thank you!',
-                              sender: 'Client',
+                              sender: 'Adem Benali',
                               time: '03:04 PM',
                             ),
                             ChatBubble(
                               message: 'I’ve booked it for you. See you at 4:00 PM!',
-                              sender: 'Secretary',
+                              sender: 'Emma Carter',
                               time: '03:05 PM',
                             ),
                           ],
@@ -99,7 +99,8 @@ class ChatScreen extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.all(8.0),
                         child: Row(
-                          children: [const SizedBox(width: 8),
+                          children: [
+                            const SizedBox(width: 8),
                             IconButton(
                               icon: const Icon(Icons.add, color: Color(0xFF800080)),
                               onPressed: () {},
@@ -118,7 +119,6 @@ class ChatScreen extends StatelessWidget {
                                 style: GoogleFonts.poppins(),
                               ),
                             ),
-
                             IconButton(
                               icon: const Icon(Icons.send, color: Color(0xFF800080)),
                               onPressed: () {},
@@ -158,7 +158,7 @@ class ChatBubble extends StatelessWidget {
     TextStyle textStyle;
 
     switch (sender) {
-      case 'Client':
+      case 'Adem Benali':
         profileImageUrl = 'https://www.georgetown.edu/wp-content/uploads/2022/02/Jkramerheadshot-scaled-e1645036825432-1050x1050-c-default.jpg';
         bubbleDecoration = BoxDecoration(
           gradient: const LinearGradient(
@@ -180,7 +180,7 @@ class ChatBubble extends StatelessWidget {
         );
         textStyle = GoogleFonts.poppins(fontSize: 16, color: Colors.white);
         break;
-      case 'Vet':
+      case 'Dr. Sarah Johnson':
         profileImageUrl = 'https://t3.ftcdn.net/jpg/02/60/00/72/360_F_260007203_oIHxD9nIdYnN69zBcYajybIJ4m2kVoYA.jpg';
         bubbleDecoration = BoxDecoration(
           color: Colors.grey[200],
@@ -195,7 +195,7 @@ class ChatBubble extends StatelessWidget {
         );
         textStyle = GoogleFonts.poppins(fontSize: 16, color: Colors.black87);
         break;
-      case 'Secretary':
+      case 'Emma Carter':
         profileImageUrl = 'https://img.freepik.com/free-photo/close-up-veterinarian-taking-care-cat_23-2149100172.jpg';
         bubbleDecoration = BoxDecoration(
           color: Colors.grey[200],
@@ -226,20 +226,20 @@ class ChatBubble extends StatelessWidget {
         textStyle = GoogleFonts.poppins(fontSize: 16, color: Colors.black87);
     }
 
-    // Align Client on the left, Vet and Secretary on the right
-    Alignment alignment = sender == 'Client' ? Alignment.centerLeft : Alignment.centerRight;
-    CrossAxisAlignment crossAlignment = sender == 'Client' ? CrossAxisAlignment.start : CrossAxisAlignment.end;
+    // Align Adem Benali on the right, Dr. Sarah Johnson and Emma Carter on the left
+    Alignment alignment = sender == 'Adem Benali' ? Alignment.centerRight : Alignment.centerLeft;
+    CrossAxisAlignment crossAlignment = sender == 'Adem Benali' ? CrossAxisAlignment.end : CrossAxisAlignment.start;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Align(
         alignment: alignment,
         child: Row(
-          mainAxisAlignment: sender == 'Client' ? MainAxisAlignment.start : MainAxisAlignment.end,
+          mainAxisAlignment: sender == 'Adem Benali' ? MainAxisAlignment.end : MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Profile picture
-            if (sender == 'Client')
+            if (sender != 'Adem Benali')
               CircleAvatar(
                 radius: 20,
                 backgroundImage: profileImageUrl.isNotEmpty ? NetworkImage(profileImageUrl) : null,
@@ -247,7 +247,7 @@ class ChatBubble extends StatelessWidget {
                     ? const Icon(Icons.person, size: 20, color: Colors.grey)
                     : null,
               ),
-            if (sender == 'Client') const SizedBox(width: 8),
+            if (sender != 'Adem Benali') const SizedBox(width: 8),
             Column(
               crossAxisAlignment: crossAlignment,
               children: [
@@ -267,8 +267,8 @@ class ChatBubble extends StatelessWidget {
                 ),
               ],
             ),
-            if (sender != 'Client') const SizedBox(width: 8),
-            if (sender != 'Client')
+            if (sender == 'Adem Benali') const SizedBox(width: 8),
+            if (sender == 'Adem Benali')
               CircleAvatar(
                 radius: 20,
                 backgroundImage: profileImageUrl.isNotEmpty ? NetworkImage(profileImageUrl) : null,

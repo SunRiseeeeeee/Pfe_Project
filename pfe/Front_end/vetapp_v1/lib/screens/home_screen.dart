@@ -17,7 +17,7 @@ import '../models/service.dart';
 import '../services/service_service.dart';
 
 class VetService {
-  static const String baseUrl = "http://192.168.1.18:3000/api/users/veterinarians";
+  static const String baseUrl = "http://192.168.100.7:3000/api/users/veterinarians";
   static final Dio _dio = Dio();
 
   static Future<Map<String, dynamic>> fetchVeterinarians({
@@ -207,7 +207,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: BottomNavigationBar(
           backgroundColor: Colors.white,
-          selectedItemColor: Colors.deepPurple,
+          selectedItemColor: Color(0xFF4B0082),
           unselectedItemColor: Colors.grey,
           currentIndex: _selectedIndex,
           type: BottomNavigationBarType.fixed,
@@ -782,7 +782,7 @@ class _HomeContentState extends State<HomeContent> {
 
   Widget _buildServiceCard(Service service) {
     final imageUrl = service.image != null && service.image!.isNotEmpty
-        ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.1.18:3000')
+        ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.100.7:3000')
         : null;
 
     return ClipRRect(

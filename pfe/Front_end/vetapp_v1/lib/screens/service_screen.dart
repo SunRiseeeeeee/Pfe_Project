@@ -1,10 +1,10 @@
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 import '../models/service.dart';
 import '../services/service_service.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class ServiceScreen extends StatefulWidget {
   const ServiceScreen({super.key});
@@ -58,7 +58,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text(isEdit ? 'Edit Service' : 'Add Service'),
+          title: Text(isEdit ? 'Edit Service' : 'Add Service', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
           content: StatefulBuilder(
             builder: (context, setDialogState) {
               return SingleChildScrollView(
@@ -71,6 +71,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
                         labelText: 'Name',
                         border: OutlineInputBorder(),
                       ),
+                      style: GoogleFonts.poppins(),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -80,6 +81,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
                         border: OutlineInputBorder(),
                       ),
                       maxLines: 3,
+                      style: GoogleFonts.poppins(),
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton(
@@ -112,7 +114,11 @@ class _ServiceScreenState extends State<ServiceScreen> {
                           );
                         }
                       },
-                      child: Text(selectedImage == null ? 'Pick Image' : 'Image Selected'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF800080),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(selectedImage == null ? 'Pick Image' : 'Image Selected', style: GoogleFonts.poppins(color: Colors.white)),
                     ),
                   ],
                 ),
@@ -122,7 +128,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey)),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -163,15 +169,19 @@ class _ServiceScreenState extends State<ServiceScreen> {
                 if (result['success']) {
                   _refreshServices();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(isEdit ? 'Service updated' : 'Service created')),
+                    SnackBar(content: Text(isEdit ? 'Service updated' : 'Service created'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(result['message'] ?? 'Operation failed')),
+                    SnackBar(content: Text(result['message'] ?? 'Operation failed'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                   );
                 }
               },
-              child: Text(isEdit ? 'Update' : 'Create'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF800080),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(isEdit ? 'Update' : 'Create', style: GoogleFonts.poppins(color: Colors.white)),
             ),
           ],
         );
@@ -184,11 +194,11 @@ class _ServiceScreenState extends State<ServiceScreen> {
     if (result['success']) {
       _refreshServices();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Service deleted')),
+        SnackBar(content: const Text('Service deleted'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'] ?? 'Failed to delete service')),
+        SnackBar(content: Text(result['message'] ?? 'Failed to delete service'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
       );
     }
   }
@@ -196,72 +206,164 @@ class _ServiceScreenState extends State<ServiceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Manage Services'),
-      ),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _servicesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || !snapshot.data!['success']) {
-            return Center(child: Text(snapshot.data?['message'] ?? 'Failed to load services'));
-          }
-
-          final services = snapshot.data!['services'] as List<Service>;
-          if (services.isEmpty) {
-            return const Center(child: Text('No services available'));
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: services.length,
-            itemBuilder: (context, index) {
-              final service = services[index];
-              final imageUrl = service.image != null && service.image!.isNotEmpty
-                  ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.1.18:3000')
-                  : null;
-
-              return Card(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                child: ListTile(
-                  leading: imageUrl != null
-                      ? Image.network(
-                    imageUrl,
-                    width: 50,
-                    height: 50,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.image_not_supported),
-                  )
-                      : const Icon(Icons.image_not_supported),
-                  title: Text(service.name),
-                  subtitle: Text(service.description ?? ''),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => _showServiceDialog(service: service),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF800080),
+              Color(0xFF4B0082),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Custom Header with Back Arrow
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                    ),
+                    Expanded(
+                      child: Text(
+                        'Manage Services',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => _deleteService(service.id),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+              // Content Section
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: Offset(0, -5),
                       ),
                     ],
                   ),
+                  padding: const EdgeInsets.all(16),
+                  child: _servicesFuture == null
+                      ? const Center(child: CircularProgressIndicator(color: Color(0xFF800080)))
+                      : FutureBuilder<Map<String, dynamic>>(
+                    future: _servicesFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator(color: Color(0xFF800080)));
+                      }
+                      if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}', style: GoogleFonts.poppins(color: Colors.red)));
+                      }
+                      if (!snapshot.hasData || !snapshot.data!['success']) {
+                        return Center(child: Text(snapshot.data?['message'] ?? 'Failed to load services', style: GoogleFonts.poppins()));
+                      }
+
+                      final services = snapshot.data!['services'] as List<Service>;
+                      if (services.isEmpty) {
+                        return const Center(child: Text('No services available', style: TextStyle(fontSize: 16)));
+                      }
+
+                      return RefreshIndicator(
+                        color: const Color(0xFF800080),
+                        onRefresh: () async {
+                          _refreshServices();
+                        },
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(0),
+                          itemCount: services.length,
+                          itemBuilder: (context, index) {
+                            final service = services[index];
+                            final imageUrl = service.image != null && service.image!.isNotEmpty
+                                ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.100.7:3000')
+                                : null;
+
+                            return Card(
+                              elevation: 4,
+                              margin: const EdgeInsets.only(bottom: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(16),
+                                leading: imageUrl != null
+                                    ? Image.network(
+                                  imageUrl,
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.image_not_supported, color: Color(0xFF800080)),
+                                )
+                                    : const Icon(Icons.image_not_supported, color: Color(0xFF800080)),
+                                title: Text(service.name, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF800080))),
+                                subtitle: Text(service.description ?? '', style: GoogleFonts.poppins()),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, color: Color(0xFF800080)),
+                                      onPressed: () => _showServiceDialog(service: service),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Color(0xFF800080)),
+                                      onPressed: () => _deleteService(service.id),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              );
-            },
-          );
-        },
+              ),
+            ],
+          ),
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showServiceDialog(),
-        child: const Icon(Icons.add),
+      floatingActionButton: InkWell(
+        onTap: () => _showServiceDialog(),
+        borderRadius: BorderRadius.circular(28),
+        splashColor: const Color(0xFF800080).withOpacity(0.2),
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF800080), Color(0xFF4B0082)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.add, color: Colors.white, size: 28),
+        ),
       ),
     );
   }
