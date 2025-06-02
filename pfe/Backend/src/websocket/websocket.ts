@@ -243,46 +243,72 @@ case 'GET_MESSAGES': {
 
   break;
 }
-
 case 'SEND_MESSAGE': {
-  const { senderId, veterinaireId, content, contentType } = data;
+  const { senderId, veterinaireId, content, contentType, clientId } = data;
 
-  // Vérifications de base
   if (!senderId || !veterinaireId || !content) {
     throw new Error('senderId, veterinaireId et content sont requis');
   }
 
-  // Vérifier que le sender est bien un client
   const sender = await User.findById(senderId);
-  if (!sender || sender.role !== UserRole.CLIENT) {
-    throw new Error('Seuls les clients peuvent initier une conversation');
+  if (!sender) {
+    throw new Error('Utilisateur expéditeur introuvable');
   }
 
-  // Créer ou récupérer le chat (incluant automatiquement les secrétaires)
-  const chatId = await getOrCreateChat(senderId, veterinaireId);
+  // Autoriser clients, secrétaires ET vétérinaires
+  if (![UserRole.CLIENT, UserRole.SECRETAIRE, UserRole.VETERINAIRE].includes(sender.role)) {
+    throw new Error('Seuls les clients, secrétaires et vétérinaires peuvent initier une conversation');
+  }
 
-  // Créer le message
+  // Si secrétaire, vérifier association et clientId
+  if (sender.role === UserRole.SECRETAIRE) {
+    if (!sender.veterinaireId || sender.veterinaireId.toString() !== veterinaireId) {
+      throw new Error('Secrétaire non autorisé pour ce vétérinaire');
+    }
+    if (!clientId) {
+      throw new Error('clientId est requis pour un secrétaire');
+    }
+  }
+
+  // Si vétérinaire, s'assurer qu'il correspond bien au veterinaireId ciblé
+  if (sender.role === UserRole.VETERINAIRE) {
+    if (sender._id.toString() !== veterinaireId) {
+      throw new Error('Vétérinaire non autorisé pour ce chat');
+    }
+    if (!clientId) {
+      throw new Error('clientId est requis pour un vétérinaire');
+    }
+  }
+
+  // Déterminer chatId selon le rôle
+  let chatId;
+  if (sender.role === UserRole.CLIENT) {
+    chatId = await getOrCreateChat(senderId, veterinaireId);
+  } else if (sender.role === UserRole.SECRETAIRE) {
+    chatId = await getOrCreateChat(clientId, veterinaireId);
+  } else if (sender.role === UserRole.VETERINAIRE) {
+    chatId = await getOrCreateChat(clientId, veterinaireId);
+  }
+
   const newMessage = await Message.create({
     chatId,
     sender: new Types.ObjectId(senderId),
     type: contentType || MessageType.TEXT,
     content,
-    readBy: [new Types.ObjectId(senderId)], // Marquer comme lu par l'expéditeur
+    readBy: [new Types.ObjectId(senderId)],
   });
 
-  // Mettre à jour le chat avec le dernier message
   await Chat.findByIdAndUpdate(chatId, {
     lastMessage: newMessage._id,
     updatedAt: new Date(),
   });
 
-  // Notifier tous les participants
   const chat = await Chat.findById(chatId).populate('participants');
   if (!chat) throw new Error('Chat introuvable');
 
   for (const participant of chat.participants) {
     const participantId = participant._id.toString();
-    if (participantId === senderId) continue; // Ne pas notifier l'expéditeur
+    if (participantId === senderId) continue;
 
     const recipientSocket = clients.get(participantId);
     if (recipientSocket?.readyState === WebSocket.OPEN) {
@@ -301,7 +327,7 @@ case 'SEND_MESSAGE': {
           },
           createdAt: newMessage.createdAt,
         },
-        notification: `Nouveau message de ${sender.firstName} ${sender.lastName}`
+        notification: `Nouveau message de ${sender.firstName} ${sender.lastName}`,
       }));
     }
   }
@@ -315,6 +341,8 @@ case 'SEND_MESSAGE': {
 
   break;
 }
+
+
       default:
         throw new Error(`Type de message inconnu : ${data.type}`);
     }
