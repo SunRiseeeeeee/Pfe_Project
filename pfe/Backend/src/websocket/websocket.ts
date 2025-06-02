@@ -179,25 +179,50 @@ case 'GET_CONVERSATIONS': {
 }
 
 
+case 'GET_MESSAGES': {
+  const { chatId } = data;
 
-      case 'GET_MESSAGES': {
-        const { chatId } = data;
-        if (!chatId) throw new Error('chatId est requis pour GET_MESSAGES');
-        if (!isValidObjectId(chatId)) throw new Error('chatId invalide');
+  if (!chatId) {
+    throw new Error('chatId est requis pour GET_MESSAGES');
+  }
 
-        const messages = await Message.find({ chatId: new Types.ObjectId(chatId) })
-          .sort({ createdAt: 1 })
-          .populate('sender', 'firstName lastName')
-          .lean();
+  if (!isValidObjectId(chatId)) {
+    throw new Error('chatId invalide');
+  }
 
-        ws.send(JSON.stringify({
-          status: 'success',
-          type: 'MESSAGES_LIST',
-          chatId,
-          messages,
-        }));
-        break;
-      }
+  // Interface pour typage des messages peuplés
+  interface PopulatedMessage {
+    _id: string;
+    chatId: string;
+    sender: {
+      _id: string;
+      firstName: string;
+      lastName: string;
+      profilePicture?: string;
+    };
+    content: string;
+    type: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }
+
+  const messages = await Message.find({ chatId: new Types.ObjectId(chatId) })
+    .sort({ createdAt: 1 })
+    .populate({
+      path: 'sender',
+      select: 'firstName lastName profilePicture',
+    })
+    .lean<PopulatedMessage[]>(); // Typage explicite pour éviter les erreurs TS
+
+  ws.send(JSON.stringify({
+    status: 'success',
+    type: 'MESSAGES_LIST',
+    chatId,
+    messages,
+  }));
+
+  break;
+}
 
 case 'SEND_MESSAGE': {
   const { senderId, veterinaireId, content, contentType } = data;
