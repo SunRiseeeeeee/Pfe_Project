@@ -18,19 +18,39 @@ const getOrCreateChat = async (
     throw new Error('IDs utilisateurs invalides');
   }
 
-  const veterinaire = await User.findById(veterinaireId).exec();
-  if (!veterinaire) throw new Error('Vétérinaire introuvable');
+  // Vérifier que l'expéditeur est un client
+  const sender = await User.findById(senderId);
+  if (!sender) throw new Error('Expéditeur introuvable');
+  if (sender.role !== UserRole.CLIENT) {
+    throw new Error('Seuls les clients peuvent initier une conversation');
+  }
 
-  const secretaires = await User.find({ role: 'SECRETAIRE', veterinaireId }).select('_id').lean();
+  // Vérifier que le destinataire est bien un vétérinaire
+  const veterinaire = await User.findById(veterinaireId);
+  if (!veterinaire) throw new Error('Vétérinaire introuvable');
+  if (veterinaire.role !== UserRole.VETERINAIRE) {
+    throw new Error('Le destinataire doit être un vétérinaire');
+  }
+
+  // Récupérer tous les secrétaires associés à ce vétérinaire
+  const secretaires = await User.find({ 
+    role: UserRole.SECRETAIRE, 
+    veterinaireId: veterinaireId 
+  }).select('_id').lean();
+
+  // Créer le tableau des participants (client + vétérinaire + secrétaires)
   const participants = [
     new Types.ObjectId(senderId),
     new Types.ObjectId(veterinaireId),
-    ...secretaires.map((s) => s._id),
+    ...secretaires.map(s => s._id)
   ].sort();
 
-  // Recherche d'un chat avec exactement les mêmes participants
+  // Rechercher un chat existant avec exactement ces participants
   const existingChat = await Chat.findOne({
-    participants: { $all: participants, $size: participants.length },
+    participants: { 
+      $all: participants,
+      $size: participants.length 
+    }
   }).exec();
 
   if (existingChat) {
@@ -38,15 +58,15 @@ const getOrCreateChat = async (
     return existingChat.id;
   }
 
-  const now = new Date();
+  // Créer un nouveau chat si aucun existant
   const newChat = await Chat.create({
     participants,
     unreadCount: 0,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
-  console.log(`🆕 Nouveau chat créé : ${newChat._id}`);
+  console.log(`🆕 Nouveau chat créé avec ${participants.length} participants: ${newChat._id}`);
   return newChat.id;
 };
 
@@ -227,67 +247,70 @@ case 'GET_MESSAGES': {
 case 'SEND_MESSAGE': {
   const { senderId, veterinaireId, content, contentType } = data;
 
-  // Vérification des paramètres obligatoires
+  // Vérifications de base
   if (!senderId || !veterinaireId || !content) {
-    throw new Error('senderId, veterinaireId et content sont requis pour envoyer un message');
+    throw new Error('senderId, veterinaireId et content sont requis');
   }
 
-  // Liste des types de messages valides
-  const validTypes = [MessageType.TEXT, MessageType.IMAGE, MessageType.VIDEO, MessageType.AUDIO];
+  // Vérifier que le sender est bien un client
+  const sender = await User.findById(senderId);
+  if (!sender || sender.role !== UserRole.CLIENT) {
+    throw new Error('Seuls les clients peuvent initier une conversation');
+  }
 
-  // Valider le contentType ou mettre TEXT par défaut
-  const messageType = validTypes.includes(contentType) ? contentType : MessageType.TEXT;
-
-  // Récupérer ou créer le chat
+  // Créer ou récupérer le chat (incluant automatiquement les secrétaires)
   const chatId = await getOrCreateChat(senderId, veterinaireId);
 
   // Créer le message
   const newMessage = await Message.create({
     chatId,
     sender: new Types.ObjectId(senderId),
-    type: messageType,
-    content, // texte ou chemin/URL fichier
-    readBy: [new Types.ObjectId(senderId)],
-    createdAt: new Date(),
+    type: contentType || MessageType.TEXT,
+    content,
+    readBy: [new Types.ObjectId(senderId)], // Marquer comme lu par l'expéditeur
+  });
+
+  // Mettre à jour le chat avec le dernier message
+  await Chat.findByIdAndUpdate(chatId, {
+    lastMessage: newMessage._id,
     updatedAt: new Date(),
   });
 
-  console.log(`💾 Message sauvegardé : ${newMessage._id}`);
-
-  // Récupérer infos expéditeur pour notifications
-  const sender = await User.findById(senderId).select('firstName lastName');
-  if (!sender) throw new Error('Expéditeur introuvable');
-  const senderName = `${sender.firstName} ${sender.lastName}`;
-
-  // Récupérer le chat avec participants
-  const chat = await Chat.findById(chatId).select('participants');
+  // Notifier tous les participants
+  const chat = await Chat.findById(chatId).populate('participants');
   if (!chat) throw new Error('Chat introuvable');
 
-  // Envoyer le message à tous les participants sauf l'expéditeur
-  for (const participantId of chat.participants) {
-    const participantIdStr = participantId.toString();
-    if (participantIdStr === senderId) continue;
+  for (const participant of chat.participants) {
+    const participantId = participant._id.toString();
+    if (participantId === senderId) continue; // Ne pas notifier l'expéditeur
 
-    const recipientSocket = clients.get(participantIdStr);
-    if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
+    const recipientSocket = clients.get(participantId);
+    if (recipientSocket?.readyState === WebSocket.OPEN) {
       recipientSocket.send(JSON.stringify({
         type: 'NEW_MESSAGE',
         chatId,
-        senderId,
-        senderName,
-        content,
-        contentType: messageType,
-        timestamp: Date.now(),
-        notification: `${senderName} vous a envoyé un message`,
+        message: {
+          _id: newMessage._id,
+          content,
+          type: contentType || MessageType.TEXT,
+          sender: {
+            _id: senderId,
+            firstName: sender.firstName,
+            lastName: sender.lastName,
+            profilePicture: sender.profilePicture,
+          },
+          createdAt: newMessage.createdAt,
+        },
+        notification: `Nouveau message de ${sender.firstName} ${sender.lastName}`
       }));
     }
   }
 
-  // Confirmer l’envoi au client émetteur
   ws.send(JSON.stringify({
     status: 'success',
-    message: `Message envoyé au chat ${chatId}`,
+    message: 'Message envoyé avec succès',
     chatId,
+    messageId: newMessage._id,
   }));
 
   break;
