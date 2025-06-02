@@ -65,7 +65,7 @@ class _SecretaryDetailsScreenState extends State<SecretaryDetailsScreen> {
               child: secretary!.profilePicture != null && secretary!.profilePicture!.isNotEmpty
                   ? secretary!.profilePicture!.startsWith('http')
                   ? Image.network(
-                secretary!.profilePicture!.replaceFirst('localhost', '192.168.100.7'),
+                secretary!.profilePicture!.replaceFirst('localhost', '192.168.1.16'),
                 width: 100,
                 height: 100,
                 fit: BoxFit.cover,

@@ -6,12 +6,14 @@ import 'PetFormScreen.dart';
 
 class PetDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> pet;
-  final PetService _petService = PetService(dio: Dio());
+  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.16:3000/api')));
 
   PetDetailsScreen({Key? key, required this.pet}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    print('PetDetailsScreen pet data: $pet'); // Debug log
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -27,7 +29,6 @@ class PetDetailsScreen extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
-              // Custom Header with Back Arrow
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                 child: Row(
@@ -53,7 +54,6 @@ class PetDetailsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              // Content Section (Extended to bottom)
               Expanded(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -75,19 +75,19 @@ class PetDetailsScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Pet Image
                               Container(
                                 margin: const EdgeInsets.only(bottom: 16),
                                 child: Hero(
-                                  tag: pet['id'] ?? UniqueKey(),
+                                  tag: pet['_id'] ?? UniqueKey(),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(16),
                                     child: Image.network(
-                                      pet['picture'] ?? 'https://via.placeholder.com/300x200',
+                                      pet['imageUrl'] ?? pet['image'] ?? 'https://via.placeholder.com/300x200',
                                       height: 200,
                                       width: double.infinity,
                                       fit: BoxFit.cover,
                                       errorBuilder: (context, error, stackTrace) {
+                                        print('Image error for ${pet['imageUrl'] ?? pet['image']}: $error'); // Debug log
                                         return Container(
                                           height: 200,
                                           width: double.infinity,
@@ -157,7 +157,6 @@ class PetDetailsScreen extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Buttons at the Bottom
                       Padding(
                         padding: const EdgeInsets.all(20),
                         child: Row(
@@ -229,7 +228,7 @@ class PetDetailsScreen extends StatelessWidget {
                                     );
 
                                     if (confirm == true) {
-                                      await _petService.deletePet(pet['id'].toString());
+                                      await _petService.deletePet(pet['_id'].toString());
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(content: Text('Pet deleted successfully')),
                                       );
