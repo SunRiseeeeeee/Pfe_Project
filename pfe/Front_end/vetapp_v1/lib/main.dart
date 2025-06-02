@@ -15,7 +15,7 @@ void main() async {
     MultiProvider(
       providers: [
         Provider<Dio>(
-          create: (_) => Dio(BaseOptions(baseUrl: 'http://192.168.100.7:3000/api')),
+          create: (_) => Dio(BaseOptions(baseUrl: 'http://192.168.1.16:3000/api')),
         ),
         ChangeNotifierProvider(
           create: (_) => ThemeProvider(prefs: prefs, isDarkMode: isDarkMode),

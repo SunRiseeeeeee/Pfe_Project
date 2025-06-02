@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
 import '../main.dart';
@@ -11,6 +12,7 @@ import 'secretary_screen.dart';
 import 'add_admin_screen.dart';
 import 'add_veterinary_screen.dart';
 import '../models/token_storage.dart';
+import 'change_password_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -88,7 +90,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final userId = await _getUserIdFromPrefs();
       if (userId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("User ID not found")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("User not found")));
         return;
       }
 
@@ -102,6 +104,166 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Account deleted successfully")));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Delete failed: $e")));
+    }
+  }
+
+  Future<void> _changePassword() async {
+    String? email = await TokenStorage.getEmailFromToken();
+    if (email == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Unable to retrieve email. Please log in again.")));
+      return;
+    }
+
+    bool isCodeInput = false;
+    String dialogErrorMessage = '';
+    final TextEditingController codeController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Text(isCodeInput ? 'Enter Verification Code' : 'Change Password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(isCodeInput
+                      ? 'Enter the verification code sent to $email.'
+                      : 'A verification code will be sent to $email.'),
+                  const SizedBox(height: 16),
+                  if (isCodeInput)
+                    TextField(
+                      controller: codeController,
+                      decoration: InputDecoration(
+                        hintText: 'Verification Code',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.purple, width: 2),
+                        ),
+                        errorText: dialogErrorMessage.isNotEmpty ? dialogErrorMessage : null,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    setDialogState(() {
+                      dialogErrorMessage = '';
+                    });
+
+                    if (!isCodeInput) {
+                      try {
+                        final response = await _authService.forgetPassword(email);
+                        if (response['success']) {
+                          setDialogState(() {
+                            isCodeInput = true;
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(response['message'])),
+                          );
+                        } else {
+                          setDialogState(() {
+                            dialogErrorMessage = response['message'];
+                          });
+                        }
+                      } catch (error) {
+                        setDialogState(() {
+                          dialogErrorMessage = 'An error occurred. Please try again.';
+                        });
+                      }
+                    } else {
+                      String code = codeController.text.trim();
+                      if (code.isEmpty) {
+                        setDialogState(() {
+                          dialogErrorMessage = 'Code is required';
+                        });
+                        return;
+                      }
+
+                      Navigator.of(context).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ChangePasswordPage(email: email, code: code),
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(isCodeInput ? 'Verify Code' : 'Send Code', style: const TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Function to launch Google Maps with the mapsLocation
+  Future<void> _launchMaps(String? mapsLocation) async {
+    if (mapsLocation == null || mapsLocation.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No location data available")),
+      );
+      return;
+    }
+
+    String mapsUrl;
+    // Check if mapsLocation is a Google Maps URL
+    if (mapsLocation.startsWith('http')) {
+      mapsUrl = mapsLocation;
+    } else {
+      // Assume it's coordinates (e.g., "40.7128,-74.0060")
+      final coords = mapsLocation.split(',');
+      if (coords.length == 2) {
+        final lat = coords[0].trim();
+        final lng = coords[1].trim();
+        mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Invalid location format")),
+        );
+        return;
+      }
+    }
+
+    final uri = Uri.parse(mapsUrl);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not open Google Maps")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error opening Google Maps: $e")),
+      );
     }
   }
 
@@ -134,7 +296,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: SingleChildScrollView(
             child: Column(
               children: [
-                // Custom Header
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                   child: Column(
@@ -152,7 +313,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 ),
-                // Content Section
                 Container(
                   decoration: const BoxDecoration(
                     color: Colors.white,
@@ -181,8 +341,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _buildInfoRow(
                             Icons.location_on,
                             'Location',
-                            '${userData?['address']?['street'] ?? ''}, ${userData?['address']?['city'] ?? ''}, ${userData?['address']?['state'] ?? ''}, ${userData?['address']?['country'] ?? ''}, ${userData?['address']?['postalCode'] ?? ''}',
+                            _formatAddress(userData?['address']), // Display formatted address
                             context,
+                            onTap: () => _launchMaps(userData?['mapsLocation']), // Launch mapsLocation on tap
                           ),
                           if (isVeterinarian) ...[
                             const SizedBox(height: 24),
@@ -235,12 +396,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     (route) => false,
                               );
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("Logged out successfully")));
+                                const SnackBar(content: Text("Logged out successfully")),
+                              );
                             } catch (e) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Logout failed: $e')));
+                                SnackBar(content: Text('Logout failed: $e')),
+                              );
                             }
                           }, context),
+                          _buildActionButton(Icons.lock, 'Change Password', _changePassword, context),
                           _buildActionButton(Icons.delete, 'Delete Your Account', deleteAccount, context),
                         ],
                     ],
@@ -254,10 +418,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // Format address for display
+  String _formatAddress(Map<String, dynamic>? address) {
+    if (address == null) return 'Not specified';
+    final parts = [
+      address['street'] ?? '',
+      address['city'] ?? '',
+      address['state'] ?? '',
+      address['country'] ?? '',
+      address['postalCode'] ?? '',
+    ].where((part) => part.isNotEmpty).toList();
+    return parts.isNotEmpty ? parts.join(', ') : 'Not specified';
+  }
+
   Widget _buildProfileHeader(BuildContext context) {
     String? profileUrl = userData?['profilePicture'];
     if (profileUrl != null && profileUrl.contains('localhost')) {
-      profileUrl = profileUrl.replaceFirst('localhost', '192.168.100.7');
+      profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.16');
     }
 
     return Stack(
@@ -355,42 +532,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value, BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 5,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: const Color(0xFF800080), size: 24),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black87),
-                ),
-              ],
+  Widget _buildInfoRow(IconData icon, String label, String value, BuildContext context, {VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      splashColor: const Color(0xFF800080).withOpacity(0.2),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              blurRadius: 5,
+              offset: const Offset(0, 3),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF800080), size: 24),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value.isNotEmpty ? value : 'Not specified',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black87),
+                  ),
+                ],
+              ),
+            ),
+            if (onTap != null)
+              const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
+          ],
+        ),
       ),
     );
   }

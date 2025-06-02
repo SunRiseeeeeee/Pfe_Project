@@ -20,6 +20,7 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
   final _specializationController = TextEditingController();
   final _servicesController = TextEditingController();
   final _experienceYearsController = TextEditingController();
+  final _mapsLocationController = TextEditingController(); // New controller for mapsLocation
   bool _isLoading = false;
   final UserService _userService = UserService();
 
@@ -51,6 +52,9 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
         workingHours: _workingHours,
         specialization: _specializationController.text.trim(),
         experienceYears: int.tryParse(_experienceYearsController.text.trim()),
+        mapsLocation: _mapsLocationController.text.trim().isNotEmpty
+            ? _mapsLocationController.text.trim()
+            : null, // Pass mapsLocation if not empty
       );
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,6 +90,7 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
     _specializationController.dispose();
     _servicesController.dispose();
     _experienceYearsController.dispose();
+    _mapsLocationController.dispose(); // Dispose new controller
     super.dispose();
   }
 
@@ -312,6 +317,22 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
                                   return 'Please enter a valid number of years (0-100)';
                                 }
                               }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _mapsLocationController,
+                            decoration: InputDecoration(
+                              labelText: 'Maps Location (optional)',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                              labelStyle: GoogleFonts.poppins(),
+                              hintText: 'e.g., 40.7128,-74.0060 or Google Maps URL',
+                              hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                            ),
+                            style: GoogleFonts.poppins(),
+                            validator: (value) {
+                              // Optional field, so no validation required
                               return null;
                             },
                           ),

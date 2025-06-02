@@ -2,9 +2,29 @@ import 'package:dio/dio.dart';
 import '../models/token_storage.dart';
 
 class UserService {
-  final Dio _dio = Dio();
-  final String _baseUrl = 'http://192.168.100.7:3000/api/users';
-  final String _authBaseUrl = 'http://192.168.100.7:3000/api/auth';
+  final Dio _dio = Dio(BaseOptions(
+    baseUrl: 'http://192.168.1.16:3000/api/users',
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 30), // Match AuthService
+  ));
+  final String _authBaseUrl = 'http://192.168.1.16:3000/api/auth';
+
+  UserService() {
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        print("REQUEST[${options.method}] => PATH: ${options.path}, DATA: ${options.data}");
+        return handler.next(options);
+      },
+      onResponse: (response, handler) {
+        print("RESPONSE[${response.statusCode}] => PATH: ${response.requestOptions.path}, DATA: ${response.data}");
+        return handler.next(response);
+      },
+      onError: (DioException e, handler) {
+        print("ERROR[${e.response?.statusCode}] => PATH: ${e.requestOptions.path}, MESSAGE: ${e.response?.data['message'] ?? e.message}");
+        return handler.next(e);
+      },
+    ));
+  }
 
   // Retrieve the user ID using the TokenStorage class
   Future<String?> _getUserId() async {
@@ -19,17 +39,21 @@ class UserService {
       throw Exception('Token not found');
     }
 
-    final response = await _dio.get(
-      '$_baseUrl/$userId',
-      options: Options(headers: {
-        'Authorization': 'Bearer $token',
-      }),
-    );
+    try {
+      final response = await _dio.get(
+        '/$userId',
+        options: Options(headers: {
+          'Authorization': 'Bearer $token',
+        }),
+      );
 
-    if (response.statusCode == 200) {
-      return response.data;
-    } else {
-      throw Exception('Failed to fetch user: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        return response.data;
+      } else {
+        throw Exception('Failed to fetch user: ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      throw Exception('Failed to fetch user: ${e.response?.data['message'] ?? e.message}');
     }
   }
 
@@ -45,7 +69,7 @@ class UserService {
     try {
       print('Sending update for user $userId with data: $updatedData');
       final response = await _dio.put(
-        '$_baseUrl/$userId',
+        '/$userId',
         data: updatedData,
         options: Options(headers: {
           'Authorization': 'Bearer $token',
@@ -56,7 +80,7 @@ class UserService {
       print('Update successful: ${response.data}');
     } on DioException catch (e) {
       print('Update failed: ${e.response?.data}');
-      throw Exception('Failed to update user: ${e.response?.data}');
+      throw Exception('Failed to update user: ${e.response?.data['message'] ?? e.message}');
     }
   }
 
@@ -71,7 +95,7 @@ class UserService {
 
     try {
       final response = await _dio.delete(
-        '$_baseUrl/$userId',
+        '/$userId',
         options: Options(headers: {
           'Authorization': 'Bearer $token',
         }),
@@ -80,7 +104,7 @@ class UserService {
       print('User deleted: ${response.data}');
     } on DioException catch (e) {
       print('Delete failed: ${e.response?.data}');
-      throw Exception('Failed to delete user: ${e.response?.data}');
+      throw Exception('Failed to delete user: ${e.response?.data['message'] ?? e.message}');
     }
   }
 
@@ -177,9 +201,8 @@ class UserService {
 
       if (response.statusCode == 201) {
         return response.data['user'];
-      } else {
-        throw Exception('Failed to create veterinarian: ${response.statusCode}');
       }
+      throw Exception('Failed to create veterinarian: ${response.statusCode}');
     } on DioException catch (e) {
       print('Create veterinarian failed: ${e.response?.data}');
       throw Exception('Failed to create veterinarian: ${e.response?.data['message'] ?? e.message}');

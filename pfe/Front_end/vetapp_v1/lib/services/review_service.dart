@@ -4,7 +4,7 @@ import '../models/review.dart';
 import '../models/token_storage.dart';
 
 class ReviewService {
-  static const String baseUrl = 'http://192.168.100.7:3000/api';
+  static const String baseUrl = 'http://192.168.1.16:3000/api';
   static final Dio dio = Dio();
 
   // Fetch the stored token from TokenStorage

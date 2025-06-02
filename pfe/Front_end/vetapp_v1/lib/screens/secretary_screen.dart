@@ -409,7 +409,7 @@ class _SecretaryScreenState extends State<SecretaryScreen> {
                       final secretary = secretaries[index];
                       String? profileUrl = secretary.profilePicture;
                       if (profileUrl != null && profileUrl.contains('localhost')) {
-                        profileUrl = profileUrl.replaceFirst('localhost', '192.168.100.7');
+                        profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.16');
                       }
                       return Card(
                         elevation: 4,

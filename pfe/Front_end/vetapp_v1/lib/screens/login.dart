@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vetapp_v1/screens/signup.dart';
 import 'package:vetapp_v1/services/auth_service.dart';
 import 'home_screen.dart';
+import 'change_password_screen.dart'; // Import the new page
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -15,6 +16,8 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _codeController = TextEditingController();
   final AuthService _authService = AuthService();
   String _errorMessage = '';
   late AnimationController _animationController;
@@ -57,6 +60,8 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     _animationController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _emailController.dispose();
+    _codeController.dispose();
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       systemNavigationBarColor: Colors.transparent,
       systemNavigationBarIconBrightness: Brightness.dark,
@@ -118,7 +123,143 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   }
 
   void _forgotPassword() {
-    print('Forgot Password tapped');
+    bool isCodeInput = false;
+    String dialogErrorMessage = '';
+    String email = '';
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Text(isCodeInput ? 'Enter Verification Code' : 'Reset Password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(isCodeInput
+                      ? 'Enter the verification code sent to $email.'
+                      : 'Enter your email to receive a verification code.'),
+                  const SizedBox(height: 16),
+                  if (!isCodeInput)
+                    TextField(
+                      controller: _emailController,
+                      decoration: InputDecoration(
+                        hintText: 'Email',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.purple, width: 2),
+                        ),
+                        errorText: dialogErrorMessage.isNotEmpty ? dialogErrorMessage : null,
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    )
+                  else
+                    TextField(
+                      controller: _codeController,
+                      decoration: InputDecoration(
+                        hintText: 'Verification Code',
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Colors.purple, width: 2),
+                        ),
+                        errorText: dialogErrorMessage.isNotEmpty ? dialogErrorMessage : null,
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    setDialogState(() {
+                      dialogErrorMessage = '';
+                    });
+
+                    if (!isCodeInput) {
+                      email = _emailController.text.trim();
+                      if (email.isEmpty) {
+                        setDialogState(() {
+                          dialogErrorMessage = 'Email is required';
+                        });
+                        return;
+                      }
+
+                      try {
+                        final response = await _authService.forgetPassword(email);
+                        if (response['success']) {
+                          setDialogState(() {
+                            isCodeInput = true;
+                            dialogErrorMessage = '';
+                            _emailController.clear();
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(response['message'])),
+                          );
+                        } else {
+                          setDialogState(() {
+                            dialogErrorMessage = response['message'];
+                          });
+                        }
+                      } catch (error) {
+                        setDialogState(() {
+                          dialogErrorMessage = 'An error occurred. Please try again.';
+                        });
+                      }
+                    } else {
+                      String code = _codeController.text.trim();
+                      if (code.isEmpty) {
+                        setDialogState(() {
+                          dialogErrorMessage = 'Code is required';
+                        });
+                        return;
+                      }
+
+                      // Navigate to ChangePasswordPage with email and code
+                      Navigator.of(context).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ChangePasswordPage(email: email, code: code),
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(isCodeInput ? 'Verify Code' : 'Send Code', style: const TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -127,7 +268,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       extendBody: true,
       body: Stack(
         children: [
-          // Gradient Background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -141,7 +281,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
               ),
             ),
           ),
-          // Main Content
           SafeArea(
             bottom: false,
             child: Center(
@@ -154,14 +293,12 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Logo or App Icon
                         const Icon(
                           Icons.pets,
                           size: 80,
                           color: Colors.white,
                         ),
                         const SizedBox(height: 16),
-                        // App Title
                         const Text(
                           'VetApp',
                           style: TextStyle(
@@ -181,7 +318,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                           ),
                         ),
                         const SizedBox(height: 32),
-                        // Login Card
                         Card(
                           elevation: 8,
                           shape: RoundedRectangleBorder(
@@ -191,7 +327,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                             padding: const EdgeInsets.all(24.0),
                             child: Column(
                               children: [
-                                // Username Field
                                 TextField(
                                   controller: _usernameController,
                                   decoration: InputDecoration(
@@ -210,7 +345,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                   ),
                                 ),
                                 const SizedBox(height: 16),
-                                // Password Field
                                 TextField(
                                   controller: _passwordController,
                                   obscureText: true,
@@ -230,7 +364,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                // Forgot Password Link
                                 Align(
                                   alignment: Alignment.centerRight,
                                   child: TextButton(
@@ -247,7 +380,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                   ),
                                 ),
                                 const SizedBox(height: 16),
-                                // Login Button
                                 SizedBox(
                                   width: double.infinity,
                                   height: 50,
@@ -272,7 +404,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                                     ),
                                   ),
                                 ),
-                                // Error Message
                                 if (_errorMessage.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 16),
@@ -289,7 +420,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                           ),
                         ),
                         const SizedBox(height: 24),
-                        // Sign Up Link
                         TextButton(
                           onPressed: () {
                             Navigator.push(
@@ -307,7 +437,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                             ),
                           ),
                         ),
-                        const SizedBox(height: 80), // Extra space for the guest button
+                        const SizedBox(height: 80),
                       ],
                     ),
                   ),
@@ -315,8 +445,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
               ),
             ),
           ),
-          // Continue as Guest Button at Bottom
-
         ],
       ),
     );

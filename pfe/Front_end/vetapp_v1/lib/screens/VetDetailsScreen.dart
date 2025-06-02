@@ -9,6 +9,8 @@ import 'dart:convert';
 import 'dart:io';
 import '../models/token_storage.dart';
 import '../services/vet_service.dart';
+import '../services/chat_service.dart';
+import './chat_screen.dart';
 
 class VetDetailsScreen extends StatefulWidget {
   final Veterinarian vet;
@@ -20,53 +22,87 @@ class VetDetailsScreen extends StatefulWidget {
 }
 
 class _VetDetailsScreenState extends State<VetDetailsScreen> {
+  final ChatService _chatService = ChatService();
   bool isFavorite = false;
   int reviewCount = 0;
   double averageRating = 0.0;
   String? _userRole;
+  String? _userId;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    fetchReviewData();
-    _loadUserRole();
+    _initialize();
   }
 
-  void fetchReviewData() async {
-    final response = await ReviewService.getReviews(widget.vet.id);
-    if (response['success']) {
-      setState(() {
-        reviewCount = response['ratingCount'];
-        averageRating = response['averageRating'];
-      });
-    } else {
-      debugPrint('Failed to load reviews: ${response['message']}');
+  Future<void> _initialize() async {
+    setState(() => _isLoading = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId');
+      final role = await TokenStorage.getUserRoleFromToken();
+
+      if (userId != null && role != null) {
+        setState(() {
+          _userId = userId;
+          _userRole = role;
+        });
+        await _chatService.connect(userId, role.toUpperCase());
+        debugPrint('WebSocket connected for user $userId with role $role');
+      } else {
+        debugPrint('User ID or role not found');
+      }
+
+      await fetchReviewData();
+    } catch (e) {
+      debugPrint('Initialization error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to initialize: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  void _loadUserRole() async {
-    final role = await TokenStorage.getUserRoleFromToken();
-    setState(() {
-      _userRole = role;
-    });
+  Future<void> fetchReviewData() async {
+    try {
+      final response = await ReviewService.getReviews(widget.vet.id);
+      if (response['success']) {
+        setState(() {
+          reviewCount = response['ratingCount'] ?? 0;
+          averageRating = response['averageRating']?.toDouble() ?? 0.0;
+        });
+      } else {
+        debugPrint('Failed to load reviews: ${response['message']}');
+      }
+    } catch (e) {
+      debugPrint('Error fetching reviews: $e');
+    }
   }
 
   void navigateToReviews() async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentUserId = prefs.getString('userId');
-
-    if (currentUserId != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ReviewsScreen(
-            vetId: widget.vet.id,
-            currentUserId: currentUserId,
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final currentUserId = prefs.getString('userId');
+      if (currentUserId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ReviewsScreen(
+              vetId: widget.vet.id,
+              currentUserId: currentUserId,
+            ),
           ),
-        ),
-      );
-    } else {
-      debugPrint("User ID not found in SharedPreferences");
+        );
+      } else {
+        debugPrint('User ID not found in SharedPreferences');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to view reviews')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error navigating to reviews: $e');
     }
   }
 
@@ -85,27 +121,90 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final result = await VetService.deleteVeterinarian(widget.vet.id);
-              Navigator.pop(context); // Close dialog
-              if (result['success']) {
+              try {
+                final result = await VetService.deleteVeterinarian(widget.vet.id);
+                Navigator.pop(context);
+                if (result['success']) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result['message'])),
+                  );
+                  Navigator.pop(context);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result['message'])),
+                  );
+                }
+              } catch (e) {
+                Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(result['message'])),
-                );
-                Navigator.pop(context); // Pop VetDetailsScreen
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(result['message'])),
+                  SnackBar(content: Text('Error deleting veterinarian: $e')),
                 );
               }
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
+  }
+
+  void _startConversation() async {
+    if (_userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User not logged in')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final conversation = await _chatService.getOrCreateConversation(
+        userId: _userId!,
+        vetId: widget.vet.id,
+      );
+
+      final chatId = conversation['chatId'] as String;
+      final participants = List<Map<String, dynamic>>.from(conversation['participants']);
+
+      // Ensure participants include client and vet
+      if (!participants.any((p) => p['_id'] == _userId)) {
+        participants.add({
+          '_id': _userId,
+          'firstName': 'You',
+          'lastName': '',
+          'role': 'client',
+          'profileImageUrl': '',
+        });
+      }
+      if (!participants.any((p) => p['_id'] == widget.vet.id)) {
+        participants.add({
+          '_id': widget.vet.id,
+          'firstName': widget.vet.firstName,
+          'lastName': widget.vet.lastName,
+          'role': 'veterinaire',
+          'profileImageUrl': widget.vet.profilePicture ?? '',
+        });
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatScreen(
+            chatId: chatId,
+            veterinaireId: widget.vet.id,
+            participants: participants,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error starting conversation: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start conversation: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   Map<String, dynamic> parseWorkingHours(String workingHoursString) {
@@ -114,53 +213,58 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
       return {'formatted': 'Not available', 'parsed': []};
     }
 
-    final entries = workingHoursString.split(RegExp(r'\},\s*\{'));
-    List<Map<String, String?>> parsedHours = [];
+    try {
+      final entries = workingHoursString.split(RegExp(r'\},\s*\{'));
+      List<Map<String, String?>> parsedHours = [];
 
-    for (var entry in entries) {
-      entry = entry.replaceAll(RegExp(r'[\{\}]'), '');
-      final pairs = entry.split(',').map((e) => e.trim()).toList();
+      for (var entry in entries) {
+        entry = entry.replaceAll(RegExp(r'[\{\}]'), '');
+        final pairs = entry.split(',').map((e) => e.trim()).toList();
 
-      Map<String, String?> data = {};
-      for (var pair in pairs) {
-        final parts = pair.split(':');
-        if (parts.length >= 2) {
-          final key = parts[0].trim();
-          final value = parts.sublist(1).join(':').trim();
-          data[key] = value == 'null' ? null : value;
+        Map<String, String?> data = {};
+        for (var pair in pairs) {
+          final parts = pair.split(':');
+          if (parts.length >= 2) {
+            final key = parts[0].trim();
+            final value = parts.sublist(1).join(':').trim();
+            data[key] = value == 'null' ? null : value;
+          }
+        }
+
+        final day = data['day'];
+        final start = data['start'];
+        final end = data['end'];
+
+        if (day != null && start != null && end != null) {
+          parsedHours.add({
+            'day': day,
+            'start': start,
+            'end': end,
+            'pauseStart': data['pauseStart'],
+            'pauseEnd': data['pauseEnd'],
+          });
         }
       }
 
-      final day = data['day'];
-      final start = data['start'];
-      final end = data['end'];
-
-      if (day != null && start != null && end != null) {
-        parsedHours.add({
-          'day': day,
-          'start': start,
-          'end': end,
-          'pauseStart': data['pauseStart'],
-          'pauseEnd': data['pauseEnd'],
-        });
-      }
+      return {
+        'formatted': parsedHours.isEmpty
+            ? 'Not available'
+            : parsedHours
+            .map((e) {
+          String formattedEntry = '${e['day']}: ${e['start']}';
+          if (e['pauseStart'] != null && e['pauseEnd'] != null) {
+            formattedEntry += ' → ${e['pauseStart']} (Break) → ${e['pauseEnd']}';
+          }
+          formattedEntry += ' → ${e['end']}';
+          return formattedEntry;
+        })
+            .join('\n'),
+        'parsed': parsedHours,
+      };
+    } catch (e) {
+      debugPrint('Error parsing working hours: $e');
+      return {'formatted': 'Not available', 'parsed': []};
     }
-
-    return {
-      'formatted': parsedHours.isEmpty
-          ? 'Not available'
-          : parsedHours
-          .map((e) {
-        String formattedEntry = '${e['day']}: ${e['start']}';
-        if (e['pauseStart'] != null && e['pauseEnd'] != null) {
-          formattedEntry += ' → ${e['pauseStart']} (Break) → ${e['pauseEnd']}';
-        }
-        formattedEntry += ' → ${e['end']}';
-        return formattedEntry;
-      })
-          .join('\n'),
-      'parsed': parsedHours,
-    };
   }
 
   String formatWorkingHoursFromString(String workingHoursString) {
@@ -172,13 +276,15 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   Widget build(BuildContext context) {
     String? profileUrl = widget.vet.profilePicture;
     if (profileUrl != null && profileUrl.contains('localhost')) {
-      profileUrl = profileUrl.replaceFirst('localhost', '192.168.100.7');
+      profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.16');
     }
     debugPrint('Vet profile picture: $profileUrl');
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(
@@ -358,39 +464,53 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_userRole == 'client') // Book Appointment button for clients
-              ElevatedButton(
-                onPressed: () {
-                  final workingHoursData = parseWorkingHours(widget.vet.workingHours ?? '');
-                  final workingHoursJson = jsonEncode(workingHoursData['parsed']);
-                  debugPrint('Passing working hours JSON to AppointmentsScreen: $workingHoursJson');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AppointmentsScreen(
-                        vet: widget.vet,
-                        workingHours: workingHoursJson,
+            if (_userRole == 'client')
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                        final workingHoursData = parseWorkingHours(widget.vet.workingHours ?? '');
+                        final workingHoursJson = jsonEncode(workingHoursData['parsed']);
+                        debugPrint('Passing working hours JSON to AppointmentsScreen: $workingHoursJson');
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AppointmentsScreen(
+                              vet: widget.vet,
+                              workingHours: workingHoursJson,
+                            ),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Book Appointment',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
                       ),
                     ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-                child: const Text(
-                  'Book Appointment',
-                  style: TextStyle(fontSize: 16, color: Colors.white),
-                ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.chat, color: Colors.deepPurple),
+                    onPressed: _isLoading ? null : _startConversation,
+                    tooltip: 'Start Chat',
+                  ),
+                ],
               ),
-            if (_userRole == 'admin') // Delete button for admins
+            if (_userRole == 'admin')
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: ElevatedButton(
-                  onPressed: _deleteVeterinarian,
+                  onPressed: _isLoading ? null : _deleteVeterinarian,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
                     minimumSize: const Size(double.infinity, 50),
@@ -428,21 +548,9 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     );
   }
 
-  Widget _feeButton(String label) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4.0),
-        child: OutlinedButton(
-          onPressed: () {},
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.deepPurple,
-            side: const BorderSide(color: Colors.deepPurple),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-          child: Text(label),
-        ),
-      ),
-    );
+  @override
+  void dispose() {
+    _chatService.disconnect();
+    super.dispose();
   }
 }

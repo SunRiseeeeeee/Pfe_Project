@@ -1,133 +1,106 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:vetapp_v1/services/auth_service.dart'; // Import your AuthService
-import 'login.dart'; // Import your LoginPage
+import 'package:vetapp_v1/screens/home_screen.dart';
+import 'package:vetapp_v1/services/auth_service.dart';
+import 'login.dart';
+import 'profile_screen.dart';
 
 class SignUpPage extends StatefulWidget {
+  const SignUpPage({Key? key}) : super(key: key);
+
   @override
   _SignUpPageState createState() => _SignUpPageState();
 }
 
 class _SignUpPageState extends State<SignUpPage> {
-  // Controllers for input fields
+  final _formKey = GlobalKey<FormState>();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _phoneNumberController = TextEditingController();
+  final TextEditingController _streetController = TextEditingController();
+  final TextEditingController _cityController = TextEditingController();
+  final TextEditingController _stateController = TextEditingController();
+  final TextEditingController _countryController = TextEditingController();
+  final TextEditingController _postalCodeController = TextEditingController();
   final TextEditingController _mapsLocationController = TextEditingController();
-  final TextEditingController _servicesController = TextEditingController();
-  final TextEditingController _workingHoursController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
 
-  // Authentication service instance
   final AuthService _authService = AuthService();
-
-  // Error message to display
+  bool _isLoading = false;
   String _errorMessage = '';
 
-  // Function to handle sign-up
   Future<void> _signUp() async {
-    // Extract and trim input values
-    String firstName = _firstNameController.text.trim();
-    String lastName = _lastNameController.text.trim();
-    String username = _usernameController.text.trim();
-    String email = _emailController.text.trim();
-    String password = _passwordController.text.trim();
-    String phoneNumber = _phoneNumberController.text.trim();
-    String mapsLocation = _mapsLocationController.text.trim();
-    String servicesInput = _servicesController.text.trim();
-    String workingHoursInput = _workingHoursController.text.trim();
+    if (!_formKey.currentState!.validate()) return;
 
-    // Validate required fields
-    if (firstName.isEmpty ||
-        lastName.isEmpty ||
-        username.isEmpty ||
-        email.isEmpty ||
-        password.isEmpty ||
-        phoneNumber.isEmpty) {
-      setState(() {
-        _errorMessage = "All required fields must be filled.";
-      });
-      return;
-    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
 
     try {
-      // Parse optional fields
-      List<String>? services = servicesInput.isNotEmpty ? servicesInput.split(',').map((s) => s.trim()).toList() : null;
+      final address = {
+        'street': _streetController.text.trim(),
+        'city': _cityController.text.trim(),
+        'state': _stateController.text.trim(),
+        'country': _countryController.text.trim(),
+        'postalCode': _postalCodeController.text.trim(),
+      };
 
-      List<Map<String, String>>? workingHours;
-      if (workingHoursInput.isNotEmpty) {
-        try {
-          workingHours = _parseWorkingHours(workingHoursInput).cast<Map<String, String>>();
-        } catch (e) {
-          setState(() {
-            _errorMessage = "Invalid working hours format. Use JSON format.";
-          });
-          return;
-        }
-      }
-
-      // Call the register function with user details
-      Map<String, dynamic> response = await _authService.register(
-        firstName: firstName,
-        lastName: lastName,
-        username: username,
-        email: email,
-        password: password,
-        phoneNumber: phoneNumber,
-        profilePicture: "", // Optional field
-        mapsLocation: mapsLocation.isNotEmpty ? mapsLocation : null,
-        services: services,
-        workingHours: workingHours,
-        role: "CLIENT", // Default role, or you can make this dynamic
+      final response = await _authService.register(
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        username: _usernameController.text.trim(),
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        phoneNumber: _phoneNumberController.text.trim(),
+        address: address,
+        mapsLocation: _mapsLocationController.text.trim().isNotEmpty ? _mapsLocationController.text.trim() : null,
+        description: _descriptionController.text.trim().isNotEmpty ? _descriptionController.text.trim() : null,
+        profilePicture: null,
       );
 
       if (response["success"]) {
-        // Show success message and navigate to login page
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(response["message"])),
         );
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => LoginPage()),
+          MaterialPageRoute(builder: (context) => const LoginPage()),
         );
       } else {
-        // Show an error message if registration fails
         setState(() {
           _errorMessage = response["message"] ?? "Registration failed";
         });
       }
-    } catch (error) {
-      // Log the actual error and display it to the user
-      print("Error during sign-up: $error");
+    } catch (e) {
       setState(() {
-        _errorMessage = error.toString(); // Show the actual error message
+        _errorMessage = e.toString().contains('DioException')
+            ? 'Failed to connect to the server. Please try again.'
+            : e.toString().replaceFirst('Exception: ', '');
       });
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  // Helper function to parse working hours input
-  List<Map<String, dynamic>> _parseWorkingHours(String input) {
-    try {
-      final List<dynamic> parsedList = jsonDecode(input);
-      return parsedList.map((item) {
-        if (item is Map && item.containsKey('day') && item.containsKey('start') && item.containsKey('end')) {
-          return {
-            'day': item['day'],
-            'start': item['start'],
-            'end': item['end'],
-            if (item.containsKey('pauseStart')) 'pauseStart': item['pauseStart'],
-            if (item.containsKey('pauseEnd')) 'pauseEnd': item['pauseEnd'],
-          };
-        } else {
-          throw FormatException("Invalid working hours format.");
-        }
-      }).toList();
-    } catch (e) {
-      throw FormatException("Failed to parse working hours: ${e.toString()}");
-    }
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _usernameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _phoneNumberController.dispose();
+    _streetController.dispose();
+    _cityController.dispose();
+    _stateController.dispose();
+    _countryController.dispose();
+    _postalCodeController.dispose();
+    _mapsLocationController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
   }
 
   @override
@@ -136,246 +109,204 @@ class _SignUpPageState extends State<SignUpPage> {
       backgroundColor: Colors.purple,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // App Title
-              Text(
-                'VetApp',
-                style: TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              SizedBox(height: 10),
-              Text(
-                'Sign Up',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              SizedBox(height: 20),
-              // Input fields for first name, last name, username, email, password, phone number, etc.
-              TextField(
-                controller: _firstNameController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'First Name',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'VetApp',
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _lastNameController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Last Name',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
+                const SizedBox(height: 10),
+                const Text(
+                  'Sign Up',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _usernameController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Username',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _firstNameController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('First Name'),
+                  validator: (value) => value!.isEmpty ? 'First name is required' : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _lastNameController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Last Name'),
+                  validator: (value) => value!.isEmpty ? 'Last name is required' : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _usernameController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Username'),
+                  validator: (value) => value!.isEmpty ? 'Username is required' : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _emailController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Email'),
+                  validator: (value) {
+                    if (value!.isEmpty) return 'Email is required';
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                      return 'Enter a valid email';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Password'),
+                  validator: (value) {
+                    if (value!.isEmpty) return 'Password is required';
+                    if (value.length < 8) return 'Password must be at least 8 characters';
+                    if (!RegExp(r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)').hasMatch(value)) {
+                      return 'Password must include uppercase, lowercase, and numbers';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _phoneNumberController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Phone Number'),
+                  validator: (value) {
+                    if (value!.isEmpty) return 'Phone number is required';
+                    if (!RegExp(r'^\d{8,15}$').hasMatch(value)) {
+                      return 'Enter a valid phone number (8-15 digits)';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _streetController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Street (Optional)'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _cityController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('City (Optional)'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _stateController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('State (Optional)'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _countryController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Country (Optional)'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _postalCodeController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Postal Code (Optional)'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _mapsLocationController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Maps Location (Optional, e.g., Google Maps URL)'),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _descriptionController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: _buildInputDecoration('Description (Optional)'),
+                  maxLines: 3,
+                ),
+                const SizedBox(height: 20),
+                _isLoading
+                    ? const CircularProgressIndicator()
+                    : Container(
+                  width: 200,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _signUp,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red[600],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
+                    ),
+                    child: const Text('Sign Up', style: TextStyle(fontSize: 18)),
                   ),
                 ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _emailController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Email',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Password',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _phoneNumberController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Phone Number',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _mapsLocationController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Maps Location (Optional)',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _servicesController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Services (Comma-separated, Optional)',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                ),
-              ),
-              SizedBox(height: 10),
-              TextField(
-                controller: _workingHoursController,
-                style: TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  hintText: 'Working Hours (JSON format, Optional)',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Colors.purple),
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                ),
-              ),
-              SizedBox(height: 20),
-              // Sign Up Button
-              Container(
-                width: 200,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _signUp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red[600],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.0),
+                if (_errorMessage.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20),
+                    child: Text(
+                      _errorMessage,
+                      style: TextStyle(fontSize: 16, color: Colors.red[200]),
                     ),
                   ),
-                  child: Text('Sign Up', style: TextStyle(fontSize: 18)),
-                ),
-              ),
-              // Error Message
-              if (_errorMessage.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 20),
-                  child: Text(
-                    _errorMessage,
-                    style: TextStyle(fontSize: 16, color: Colors.red[200]),
+                const SizedBox(height: 20),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginPage()),
+                    );
+                  },
+                  child: const Text(
+                    "Already have an account? Log In",
+                    style: TextStyle(
+                      color: Colors.white,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 ),
-              SizedBox(height: 20),
-              // Login Link
-              TextButton(
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => LoginPage()),
-                  );
-                },
-                child: Text(
-                  "Already have an account? Log In",
-                  style: TextStyle(
-                    color: Colors.white,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  InputDecoration _buildInputDecoration(String hintText) {
+    return InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      hintText: hintText,
+      hintStyle: const TextStyle(color: Colors.grey),
+      enabledBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8.0),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderSide: const BorderSide(color: Colors.purple),
+        borderRadius: BorderRadius.circular(8.0),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderSide: const BorderSide(color: Colors.red),
+        borderRadius: BorderRadius.circular(8.0),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderSide: const BorderSide(color: Colors.red),
+        borderRadius: BorderRadius.circular(8.0),
       ),
     );
   }

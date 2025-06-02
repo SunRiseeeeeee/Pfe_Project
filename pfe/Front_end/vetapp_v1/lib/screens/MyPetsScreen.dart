@@ -15,7 +15,7 @@ class PetsScreen extends StatefulWidget {
 
 class _PetsScreenState extends State<PetsScreen> {
   Future<List<Map<String, dynamic>>>? _petsFuture;
-  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.100.7:3000/api')));
+  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: 'http://192.168.1.16:3000/api')));
 
   @override
   void initState() {
@@ -51,11 +51,11 @@ class _PetsScreenState extends State<PetsScreen> {
     String? pictureUrl = picture;
     // Replace localhost and old IP with current IP for network URLs
     if (pictureUrl != null) {
-      if (pictureUrl.contains('localhost')) {
-        pictureUrl = pictureUrl.replaceFirst('localhost', '192.168.100.7');
-      }
       if (pictureUrl.contains('192.168.1.18')) {
-        pictureUrl = pictureUrl.replaceFirst('192.168.1.18', '192.168.100.7');
+        pictureUrl = pictureUrl.replaceFirst('192.168.1.18', '192.168.1.16');
+      }
+      if (pictureUrl.contains('localhost')) {
+        pictureUrl = pictureUrl.replaceFirst('localhost', '192.168.1.16');
       }
     }
     return pictureUrl != null && pictureUrl.isNotEmpty

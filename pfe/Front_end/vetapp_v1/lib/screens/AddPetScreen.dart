@@ -25,7 +25,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
   @override
   void initState() {
     super.initState();
-    Dio dio = Dio(BaseOptions(baseUrl: 'http://192.168.100.7:3000/api'));
+    Dio dio = Dio(BaseOptions(baseUrl: 'http://192.168.1.16:3000/api'));
     _petService = PetService(dio: dio);
   }
 
@@ -35,6 +35,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
     if (image != null) {
       setState(() {
         _imageFile = File(image.path);
+        print('Selected image: ${image.path}'); // Debug log
       });
     }
   }
@@ -65,11 +66,13 @@ class _AddPetScreenState extends State<AddPetScreen> {
           birthDate: _selectedBirthDate?.toIso8601String(),
           imageFile: _imageFile,
         );
+        print('AddPetScreen response: $response'); // Debug log
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Pet added successfully!')),
         );
         Navigator.pop(context, response);
       } catch (e) {
+        print('AddPetScreen error: $e'); // Debug log
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to add pet: $e')),
         );
@@ -110,7 +113,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Custom Header with Back Arrow
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                 child: Row(
@@ -138,9 +140,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
                   ],
                 ),
               ),
-              // Image Picker Section
               _buildImagePickerSection(),
-              // Content Section (Extended to bottom)
               Expanded(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -164,7 +164,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                // Pet Name
                                 TextFormField(
                                   controller: _nameController,
                                   decoration: inputDecoration.copyWith(
@@ -176,7 +175,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 24),
-                                // Species
                                 TextFormField(
                                   controller: _speciesController,
                                   decoration: inputDecoration.copyWith(
@@ -188,7 +186,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 24),
-                                // Breed
                                 TextFormField(
                                   controller: _breedController,
                                   decoration: inputDecoration.copyWith(
@@ -200,7 +197,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 24),
-                                // Gender Dropdown
                                 DropdownButtonFormField<String>(
                                   value: _selectedGender,
                                   items: ['Male', 'Female'].map((gender) {
@@ -216,7 +212,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                   onChanged: (value) => setState(() => _selectedGender = value),
                                 ),
                                 const SizedBox(height: 24),
-                                // Date Picker
                                 InkWell(
                                   onTap: _pickDate,
                                   borderRadius: BorderRadius.circular(12),
@@ -243,7 +238,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
                           ),
                         ),
                       ),
-                      // Submit Button at the Bottom
                       Padding(
                         padding: const EdgeInsets.all(20),
                         child: _buildSubmitButton(),
@@ -335,5 +329,13 @@ class _AddPetScreenState extends State<AddPetScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _speciesController.dispose();
+    _breedController.dispose();
+    super.dispose();
   }
 }

@@ -31,8 +31,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _descriptionController;
   late TextEditingController _specializationController;
   late TextEditingController _servicesController;
+  late TextEditingController _mapsLocationController; // Added for mapsLocation
   List<Map<String, dynamic>> _workingHours = [];
   List<Map<String, TextEditingController>> _workingHourControllers = [];
+
   File? _profileImage;
 
   @override
@@ -54,6 +56,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _descriptionController = TextEditingController();
     _specializationController = TextEditingController();
     _servicesController = TextEditingController();
+    _mapsLocationController = TextEditingController(); // Initialize mapsLocation controller
   }
 
   void _loadUserData() {
@@ -85,6 +88,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _descriptionController.dispose();
     _specializationController.dispose();
     _servicesController.dispose();
+    _mapsLocationController.dispose(); // Dispose mapsLocation controller
     for (var controllers in _workingHourControllers) {
       controllers['day']?.dispose();
       controllers['start']?.dispose();
@@ -117,6 +121,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _firstNameController.text = user['firstName'] ?? '';
     _lastNameController.text = user['lastName'] ?? '';
     _phoneNumberController.text = user['phoneNumber'] ?? '';
+    _mapsLocationController.text = user['mapsLocation'] ?? ''; // Populate mapsLocation
 
     final address = user['address'] ?? {};
     _streetController.text = address['street'] ?? '';
@@ -157,7 +162,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _cityController.text != (currentAddress['city'] ?? '') ||
             _stateController.text != (currentAddress['state'] ?? '') ||
             _countryController.text != (currentAddress['country'] ?? '') ||
-            _postalCodeController.text != (currentAddress['postalCode'] ?? '');
+            _postalCodeController.text != (currentAddress['postalCode'] ?? '') ||
+            _mapsLocationController.text != (_userData['mapsLocation'] ?? ''); // Check mapsLocation
 
     final vetFieldsChanged = _userData['role'] == 'veterinaire' &&
         (_descriptionController.text != (_userData['description'] ?? '') ||
@@ -191,6 +197,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'lastName': _lastNameController.text,
         'phoneNumber': _phoneNumberController.text,
         'address': _buildAddressData(),
+        'mapsLocation': _mapsLocationController.text.isNotEmpty ? _mapsLocationController.text : null, // Include mapsLocation
         if (_profileImage != null) 'profilePicture': _profileImage!.path,
       };
 
@@ -219,7 +226,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Map<String, dynamic> _buildAddressData() {
     return {
       'street': _streetController.text,
-      'city': _cityController.text,
+      'city': _streetController.text,
       'state': _stateController.text.isNotEmpty ? _stateController.text : null,
       'country': _countryController.text.isNotEmpty ? _countryController.text : null,
       'postalCode': _postalCodeController.text,
@@ -345,6 +352,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         _buildPersonalInfoSection(),
                         const SizedBox(height: 24),
                         _buildAddressSection(),
+                        const SizedBox(height: 24),
+                        _buildMapsLocationSection(), // Added mapsLocation section
                         if (_userData['role'] == 'veterinaire') ...[
                           const SizedBox(height: 24),
                           _buildVeterinarianSection(),
@@ -512,6 +521,43 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               controller: _countryController,
               label: 'Country',
               icon: Icons.public,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapsLocationSection() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Maps Location',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const Divider(color: Colors.grey, thickness: 0.5),
+            const SizedBox(height: 16),
+            _buildTextFormField(
+              controller: _mapsLocationController,
+              label: 'Maps Location (e.g., Google Maps URL)',
+              icon: Icons.location_on,
+              validator: (value) {
+                if (value == null || value.isEmpty) return null; // Optional field
+                if (!Uri.parse(value).isAbsolute) {
+                  return 'Enter a valid URL';
+                }
+                return null;
+              },
             ),
           ],
         ),
@@ -829,6 +875,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     bool isRequired = false,
     TextInputType keyboardType = TextInputType.text,
     Function(String)? onChanged,
+    String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
@@ -845,14 +892,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       ),
       keyboardType: keyboardType,
-      validator: isRequired
-          ? (value) {
-        if (value == null || value.isEmpty) {
-          return 'Please enter $label';
-        }
-        return null;
-      }
-          : null,
+      validator: validator ??
+          (isRequired
+              ? (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter $label';
+            }
+            return null;
+          }
+              : null),
       onChanged: onChanged,
     );
   }

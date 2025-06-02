@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import '../services/client_service.dart';
 import '../models/token_storage.dart';
+import 'AnimalFicheScreen.dart';
 
 class VetAppointmentScreen extends StatefulWidget {
   const VetAppointmentScreen({super.key});
@@ -353,7 +354,7 @@ class _AppointmentCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Client: $clientName',
+                        'Patient: $clientName',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -504,7 +505,8 @@ class _AppointmentCard extends StatelessWidget {
   }
 }
 
-class AppointmentDetailsScreen extends StatelessWidget {
+
+class AppointmentDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> appointment;
   final Function(String) onAccept;
   final Function(String) onReject;
@@ -517,6 +519,29 @@ class AppointmentDetailsScreen extends StatelessWidget {
     required this.onReject,
     required this.isPast,
   });
+
+  @override
+  State<AppointmentDetailsScreen> createState() => _AppointmentDetailsScreenState();
+}
+
+class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
+  String vetId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVetId();
+  }
+
+  Future<void> _loadVetId() async {
+    final id = await TokenStorage.getUserId() ??
+        widget.appointment['vetId']?.toString() ??
+        widget.appointment['veterinarianId']?.toString() ??
+        '';
+    setState(() {
+      vetId = id;
+    });
+  }
 
   DateTime _parseDate(dynamic date) {
     try {
@@ -564,20 +589,20 @@ class AppointmentDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('Appointment data: $appointment');
+    debugPrint('Appointment data: ${widget.appointment}');
     final theme = Theme.of(context);
-    final date = _parseDate(appointment['date']);
+    final date = _parseDate(widget.appointment['date']);
     final formattedDate = DateFormat.yMMMd().format(date);
     final formattedTime = DateFormat.jm().format(date);
 
-    final client = appointment['client'] ?? {};
+    final client = widget.appointment['client'] ?? {};
     debugPrint('Client data: $client');
     final clientName = client.isNotEmpty
         ? '${client['firstName'] ?? 'Unknown'} ${client['lastName'] ?? 'Client'}'.trim()
         : 'Unknown Client';
     String? clientPicture = client['profilePicture']?.toString();
     if (clientPicture != null && clientPicture.contains('localhost')) {
-      clientPicture = clientPicture.replaceFirst('localhost', '192.168.100.7');
+      clientPicture = clientPicture.replaceFirst('localhost', '192.168.1.16');
     }
     final clientEmail = client['email']?.toString() ?? 'N/A';
     final clientPhone = client['phoneNumber']?.toString() ?? 'N/A';
@@ -590,18 +615,11 @@ class AppointmentDetailsScreen extends StatelessWidget {
       client['address']['postalCode']?.toString() ?? '',
     ].where((e) => e.isNotEmpty).join(', ')
         : 'N/A';
-    final clientUsername = client['username']?.toString() ?? 'N/A';
-    final clientRole = client['role']?.toString() ?? 'N/A';
-    final clientIsActive = client['isActive'] != null
-        ? client['isActive'] is bool
-        ? client['isActive'] ? 'Active' : 'Inactive'
-        : client['isActive'].toString().toLowerCase() == 'true' ? 'Active' : 'Inactive'
-        : 'N/A';
     final clientLastLogin = client['lastLogin'] != null
         ? DateFormat.yMMMd().add_jm().format(DateTime.parse(client['lastLogin'].toString()).toLocal())
         : 'N/A';
 
-    final animal = appointment['animal'] ?? {};
+    final animal = widget.appointment['animal'] ?? {};
     debugPrint('Animal data: $animal');
     final petName = animal['name']?.toString() ?? 'Unknown Pet';
     final petSpecies = animal['species']?.toString() ?? 'N/A';
@@ -610,9 +628,28 @@ class AppointmentDetailsScreen extends StatelessWidget {
     final petBirthdate = animal['birthDate'] != null
         ? DateFormat.yMMMd().format(DateTime.parse(animal['birthDate'].toString()).toLocal())
         : 'N/A';
-    final petPicture = animal['picture']?.toString() ?? 'http://192.168.100.7:3000/uploads/placeholder.png';
+    String? petPicture = animal['picture']?.toString();
+    if (petPicture != null && petPicture.contains('localhost')) {
+      petPicture = petPicture.replaceFirst('localhost', '192.168.1.16');
+    } else {
+      petPicture ??= 'http://192.168.1.16:3000/uploads/placeholder.png';
+    }
 
-    final status = appointment['status']?.toString().toLowerCase() ?? 'pending';
+    // Construct Animal object
+    final animalObj = Animal(
+      id: animal['id']?.toString() ?? animal['_id']?.toString() ?? '',
+      name: petName,
+      species: petSpecies,
+      breed: petBreed,
+      gender: petGender,
+      birthDate: animal['birthDate'] != null ? DateTime.parse(animal['birthDate'].toString()) : null,
+      picture: petPicture,
+    );
+
+    // Extract clientId
+    final clientId = client['id']?.toString() ?? client['_id']?.toString() ?? '';
+
+    final status = widget.appointment['status']?.toString().toLowerCase() ?? 'pending';
     Color statusColor;
     switch (status) {
       case 'accepted':
@@ -627,6 +664,12 @@ class AppointmentDetailsScreen extends StatelessWidget {
       default:
         statusColor = Colors.orange;
     }
+
+    // Debug logs
+    debugPrint('animalId: ${animalObj.id}');
+    debugPrint('vetId: $vetId');
+    debugPrint('clientId: $clientId');
+    debugPrint('Button enabled: ${animalObj.id.isNotEmpty && vetId.isNotEmpty && clientId.isNotEmpty}');
 
     return Scaffold(
       backgroundColor: theme.colorScheme.background,
@@ -730,7 +773,6 @@ class AppointmentDetailsScreen extends StatelessWidget {
                     _buildInfoRow(Icons.email, 'Email', clientEmail, context),
                     _buildInfoRow(Icons.phone, 'Phone', clientPhone, context),
                     _buildInfoRow(Icons.location_on, 'Location', clientAddress, context),
-
                     _buildInfoRow(Icons.access_time, 'Last Login', clientLastLogin, context),
                   ],
                 ),
@@ -831,6 +873,33 @@ class AppointmentDetailsScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     _buildInfoRow(Icons.male, 'Gender', petGender, context),
                     _buildInfoRow(Icons.cake, 'Birthdate', petBirthdate, context),
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton.icon(
+                        onPressed: animalObj.id.isNotEmpty && vetId.isNotEmpty && clientId.isNotEmpty
+                            ? () {
+                          debugPrint('Navigating to AnimalFicheScreen for animalId: ${animalObj.id}');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AnimalFicheScreen(
+                                animal: animalObj,
+                                vetId: vetId,
+                                clientId: clientId,
+                                ficheId: null,
+                              ),
+                            ),
+                          );
+                        }
+                            : null,
+                        icon: const Icon(Icons.description),
+                        label: const Text('View Medical Fiche'),
+                        style: theme.elevatedButtonTheme.style?.copyWith(
+                          backgroundColor: MaterialStateProperty.all(theme.colorScheme.primary),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -887,20 +956,20 @@ class AppointmentDetailsScreen extends StatelessWidget {
                         Text(formattedTime, style: theme.textTheme.bodyMedium),
                       ],
                     ),
-                    if (appointment['type'] != null) ...[
+                    if (widget.appointment['type'] != null) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
                           Icon(Icons.category, size: 16, color: theme.colorScheme.primary),
                           const SizedBox(width: 8),
                           Text(
-                            'Type: ${appointment['type']}',
+                            'Type: ${widget.appointment['type']}',
                             style: theme.textTheme.bodyMedium,
                           ),
                         ],
                       ),
                     ],
-                    if (appointment['services'] != null && (appointment['services'] as List).isNotEmpty) ...[
+                    if (widget.appointment['services'] != null && (widget.appointment['services'] as List).isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -909,14 +978,14 @@ class AppointmentDetailsScreen extends StatelessWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Services: ${(appointment['services'] as List).join(', ')}',
+                              'Services: ${(widget.appointment['services'] as List).join(', ')}',
                               style: theme.textTheme.bodyMedium,
                             ),
                           ),
                         ],
                       ),
                     ],
-                    if (appointment['caseDescription'] != null) ...[
+                    if (widget.appointment['caseDescription'] != null) ...[
                       const SizedBox(height: 8),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -937,20 +1006,20 @@ class AppointmentDetailsScreen extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.only(left: 24),
                             child: Text(
-                              appointment['caseDescription'],
+                              widget.appointment['caseDescription'],
                               style: theme.textTheme.bodyMedium,
                             ),
                           ),
                         ],
                       ),
                     ],
-                    if (!isPast && status == 'pending') ...[
+                    if (!widget.isPast && status == 'pending') ...[
                       const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           OutlinedButton(
-                            onPressed: () => onReject(appointment['_id']),
+                            onPressed: () => widget.onReject(widget.appointment['_id']),
                             style: theme.outlinedButtonTheme.style?.copyWith(
                               foregroundColor: MaterialStateProperty.all(theme.colorScheme.error),
                               side: MaterialStateProperty.all(
@@ -966,7 +1035,7 @@ class AppointmentDetailsScreen extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           ElevatedButton(
-                            onPressed: () => onAccept(appointment['_id']),
+                            onPressed: () => widget.onAccept(widget.appointment['_id']),
                             style: theme.elevatedButtonTheme.style?.copyWith(
                               backgroundColor: MaterialStateProperty.all(Colors.green),
                             ),

@@ -1,27 +1,26 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../models/token_storage.dart';
 
 class AuthService {
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: "http://192.168.100.7:3000/api/auth",
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
+    baseUrl: "http://192.168.1.16:3000/api/auth",
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 100),
   ));
 
   AuthService() {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        print("REQUEST[\${options.method}] => PATH: \${options.path}");
+        print("REQUEST[${options.method}] => PATH: ${options.path}, DATA: ${options.data}");
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        print("RESPONSE[\${response.statusCode}] => PATH: \${response.requestOptions.path}");
+        print("RESPONSE[${response.statusCode}] => PATH: ${response.requestOptions.path}, DATA: ${response.data}");
         return handler.next(response);
       },
       onError: (DioException e, handler) {
-        print("ERROR[\${e.response?.statusCode}] => PATH: \${e.requestOptions.path}");
+        print("ERROR[${e.response?.statusCode}] => PATH: ${e.requestOptions.path}, MESSAGE: ${e.response?.data['message'] ?? e.message}");
         return handler.next(e);
       },
     ));
@@ -29,8 +28,7 @@ class AuthService {
 
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
-      print("Starting login process..."); // Debug print statement
-
+      print("Starting login process...");
       final response = await _dio.post(
         "/login",
         data: {
@@ -44,7 +42,6 @@ class AuthService {
         final email = response.data["user"]["email"];
         final accessToken = response.data["tokens"]["accessToken"];
         final refreshToken = response.data["tokens"]["refreshToken"];
-        // Print the access token
         print("Access Token: $accessToken");
         print("Refresh Token: $refreshToken");
         print("User ID: $userId");
@@ -52,8 +49,6 @@ class AuthService {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('accessToken', accessToken);
         await prefs.setString('refreshToken', refreshToken);
-
-
 
         return {
           "success": true,
@@ -68,17 +63,17 @@ class AuthService {
       } else {
         return {
           "success": false,
-          "message": response.data["message"] ?? "Login failed"
+          "message": response.data["message"] ?? "Login failed",
         };
       }
     } on DioException catch (e) {
+      print("Login error: ${e.response?.data}, Status: ${e.response?.statusCode}");
       return {
         "success": false,
-        "message": e.response?.data["message"] ?? "An error occurred. Please try again."
+        "message": e.response?.data["message"] ?? "An error occurred. Please try again.",
       };
     }
   }
-
 
   Future<Map<String, dynamic>> register({
     required String firstName,
@@ -87,15 +82,14 @@ class AuthService {
     required String email,
     required String password,
     required String phoneNumber,
-    String? profilePicture,
+    Map<String, String>? address,
     String? mapsLocation,
-    List<String>? services,
-    List<Map<String, String>>? workingHours,
-    required String role,
+    String? description,
+    String? profilePicture,
   }) async {
     try {
       final response = await _dio.post(
-        "/signup",
+        "/signup/client",
         data: {
           "firstName": firstName.trim(),
           "lastName": lastName.trim(),
@@ -103,48 +97,114 @@ class AuthService {
           "email": email.trim().toLowerCase(),
           "password": password.trim(),
           "phoneNumber": phoneNumber.trim(),
-          "profilePicture": profilePicture,
-          "mapsLocation": mapsLocation,
-          "details": {
-            "services": services,
-            "workingHours": workingHours,
-          },
-          "role": role,
+          if (address != null && address.values.any((v) => v.isNotEmpty)) "address": address,
+          if (mapsLocation != null && mapsLocation.isNotEmpty) "mapsLocation": mapsLocation,
+          if (description != null && description.isNotEmpty) "description": description,
+          if (profilePicture != null && profilePicture.isNotEmpty) "profilePicture": profilePicture,
         },
       );
 
       if (response.statusCode == 201) {
-        return {"success": true, "message": response.data["message"]};
+        final userId = response.data["user"]["id"];
+        final accessToken = response.data["tokens"]["accessToken"];
+        final refreshToken = response.data["tokens"]["refreshToken"];
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userId', userId);
+        await prefs.setString('accessToken', accessToken);
+        await prefs.setString('refreshToken', refreshToken);
+        await TokenStorage.storeTokens(accessToken, refreshToken);
+
+        return {
+          "success": true,
+          "message": response.data["message"],
+          "user": response.data["user"],
+          "tokens": response.data["tokens"],
+        };
       } else {
-        return {"success": false, "message": response.data["message"] ?? "Registration failed"};
+        return {
+          "success": false,
+          "message": response.data["message"] ?? "Registration failed",
+        };
       }
     } on DioException catch (e) {
+      print("Register error: ${e.response?.data}, Status: ${e.response?.statusCode}");
       return {
         "success": false,
-        "message": e.response?.data["message"] ?? "An error occurred. Please try again."
+        "message": e.response?.data["message"] ?? "An error occurred. Please try again.",
       };
     }
   }
 
   Future<void> logout() async {
     try {
-      // Clear tokens from SharedPreferences
       await TokenStorage.clear();
-
-      // Optionally, you can send a logout request to your backend if needed
-      // final response = await _dio.post(
-      //   "/logout",
-      //   data: {"refreshToken": refreshToken},
-      //   options: Options(
-      //     headers: {"Authorization": "Bearer $accessToken"},
-      //   ),
-      // );
-
-      // If everything is successful, you may want to navigate or show a message
     } catch (e) {
       throw Exception("Logout failed: $e");
     }
   }
 
+  Future<Map<String, dynamic>> forgetPassword(String email) async {
+    try {
+      print("Sending forgetPassword request for email: $email");
+      final response = await _dio.post(
+        "/forget-password",
+        data: {
+          "email": email.trim().toLowerCase(),
+        },
+      );
 
+      print("forgetPassword response: ${response.data}");
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "message": response.data["message"] ?? "Verification code sent successfully",
+        };
+      } else {
+        return {
+          "success": false,
+          "message": response.data["message"] ?? "Failed to send verification code",
+        };
+      }
+    } on DioException catch (e) {
+      print("forgetPassword error: ${e.response?.data}, Status: ${e.response?.statusCode}");
+      return {
+        "success": false,
+        "message": e.response?.data["message"] ?? "An error occurred. Please try again.",
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> resetPassword(String email, String code, String newPassword) async {
+    try {
+      print("Sending resetPassword request for email: $email, code: $code");
+      final response = await _dio.post(
+        "/reset-password",
+        data: {
+          "email": email.trim().toLowerCase(),
+          "code": code.trim(),
+          "newPassword": newPassword.trim(),
+        },
+      );
+
+      print("resetPassword response: ${response.data}");
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "message": response.data["message"] ?? "Password reset successfully",
+        };
+      } else {
+        return {
+          "success": false,
+          "message": response.data["message"] ?? "Failed to reset password",
+        };
+      }
+    } on DioException catch (e) {
+      print("resetPassword error: ${e.response?.data}, Status: ${e.response?.statusCode}");
+      return {
+        "success": false,
+        "message": e.response?.data["message"] ?? "An error occurred. Please try again.",
+      };
+    }
+  }
 }
