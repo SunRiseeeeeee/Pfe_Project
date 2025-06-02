@@ -103,77 +103,75 @@ ws.on('message', async (rawMessage: string) => {
 
 
 case 'GET_CONVERSATIONS': {
-  const { userId, role: rawRole, searchQuery } = data;
+  const { userId } = data;
 
-  if (!userId || !rawRole) {
-    throw new Error('userId et role sont requis pour GET_CONVERSATIONS');
+  if (!userId) {
+    ws.send(JSON.stringify({ status: 'error', message: 'userId est requis' }));
+    break;
   }
 
-  if (!isValidObjectId(userId)) {
-    throw new Error('userId invalide');
+  // Interfaces locales pour typer correctement les données peuplées
+  interface PopulatedParticipant {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    profilePicture?: string;
   }
 
-  // Normalisation du rôle en UserRole
-  const role = rawRole.toLowerCase() as UserRole;
+  interface PopulatedLastMessage {
+    content: string;
+    type: string;
+    createdAt: Date;
+  }
 
-  const chats = await Chat.find({ participants: new Types.ObjectId(userId) })
-    .sort({ updatedAt: -1 })
-    .lean();
+  interface PopulatedChat {
+    _id: string;
+    participants: PopulatedParticipant[];
+    lastMessage?: PopulatedLastMessage;
+    updatedAt: Date;
+  }
 
-  const conversations = await Promise.all(
-    chats.map(async (chat) => {
-      const participants = await User.find({ _id: { $in: chat.participants } })
-        .select('firstName lastName role')
-        .lean();
-
-      const lastMessage = await Message.findOne({ chatId: chat._id })
-        .sort({ createdAt: -1 })
-        .select('content sender createdAt')
-        .lean();
-
-      const otherUser = participants.find(p => p._id.toString() !== userId);
-
-      // Si la recherche est active
-      if (searchQuery) {
-        const query = searchQuery.trim().toLowerCase();
-
-        // Filtrage selon les rôles
-        if (
-          (role === UserRole.CLIENT && otherUser?.role !== UserRole.VETERINAIRE) ||
-          ((role === UserRole.VETERINAIRE || role === UserRole.SECRETAIRE) && otherUser?.role !== UserRole.CLIENT)
-        ) {
-          return null;
-        }
-
-        const fullName = `${otherUser?.firstName ?? ''} ${otherUser?.lastName ?? ''}`.toLowerCase();
-        if (!fullName.includes(query)) {
-          return null;
-        }
-      }
-
-      const unreadCount = await Message.countDocuments({
-        chatId: chat._id,
-        sender: { $ne: new Types.ObjectId(userId) },
-        readBy: { $ne: new Types.ObjectId(userId) },
-      });
-
-      return {
-        chatId: chat._id,
-        participants,
-        lastMessage,
-        updatedAt: chat.updatedAt,
-        unreadCount,
-      };
+  // Recherche des conversations
+  const conversations = await Chat.find({ participants: userId })
+    .populate({
+      path: 'participants',
+      select: 'firstName lastName profilePicture',
     })
-  );
+    .populate({
+      path: 'lastMessage',
+      select: 'content type createdAt',
+    })
+    .sort({ updatedAt: -1 })
+    .lean<PopulatedChat[]>(); // typage explicite pour éviter les erreurs TS
 
-  const filteredConversations = conversations.filter(Boolean);
+  // Formatage des données
+  const formattedConversations = conversations.map(chat => {
+    const otherParticipants = chat.participants.filter(p => p._id.toString() !== userId);
 
+    return {
+      chatId: chat._id,
+      participants: otherParticipants.map(p => ({
+        id: p._id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        profilePicture: p.profilePicture,
+      })),
+      lastMessage: chat.lastMessage
+        ? {
+            content: chat.lastMessage.content,
+            type: chat.lastMessage.type,
+            createdAt: chat.lastMessage.createdAt,
+          }
+        : null,
+      updatedAt: chat.updatedAt,
+    };
+  });
+
+  // Envoi au client
   ws.send(
     JSON.stringify({
-      status: 'success',
       type: 'CONVERSATIONS_LIST',
-      conversations: filteredConversations,
+      conversations: formattedConversations,
     })
   );
 
@@ -201,60 +199,74 @@ case 'GET_CONVERSATIONS': {
         break;
       }
 
-      case 'SEND_MESSAGE': {
-        const { senderId, veterinaireId, content } = data;
-        if (!senderId || !veterinaireId || !content) {
-          throw new Error('senderId, veterinaireId et content sont requis pour envoyer un message');
-        }
+case 'SEND_MESSAGE': {
+  const { senderId, veterinaireId, content, contentType } = data;
 
-        const chatId = await getOrCreateChat(senderId, veterinaireId);
+  // Vérification des paramètres obligatoires
+  if (!senderId || !veterinaireId || !content) {
+    throw new Error('senderId, veterinaireId et content sont requis pour envoyer un message');
+  }
 
-        const newMessage = await Message.create({
-          chatId,
-          sender: new Types.ObjectId(senderId),
-          type: MessageType.TEXT,
-          content,
-           readBy: [new Types.ObjectId(senderId)], 
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+  // Liste des types de messages valides
+  const validTypes = [MessageType.TEXT, MessageType.IMAGE, MessageType.VIDEO, MessageType.AUDIO];
 
-        console.log(`💾 Message sauvegardé : ${newMessage._id}`);
+  // Valider le contentType ou mettre TEXT par défaut
+  const messageType = validTypes.includes(contentType) ? contentType : MessageType.TEXT;
 
-        const sender = await User.findById(senderId).select('firstName lastName');
-        if (!sender) throw new Error('Expéditeur introuvable');
-        const senderName = `${sender.firstName} ${sender.lastName}`;
+  // Récupérer ou créer le chat
+  const chatId = await getOrCreateChat(senderId, veterinaireId);
 
-        const chat = await Chat.findById(chatId).select('participants');
-        if (!chat) throw new Error('Chat introuvable');
+  // Créer le message
+  const newMessage = await Message.create({
+    chatId,
+    sender: new Types.ObjectId(senderId),
+    type: messageType,
+    content, // texte ou chemin/URL fichier
+    readBy: [new Types.ObjectId(senderId)],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 
-        for (const participantId of chat.participants) {
-          const participantIdStr = participantId.toString();
-          if (participantIdStr === senderId) continue;
+  console.log(`💾 Message sauvegardé : ${newMessage._id}`);
 
-          const recipientSocket = clients.get(participantIdStr);
-          if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
-            recipientSocket.send(JSON.stringify({
-              type: 'NEW_MESSAGE',
-              chatId,
-              senderId,
-              senderName,
-              content,
-              timestamp: Date.now(),
-              notification: `${senderName} vous a envoyé un message`,
-            }));
-            console.log(`🔔 Notification envoyée à ${participantIdStr}`);
-          }
-        }
+  // Récupérer infos expéditeur pour notifications
+  const sender = await User.findById(senderId).select('firstName lastName');
+  if (!sender) throw new Error('Expéditeur introuvable');
+  const senderName = `${sender.firstName} ${sender.lastName}`;
 
-        ws.send(JSON.stringify({
-          status: 'success',
-          message: `Message envoyé au chat ${chatId}`,
-          chatId,
-        }));
-        break;
-      }
+  // Récupérer le chat avec participants
+  const chat = await Chat.findById(chatId).select('participants');
+  if (!chat) throw new Error('Chat introuvable');
 
+  // Envoyer le message à tous les participants sauf l'expéditeur
+  for (const participantId of chat.participants) {
+    const participantIdStr = participantId.toString();
+    if (participantIdStr === senderId) continue;
+
+    const recipientSocket = clients.get(participantIdStr);
+    if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
+      recipientSocket.send(JSON.stringify({
+        type: 'NEW_MESSAGE',
+        chatId,
+        senderId,
+        senderName,
+        content,
+        contentType: messageType,
+        timestamp: Date.now(),
+        notification: `${senderName} vous a envoyé un message`,
+      }));
+    }
+  }
+
+  // Confirmer l’envoi au client émetteur
+  ws.send(JSON.stringify({
+    status: 'success',
+    message: `Message envoyé au chat ${chatId}`,
+    chatId,
+  }));
+
+  break;
+}
       default:
         throw new Error(`Type de message inconnu : ${data.type}`);
     }

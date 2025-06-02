@@ -3,6 +3,7 @@ import mongoose, { Types } from 'mongoose';
 import Chat from '../models/Chat';
 import Message, { MessageType } from '../models/Message';
 import User from '../models/User';
+import { IUser } from '../models/User'; // si tu as une interface pour User
 
 // Map pour stocker les connexions actives : userId -> WebSocket
 const clients = new Map<string, WebSocket>();
@@ -173,47 +174,82 @@ ws.on('message', async (rawMessage: string) => {
         break;
       }
 
-      case 'GET_CONVERSATIONS': {
-        const { userId } = data;
-        if (!userId) throw new Error('userId est requis pour GET_CONVERSATIONS');
-        if (!isValidObjectId(userId)) throw new Error('userId invalide');
+case 'GET_CONVERSATIONS': {
+  const { userId } = data;
 
-        const chats = await Chat.find({ participants: new Types.ObjectId(userId) })
-          .sort({ updatedAt: -1 })
-          .lean();
+  if (!userId) {
+    ws.send(JSON.stringify({ status: 'error', message: 'userId est requis' }));
+    break;
+  }
 
-        const conversations = await Promise.all(chats.map(async (chat) => {
-          const participants = await User.find({ _id: { $in: chat.participants } })
-            .select('firstName lastName role')
-            .lean();
+  // Interfaces locales pour typer correctement les données peuplées
+  interface PopulatedParticipant {
+    _id: string;
+    firstName: string;
+    lastName: string;
+    profilePicture?: string;
+  }
 
-          const lastMessage = await Message.findOne({ chatId: chat._id })
-            .sort({ createdAt: -1 })
-            .select('content sender createdAt')
-            .lean();
+  interface PopulatedLastMessage {
+    content: string;
+    type: string;
+    createdAt: Date;
+  }
 
-          const unreadCount = await Message.countDocuments({
-            chatId: chat._id,
-            sender: { $ne: new Types.ObjectId(userId) },
-            readBy: { $ne: new Types.ObjectId(userId) },
-          });
+  interface PopulatedChat {
+    _id: string;
+    participants: PopulatedParticipant[];
+    lastMessage?: PopulatedLastMessage;
+    updatedAt: Date;
+  }
 
-          return {
-            chatId: chat._id,
-            participants,
-            lastMessage,
-            updatedAt: chat.updatedAt,
-            unreadCount,
-          };
-        }));
+  // Recherche des conversations
+  const conversations = await Chat.find({ participants: userId })
+    .populate({
+      path: 'participants',
+      select: 'firstName lastName profilePicture',
+    })
+    .populate({
+      path: 'lastMessage',
+      select: 'content type createdAt',
+    })
+    .sort({ updatedAt: -1 })
+    .lean<PopulatedChat[]>(); // typage explicite pour éviter les erreurs TS
 
-        ws.send(JSON.stringify({
-          status: 'success',
-          type: 'CONVERSATIONS_LIST',
-          conversations,
-        }));
-        break;
-      }
+  // Formatage des données
+  const formattedConversations = conversations.map(chat => {
+    const otherParticipants = chat.participants.filter(p => p._id.toString() !== userId);
+
+    return {
+      chatId: chat._id,
+      participants: otherParticipants.map(p => ({
+        id: p._id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        profilePicture: p.profilePicture,
+      })),
+      lastMessage: chat.lastMessage
+        ? {
+            content: chat.lastMessage.content,
+            type: chat.lastMessage.type,
+            createdAt: chat.lastMessage.createdAt,
+          }
+        : null,
+      updatedAt: chat.updatedAt,
+    };
+  });
+
+  // Envoi au client
+  ws.send(
+    JSON.stringify({
+      type: 'CONVERSATIONS_LIST',
+      conversations: formattedConversations,
+    })
+  );
+
+  break;
+}
+
 
       case 'GET_MESSAGES': {
         const { chatId } = data;
@@ -234,59 +270,64 @@ ws.on('message', async (rawMessage: string) => {
         break;
       }
 
-      case 'SEND_MESSAGE': {
-        const { senderId, veterinaireId, content } = data;
-        if (!senderId || !veterinaireId || !content) {
-          throw new Error('senderId, veterinaireId et content sont requis pour envoyer un message');
-        }
+case 'SEND_MESSAGE': {
+  const { senderId, veterinaireId, content, contentType } = data;
 
-        const chatId = await getOrCreateChat(senderId, veterinaireId);
+  if (!senderId || !veterinaireId || !content) {
+    throw new Error('senderId, veterinaireId et content sont requis pour envoyer un message');
+  }
 
-        const newMessage = await Message.create({
-          chatId,
-          sender: new Types.ObjectId(senderId),
-          type: MessageType.TEXT,
-          content,
-           readBy: [new Types.ObjectId(senderId)], 
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+  const chatId = await getOrCreateChat(senderId, veterinaireId);
 
-        console.log(`💾 Message sauvegardé : ${newMessage._id}`);
+  const messageType = contentType || MessageType.TEXT;
 
-        const sender = await User.findById(senderId).select('firstName lastName');
-        if (!sender) throw new Error('Expéditeur introuvable');
-        const senderName = `${sender.firstName} ${sender.lastName}`;
+  const newMessage = await Message.create({
+    chatId,
+    sender: new Types.ObjectId(senderId),
+    type: messageType,
+    content, // Peut être un texte ou un chemin de fichier
+    readBy: [new Types.ObjectId(senderId)],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 
-        const chat = await Chat.findById(chatId).select('participants');
-        if (!chat) throw new Error('Chat introuvable');
+  console.log(`💾 Message sauvegardé : ${newMessage._id}`);
 
-        for (const participantId of chat.participants) {
-          const participantIdStr = participantId.toString();
-          if (participantIdStr === senderId) continue;
+  const sender = await User.findById(senderId).select('firstName lastName');
+  if (!sender) throw new Error('Expéditeur introuvable');
+  const senderName = `${sender.firstName} ${sender.lastName}`;
 
-          const recipientSocket = clients.get(participantIdStr);
-          if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
-            recipientSocket.send(JSON.stringify({
-              type: 'NEW_MESSAGE',
-              chatId,
-              senderId,
-              senderName,
-              content,
-              timestamp: Date.now(),
-              notification: `${senderName} vous a envoyé un message`,
-            }));
-            console.log(`🔔 Notification envoyée à ${participantIdStr}`);
-          }
-        }
+  const chat = await Chat.findById(chatId).select('participants');
+  if (!chat) throw new Error('Chat introuvable');
 
-        ws.send(JSON.stringify({
-          status: 'success',
-          message: `Message envoyé au chat ${chatId}`,
-          chatId,
-        }));
-        break;
-      }
+  for (const participantId of chat.participants) {
+    const participantIdStr = participantId.toString();
+    if (participantIdStr === senderId) continue;
+
+    const recipientSocket = clients.get(participantIdStr);
+    if (recipientSocket && recipientSocket.readyState === WebSocket.OPEN) {
+      recipientSocket.send(JSON.stringify({
+        type: 'NEW_MESSAGE',
+        chatId,
+        senderId,
+        senderName,
+        content,
+        contentType: messageType,
+        timestamp: Date.now(),
+        notification: `${senderName} vous a envoyé un message`,
+      }));
+    }
+  }
+
+  ws.send(JSON.stringify({
+    status: 'success',
+    message: `Message envoyé au chat ${chatId}`,
+    chatId,
+  }));
+
+  break;
+}
+
 
       default:
         throw new Error(`Type de message inconnu : ${data.type}`);
