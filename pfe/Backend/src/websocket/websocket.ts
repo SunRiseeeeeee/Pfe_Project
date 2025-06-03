@@ -247,48 +247,72 @@ case 'SEND_MESSAGE': {
   const { senderId, veterinaireId, content, contentType, clientId } = data;
 
   if (!senderId || !veterinaireId || !content) {
-    throw new Error('senderId, veterinaireId et content sont requis');
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      message: 'senderId, veterinaireId et content sont requis',
+    }));
+    break;
   }
 
   const sender = await User.findById(senderId);
   if (!sender) {
-    throw new Error('Utilisateur expéditeur introuvable');
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      message: 'Utilisateur expéditeur introuvable',
+    }));
+    break;
   }
 
-  // Autoriser clients, secrétaires ET vétérinaires
-  if (![UserRole.CLIENT, UserRole.SECRETAIRE, UserRole.VETERINAIRE].includes(sender.role)) {
-    throw new Error('Seuls les clients, secrétaires et vétérinaires peuvent initier une conversation');
+  const role = sender.role;
+
+  if (![UserRole.CLIENT, UserRole.SECRETAIRE, UserRole.VETERINAIRE].includes(role)) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      message: 'Seuls les clients, secrétaires et vétérinaires peuvent envoyer des messages',
+    }));
+    break;
   }
 
-  // Si secrétaire, vérifier association et clientId
-  if (sender.role === UserRole.SECRETAIRE) {
+  // Validation spécifique par rôle
+  if (role === UserRole.SECRETAIRE) {
     if (!sender.veterinaireId || sender.veterinaireId.toString() !== veterinaireId) {
-      throw new Error('Secrétaire non autorisé pour ce vétérinaire');
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Secrétaire non autorisé pour ce vétérinaire',
+      }));
+      break;
     }
     if (!clientId) {
-      throw new Error('clientId est requis pour un secrétaire');
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'clientId est requis pour un secrétaire',
+      }));
+      break;
     }
   }
 
-  // Si vétérinaire, s'assurer qu'il correspond bien au veterinaireId ciblé
-  if (sender.role === UserRole.VETERINAIRE) {
+  if (role === UserRole.VETERINAIRE) {
     if (sender._id.toString() !== veterinaireId) {
-      throw new Error('Vétérinaire non autorisé pour ce chat');
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Vétérinaire non autorisé pour ce chat',
+      }));
+      break;
     }
     if (!clientId) {
-      throw new Error('clientId est requis pour un vétérinaire');
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'clientId est requis pour un vétérinaire',
+      }));
+      break;
     }
   }
 
-  // Déterminer chatId selon le rôle
-  let chatId;
-  if (sender.role === UserRole.CLIENT) {
-    chatId = await getOrCreateChat(senderId, veterinaireId);
-  } else if (sender.role === UserRole.SECRETAIRE) {
-    chatId = await getOrCreateChat(clientId, veterinaireId);
-  } else if (sender.role === UserRole.VETERINAIRE) {
-    chatId = await getOrCreateChat(clientId, veterinaireId);
-  }
+  // Obtenir ou créer le chat
+  const chatId = await getOrCreateChat(
+    role === UserRole.CLIENT ? senderId : clientId,
+    veterinaireId
+  );
 
   const newMessage = await Message.create({
     chatId,
@@ -304,11 +328,20 @@ case 'SEND_MESSAGE': {
   });
 
   const chat = await Chat.findById(chatId).populate('participants');
-  if (!chat) throw new Error('Chat introuvable');
+  if (!chat) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      message: 'Chat introuvable',
+    }));
+    break;
+  }
 
+  // Notifier les autres participants
   for (const participant of chat.participants) {
     const participantId = participant._id.toString();
     if (participantId === senderId) continue;
+
+    console.log(`🔔 Notification envoyée à ${participantId}`);
 
     const recipientSocket = clients.get(participantId);
     if (recipientSocket?.readyState === WebSocket.OPEN) {
@@ -320,19 +353,26 @@ case 'SEND_MESSAGE': {
           content,
           type: contentType || MessageType.TEXT,
           sender: {
-            _id: senderId,
+            _id: sender._id,
             firstName: sender.firstName,
             lastName: sender.lastName,
             profilePicture: sender.profilePicture,
           },
           createdAt: newMessage.createdAt,
         },
-        notification: `Nouveau message de ${sender.firstName} ${sender.lastName}`,
+        notification: {
+          title: 'Nouveau message',
+          body: `${sender.firstName} ${sender.lastName} vous a envoyé un message.`,
+          senderId: sender._id,
+          chatId,
+        },
       }));
     }
   }
 
+  // Répondre à l'expéditeur
   ws.send(JSON.stringify({
+    type: 'MESSAGE_SENT',
     status: 'success',
     message: 'Message envoyé avec succès',
     chatId,
@@ -341,6 +381,7 @@ case 'SEND_MESSAGE': {
 
   break;
 }
+
 
 
       default:
