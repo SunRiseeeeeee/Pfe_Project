@@ -1,22 +1,99 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import '../services/chat_service.dart';
-import '../models/token_storage.dart';
-import 'chat_screen.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'dart:io';
+import 'package:vetapp_v1/services/chat_service.dart';
+import 'package:vetapp_v1/screens/chat_screen.dart'; // Ensure correct import path
+import 'package:shared_preferences/shared_preferences.dart';
+
+// Define interfaces for type safety
+interface class Participant {
+  final String id;
+  final String firstName;
+  final String lastName;
+  final String? profilePicture;
+
+  Participant({
+    required this.id,
+    required this.firstName,
+    required this.lastName,
+    this.profilePicture,
+  });
+
+  factory Participant.fromJson(Map<String, dynamic> json) {
+    return Participant(
+      id: json['id'] as String? ?? '',
+      firstName: json['firstName'] as String? ?? 'Inconnu',
+      lastName: json['lastName'] as String? ?? '',
+      profilePicture: json['profilePicture'] as String?,
+    );
+  }
+}
+
+interface class LastMessage {
+  final String content;
+  final String type;
+  final String createdAt;
+
+  LastMessage({
+    required this.content,
+    required this.type,
+    required this.createdAt,
+  });
+
+  factory LastMessage.fromJson(Map<String, dynamic> json) {
+    return LastMessage(
+      content: json['content'] as String? ?? '',
+      type: json['type'] as String? ?? 'text',
+      createdAt: json['createdAt'] as String? ?? '',
+    );
+  }
+}
+
+interface class Conversation {
+  final String chatId;
+  final List<Participant> participants;
+  final LastMessage? lastMessage;
+  final int unreadCount;
+  final String updatedAt;
+
+  Conversation({
+    required this.chatId,
+    required this.participants,
+    this.lastMessage,
+    required this.unreadCount,
+    required this.updatedAt,
+  });
+
+  factory Conversation.fromJson(Map<String, dynamic> json) {
+    final participantsJson = json['participants'] as List<dynamic>? ?? [];
+    final lastMessageJson = json['lastMessage'] as Map<String, dynamic>?;
+
+    return Conversation(
+      chatId: json['chatId'] as String? ?? '',
+      participants: participantsJson
+          .map((p) => Participant.fromJson(p as Map<String, dynamic>))
+          .toList(),
+      lastMessage: lastMessageJson != null
+          ? LastMessage.fromJson(lastMessageJson)
+          : null,
+      unreadCount: json['unreadCount'] as int? ?? 0,
+      updatedAt: json['updatedAt'] as String? ?? '',
+    );
+  }
+}
 
 class ConversationsScreen extends StatefulWidget {
   const ConversationsScreen({super.key});
 
   @override
-  _ConversationsScreenState createState() => _ConversationsScreenState();
+  State<ConversationsScreen> createState() => _ConversationsScreenState();
 }
 
 class _ConversationsScreenState extends State<ConversationsScreen> {
   final ChatService _chatService = ChatService();
-  List<Map<String, dynamic>> _conversations = [];
+  List<Conversation> _conversations = [];
   String? _userId;
-  bool _isLoading = false;
-  String _searchQuery = '';
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -25,203 +102,191 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
   }
 
   Future<void> _initialize() async {
-    setState(() => _isLoading = true);
-    _userId = await TokenStorage.getUserId();
-    if (_userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User not logged in')),
-      );
-      setState(() => _isLoading = false);
-      return;
-    }
-
     try {
-      await _chatService.connect(_userId!, 'CLIENT'); // Adjust role as needed
-      _chatService.onConversations().listen((data) {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId');
+      const role = 'CLIENT';
+
+      if (userId != null) {
         setState(() {
-          _conversations = List<Map<String, dynamic>>.from(data['conversations'] ?? []);
+          _userId = userId;
         });
-      });
-      await _chatService.getConversations(_userId!);
+        await _chatService.connect(userId, role);
+        _chatService.onConversations().listen((data) {
+          print('Received conversation stream event: $data');
+          if (data['type'] == 'CONVERSATIONS_LIST') {
+            final conversationsJson = data['conversations'] as List<dynamic>? ?? [];
+            setState(() {
+              _conversations = conversationsJson
+                  .map((c) => Conversation.fromJson(c as Map<String, dynamic>))
+                  .toList();
+              _isLoading = false;
+              print('Updated conversations in UI: ${_conversations.length} conversations');
+              for (final convo in _conversations) {
+                print('Conversation ${convo.chatId}: lastMessage = ${convo.lastMessage?.content}');
+              }
+            });
+          }
+        });
+        await _chatService.getConversations(userId);
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Utilisateur non connecté')),
+          );
+        }
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error connecting: $e')),
-      );
-    }
-    setState(() => _isLoading = false);
-  }
-
-  String _getConversationTitle(Map<String, dynamic> conversation) {
-    final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
-    final otherParticipants = participants.where((p) => p['_id'] != _userId).toList();
-    if (otherParticipants.isEmpty) return 'Unknown';
-    return otherParticipants
-        .map((p) => '${p['firstName'] ?? ''} ${p['lastName'] ?? ''}'.trim())
-        .where((name) => name.isNotEmpty)
-        .join(', ');
-  }
-
-  String _getLastMessagePreview(Map<String, dynamic>? lastMessage) {
-    if (lastMessage == null || lastMessage['content'] == null) return 'No messages yet';
-    final content = lastMessage['content'] as String;
-    return content.length > 30 ? '${content.substring(0, 27)}...' : content;
-  }
-
-  String _formatTimestamp(DateTime? timestamp) {
-    if (timestamp == null) return '';
-    final now = DateTime.now();
-    final diff = now.difference(timestamp);
-    if (diff.inDays == 0) {
-      return '${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
-    } else if (diff.inDays < 7) {
-      return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][timestamp.weekday - 1];
-    } else {
-      return '${timestamp.day}/${timestamp.month}/${timestamp.year}';
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur d’initialisation : $e')),
+        );
+      }
     }
   }
 
-  String? _getVeterinaireId(Map<String, dynamic> conversation) {
-    final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
-    final vet = participants.firstWhere(
-          (p) => (p['role']?.toLowerCase() ?? '') == 'veterinaire',
-      orElse: () => participants.firstWhere(
-            (p) => p['_id'] != _userId,
-        orElse: () => <String, dynamic>{},
-      ),
-    );
-    return vet['_id'] as String?;
-  }
-
-  Widget _getVetAvatar(Map<String, dynamic> conversation) {
-    final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
-    final vet = participants.firstWhere(
-          (p) => (p['role']?.toLowerCase() ?? '') == 'veterinaire',
-      orElse: () => <String, dynamic>{},
-    );
-    final imageUrl = vet['profileImageUrl'] as String?;
-    final firstName = vet['firstName'] as String? ?? '';
-    final lastName = vet['lastName'] as String? ?? '';
-
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      return CachedNetworkImage(
-        imageUrl: imageUrl,
-        imageBuilder: (context, imageProvider) => CircleAvatar(
-          radius: 25,
-          backgroundImage: imageProvider,
-        ),
-        placeholder: (context, url) => const CircleAvatar(
-          radius: 25,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        errorWidget: (context, url, error) => CircleAvatar(
-          radius: 25,
-          child: Text(
-            _getInitials(firstName, lastName),
-            style: const TextStyle(fontSize: 16),
+  Widget _buildProfilePicture(String? profilePicture, double size) {
+    if (profilePicture != null && profilePicture.isNotEmpty) {
+      if (profilePicture.startsWith('http')) {
+        return ClipOval(
+          child: Image.network(
+            profilePicture.replaceFirst('localhost', '192.168.1.16'),
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('Network image error for $profilePicture: $error');
+              return _defaultAvatar(size);
+            },
           ),
-        ),
-      );
+        );
+      } else {
+        return ClipOval(
+          child: Image.file(
+            File(profilePicture),
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              print('File image error for $profilePicture: $error');
+              return _defaultAvatar(size);
+            },
+          ),
+        );
+      }
     }
+    return _defaultAvatar(size);
+  }
+
+  Widget _defaultAvatar(double size) {
     return CircleAvatar(
-      radius: 25,
-      child: Text(
-        _getInitials(firstName, lastName),
-        style: const TextStyle(fontSize: 16),
-      ),
+      radius: size / 2,
+      backgroundColor: Colors.grey,
+      child: Icon(Icons.person, color: Colors.white, size: size / 2),
     );
-  }
-
-  String _getInitials(String firstName, String lastName) {
-    final firstInitial = firstName.isNotEmpty ? firstName[0].toUpperCase() : '';
-    final lastInitial = lastName.isNotEmpty ? lastName[0].toUpperCase() : '';
-    return '$firstInitial$lastInitial';
-  }
-
-  @override
-  void dispose() {
-    _chatService.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Conversations'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              // Implement search if backend supports it
-            },
-          ),
-        ],
+        title: Text(
+          'Conversations',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _conversations.isEmpty
-          ? const Center(child: Text('No conversations found'))
+          ? Center(
+        child: Text(
+          'Aucune conversation',
+          style: GoogleFonts.poppins(color: Colors.grey),
+        ),
+      )
           : ListView.builder(
         itemCount: _conversations.length,
         itemBuilder: (context, index) {
           final conversation = _conversations[index];
-          final lastMessage = conversation['lastMessage'] as Map<String, dynamic>?;
-          final unreadCount = conversation['unreadCount'] as int? ?? 0;
+          final participants = conversation.participants;
+          final participant = participants.isNotEmpty
+              ? participants.firstWhere(
+                (p) => p.id != _userId,
+            orElse: () => participants[0],
+          )
+              : Participant(
+            id: '',
+            firstName: 'Inconnu',
+            lastName: '',
+          );
+          final lastMessage = conversation.lastMessage;
+          final chatId = conversation.chatId;
+          final unreadCount = conversation.unreadCount;
+
           return ListTile(
-            leading: _getVetAvatar(conversation),
-            title: Text(_getConversationTitle(conversation)),
-            subtitle: Text(_getLastMessagePreview(lastMessage)),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  _formatTimestamp(
-                    lastMessage != null && lastMessage['createdAt'] != null
-                        ? DateTime.tryParse(lastMessage['createdAt'] as String)
-                        : null,
-                  ),
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                if (unreadCount > 0)
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.blueAccent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '$unreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
-              ],
+            leading: _buildProfilePicture(participant.profilePicture, 50),
+            title: Text(
+              '${participant.firstName} ${participant.lastName}',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
             ),
-            onTap: () async {
-              final vetId = _getVeterinaireId(conversation);
-              if (vetId == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invalid conversation participants')),
-                );
-                return;
-              }
-              await Navigator.push(
+            subtitle: Text(
+              lastMessage != null && lastMessage.content.isNotEmpty
+                  ? lastMessage.content
+                  : 'Aucun message',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+            trailing: unreadCount > 0
+                ? CircleAvatar(
+              radius: 12,
+              backgroundColor: Colors.blue,
+              child: Text(
+                unreadCount.toString(),
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+                : null,
+            onTap: () {
+              Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => ChatScreen(
-                    chatId: conversation['chatId'] as String,
-                    veterinaireId: vetId,
-                    participants: List<Map<String, dynamic>>.from(
-                      conversation['participants'] ?? [],
-                    ),
+                    chatId: chatId,
+                    veterinaireId: participant.id,
+                    participants: participants
+                        .map((p) => {
+                      'id': p.id,
+                      'firstName': p.firstName,
+                      'lastName': p.lastName,
+                      'profilePicture': p.profilePicture,
+                    })
+                        .toList(),
                   ),
                 ),
               );
-              // Refresh conversations on return
-              await _chatService.getConversations(_userId!);
             },
           );
         },
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _chatService.dispose();
+    super.dispose();
   }
 }

@@ -165,45 +165,61 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
       );
 
       final chatId = conversation['chatId'] as String;
-      final participants = List<Map<String, dynamic>>.from(conversation['participants']);
+      final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
 
-      // Ensure participants include client and vet
-      if (!participants.any((p) => p['_id'] == _userId)) {
-        participants.add({
-          '_id': _userId,
+      // Standardize participant keys to match ChatScreen and ConversationsScreen
+      final standardizedParticipants = participants.map((p) {
+        return {
+          'id': p['id'] as String? ?? '',
+          'firstName': p['firstName'] as String? ?? 'Unknown',
+          'lastName': p['lastName'] as String? ?? '',
+          'profilePicture': p['profilePicture'] as String?,
+        };
+      }).toList();
+
+      // Add client if missing
+      if (!standardizedParticipants.any((p) => p['id'] == _userId)) {
+        standardizedParticipants.add({
+          'id': _userId!,
           'firstName': 'You',
           'lastName': '',
-          'role': 'client',
-          'profileImageUrl': '',
-        });
-      }
-      if (!participants.any((p) => p['_id'] == widget.vet.id)) {
-        participants.add({
-          '_id': widget.vet.id,
-          'firstName': widget.vet.firstName,
-          'lastName': widget.vet.lastName,
-          'role': 'veterinaire',
-          'profileImageUrl': widget.vet.profilePicture ?? '',
+          'profilePicture': null,
         });
       }
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            chatId: chatId,
-            veterinaireId: widget.vet.id,
-            participants: participants,
+      // Add vet if missing
+      if (!standardizedParticipants.any((p) => p['id'] == widget.vet.id)) {
+        standardizedParticipants.add({
+          'id': widget.vet.id,
+          'firstName': widget.vet.firstName,
+          'lastName': widget.vet.lastName,
+          'profilePicture': widget.vet.profilePicture,
+        });
+      }
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatId: chatId,
+              veterinaireId: widget.vet.id,
+              participants: standardizedParticipants,
+            ),
           ),
-        ),
-      );
+        );
+      }
     } catch (e) {
       debugPrint('Error starting conversation: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start conversation: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start conversation: $e')),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
