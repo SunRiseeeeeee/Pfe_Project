@@ -123,7 +123,7 @@ ws.on('message', async (rawMessage: string) => {
 
 
 case 'GET_CONVERSATIONS': {
-  const { userId } = data;
+  const { userId, searchTerm } = data;
 
   if (!userId) {
     ws.send(JSON.stringify({ status: 'error', message: 'userId est requis' }));
@@ -136,6 +136,7 @@ case 'GET_CONVERSATIONS': {
     firstName: string;
     lastName: string;
     profilePicture?: string;
+    role: UserRole;
   }
 
   interface PopulatedLastMessage {
@@ -151,18 +152,63 @@ case 'GET_CONVERSATIONS': {
     updatedAt: Date;
   }
 
-  // Recherche des conversations
-  const conversations = await Chat.find({ participants: userId })
+  // Base query - get all chats for this user
+  let query = Chat.find({ participants: userId });
+
+  // Recherche des conversations avec populate
+  let conversations = await query
     .populate({
       path: 'participants',
-      select: 'firstName lastName profilePicture',
+      select: 'firstName lastName profilePicture role',
     })
     .populate({
       path: 'lastMessage',
       select: 'content type createdAt',
     })
     .sort({ updatedAt: -1 })
-    .lean<PopulatedChat[]>(); // typage explicite pour éviter les erreurs TS
+    .lean<PopulatedChat[]>();
+
+  // Si un terme de recherche est fourni, filtrer les conversations
+  if (searchTerm) {
+    const currentUser = await User.findById(userId);
+    if (!currentUser) {
+      ws.send(JSON.stringify({ status: 'error', message: 'Utilisateur introuvable' }));
+      break;
+    }
+
+    const searchTermLower = searchTerm.toLowerCase();
+
+    conversations = conversations.filter(chat => {
+      // Trouver les autres participants (exclure l'utilisateur courant)
+      const otherParticipants = chat.participants.filter(
+        p => p._id.toString() !== userId
+      );
+
+      // Pour chaque participant, vérifier si son nom correspond au terme de recherche
+      return otherParticipants.some(participant => {
+        // Si l'utilisateur courant est un client, on ne cherche que parmi les vétérinaires/secrétaires
+        if (currentUser.role === UserRole.CLIENT) {
+          if (participant.role !== UserRole.VETERINAIRE && 
+              participant.role !== UserRole.SECRETAIRE) {
+            return false;
+          }
+        }
+        // Si l'utilisateur courant est un vétérinaire/secrétaire, on ne cherche que parmi les clients
+        else {
+          if (participant.role !== UserRole.CLIENT) {
+            return false;
+          }
+        }
+
+        // Vérifier la correspondance avec le terme de recherche
+        return (
+          participant.firstName.toLowerCase().includes(searchTermLower) ||
+          participant.lastName.toLowerCase().includes(searchTermLower) ||
+          `${participant.firstName} ${participant.lastName}`.toLowerCase().includes(searchTermLower)
+        );
+      });
+    });
+  }
 
   // Formatage des données
   const formattedConversations = conversations.map(chat => {
@@ -175,6 +221,7 @@ case 'GET_CONVERSATIONS': {
         firstName: p.firstName,
         lastName: p.lastName,
         profilePicture: p.profilePicture,
+        role: p.role,
       })),
       lastMessage: chat.lastMessage
         ? {
@@ -384,9 +431,9 @@ case 'SEND_MESSAGE': {
 
 
 
-      default:
-        throw new Error(`Type de message inconnu : ${data.type}`);
-    }
+default:
+  throw new Error(`Type de message inconnu : ${data.type}`);
+  }
 
   } catch (error) {
     console.error('❌ Erreur lors du traitement du message:', (error as Error).message);
