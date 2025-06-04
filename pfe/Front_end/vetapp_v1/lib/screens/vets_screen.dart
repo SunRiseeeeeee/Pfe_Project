@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io'; // Added for File
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
 import 'package:vetapp_v1/screens/VetDetailsScreen.dart';
@@ -33,7 +33,7 @@ class _VetsScreenState extends State<VetsScreen> {
     'Cardiology',
     'Oncology',
     'Chirurgie canine',
-    'Urgences vétérinaires & NAC',
+    'Urgences & NAC',
   ];
 
   @override
@@ -44,6 +44,7 @@ class _VetsScreenState extends State<VetsScreen> {
     veterinariansFuture = VetService.fetchVeterinarians(
       location: locationFilter,
       specialty: specialtyFilter,
+      name: nameFilter,
       page: currentPage,
       limit: limit,
       sort: sort,
@@ -56,11 +57,13 @@ class _VetsScreenState extends State<VetsScreen> {
       veterinariansFuture = VetService.fetchVeterinarians(
         location: locationFilter,
         specialty: specialtyFilter,
+        name: nameFilter,
         page: currentPage,
         limit: limit,
         sort: sort,
       );
-      debugPrint('Refreshing veterinarians with: page=$currentPage, location=$locationFilter, specialty=$specialtyFilter, name=$nameFilter, limit=$limit, sort=$sort');
+      debugPrint(
+          'Refreshing veterinarians with: page=$currentPage, location=$locationFilter, specialty=$specialtyFilter, name=$nameFilter, limit=$limit, sort=$sort');
     });
   }
 
@@ -73,7 +76,7 @@ class _VetsScreenState extends State<VetsScreen> {
   }
 
   void _showFilterDialog() {
-    String? tempLocationFilter = locationFilter ?? '';
+    String? tempLocationFilter = locationFilter;
     String? tempSpecialtyFilter = specialtyFilter;
 
     showDialog(
@@ -88,11 +91,12 @@ class _VetsScreenState extends State<VetsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text('Filter by Location', style: GoogleFonts.poppins()),
-                    TextField(
+                    TextFormField(
                       controller: _locationController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Enter location (e.g., Lyon)',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        hintStyle: GoogleFonts.poppins(color: Colors.grey),
                       ),
                       style: GoogleFonts.poppins(),
                       onChanged: (value) {
@@ -106,10 +110,14 @@ class _VetsScreenState extends State<VetsScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text('Filter by Specialty', style: GoogleFonts.poppins()),
-                    DropdownButton<String>(
+                    DropdownButtonFormField<String>(
                       value: tempSpecialtyFilter,
-                      hint: Text('Select specialty', style: GoogleFonts.poppins()),
-                      isExpanded: true,
+                      decoration: InputDecoration(
+                        hintText: 'Select specialty',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                      ),
+                      style: GoogleFonts.poppins(color: Colors.black),
                       items: [
                         DropdownMenuItem<String>(
                           value: null,
@@ -189,11 +197,12 @@ class _VetsScreenState extends State<VetsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text('Search by Name', style: GoogleFonts.poppins()),
-                    TextField(
+                    TextFormField(
                       controller: _searchController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Enter first or last name (e.g., Pierre)',
-                        border: OutlineInputBorder(),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        hintStyle: GoogleFonts.poppins(color: Colors.grey),
                       ),
                       style: GoogleFonts.poppins(),
                       onChanged: (value) {
@@ -264,7 +273,6 @@ class _VetsScreenState extends State<VetsScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Custom Header with Back Arrow and Action Icons
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                 child: Row(
@@ -303,7 +311,6 @@ class _VetsScreenState extends State<VetsScreen> {
                   ],
                 ),
               ),
-              // Content Section
               Expanded(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -443,76 +450,81 @@ class VeterinarianList extends StatelessWidget {
         if (responseData == null || responseData['veterinarians'] == null || responseData['veterinarians'].isEmpty) {
           String message = 'No veterinarians found.';
           if (nameFilter != null && nameFilter!.isNotEmpty) {
-            message = 'No veterinarians found with name $nameFilter.';
+            message = 'No veterinarians found with name "$nameFilter".';
           }
           if (locationFilter != null && locationFilter!.isNotEmpty) {
-            message = 'No veterinarians found in $locationFilter.';
+            message += ' in "$locationFilter"';
           }
           if (specialtyFilter != null) {
-            message += ' with specialty $specialtyFilter.';
+            message += ' with specialty "$specialtyFilter".';
           }
-          return Center(child: Text(message, style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
+          return Center(child: Text(message, style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)));
         }
         List<dynamic> veterinariansData = responseData['veterinarians'];
-        List<Veterinarian> veterinarians = [];
-        List<String?> specializations = [];
+        List<Veterinarian> veterinarians = veterinariansData.map((json) => Veterinarian.fromJson(json)).toList();
 
-        for (var json in veterinariansData) {
-          veterinarians.add(Veterinarian.fromJson(json));
-          final details = json['details'] as Map<String, dynamic>?;
-          final specialty = details != null ? details['specialty']?.toString() : null;
-          specializations.add(specialty);
-        }
-
+        // Client-side filtering for name, location, and specialty
         if (nameFilter != null && nameFilter!.isNotEmpty) {
           final lowerCaseNameFilter = nameFilter!.toLowerCase();
-          veterinarians = veterinarians.asMap().entries.where((entry) {
+          veterinarians = veterinarians
+              .asMap()
+              .entries
+              .where((entry) {
             final vet = entry.value;
             final firstName = vet.firstName.toLowerCase();
             final lastName = vet.lastName.toLowerCase();
             return firstName.contains(lowerCaseNameFilter) || lastName.contains(lowerCaseNameFilter);
-          }).map((entry) => entry.value).toList();
-          specializations = veterinarians.asMap().entries.where((entry) {
-            final vet = entry.value;
-            final firstName = vet.firstName.toLowerCase();
-            final lastName = vet.lastName.toLowerCase();
-            return firstName.contains(lowerCaseNameFilter) || lastName.contains(lowerCaseNameFilter);
-          }).map((entry) => specializations[entry.key]).toList();
+          })
+              .map((entry) => entry.value)
+              .toList();
         }
         if (locationFilter != null && locationFilter!.isNotEmpty) {
-          veterinarians = veterinarians.asMap().entries.where((entry) {
+          final lowerCaseLocationFilter = locationFilter!.toLowerCase();
+          veterinarians = veterinarians
+              .asMap()
+              .entries
+              .where((entry) {
             final vet = entry.value;
             final location = vet.location.toLowerCase();
-            return location.contains(locationFilter!.toLowerCase());
-          }).map((entry) => entry.value).toList();
-          specializations = veterinarians.asMap().entries.where((entry) {
-            final vet = entry.value;
-            final location = vet.location.toLowerCase();
-            return location.contains(locationFilter!.toLowerCase());
-          }).map((entry) => specializations[entry.key]).toList();
+            return location.contains(lowerCaseLocationFilter);
+          })
+              .map((entry) => entry.value)
+              .toList();
         }
         if (specialtyFilter != null && specialtyFilter!.isNotEmpty) {
-          final filtered = veterinarians.asMap().entries.where((entry) {
-            final index = entry.key;
-            final specialization = specializations[index];
-            return specialization != null && specialization.toLowerCase() == specialtyFilter!.toLowerCase();
-          }).toList();
-          veterinarians = filtered.map((entry) => entry.value).toList();
-          specializations = filtered.map((entry) => specializations[entry.key]).toList();
+          final lowerCaseSpecialtyFilter = specialtyFilter!.toLowerCase();
+          veterinarians = veterinarians
+              .asMap()
+              .entries
+              .where((entry) {
+            final details = (veterinariansData[entry.key]['details'] as Map<String, dynamic>?);
+            final specialization = details != null ? details['specialization']?.toString().toLowerCase() : null;
+            debugPrint('Comparing vet specialization: $specialization with filter: $lowerCaseSpecialtyFilter');
+            return specialization == lowerCaseSpecialtyFilter;
+          })
+              .map((entry) => entry.value)
+              .toList();
+        }
+
+        // Log specialties for debugging
+        for (var i = 0; i < veterinariansData.length; i++) {
+          final details = (veterinariansData[i]['details'] as Map<String, dynamic>?);
+          final specialization = details != null ? details['specialization']?.toString() : null;
+          debugPrint('Vet $i specialization: $specialization');
         }
 
         if (veterinarians.isEmpty) {
           String message = 'No veterinarians found.';
           if (nameFilter != null && nameFilter!.isNotEmpty) {
-            message = 'No veterinarians found with name $nameFilter.';
+            message = 'No veterinarians found with name "$nameFilter".';
           }
           if (locationFilter != null && locationFilter!.isNotEmpty) {
-            message = 'No veterinarians found in $locationFilter.';
+            message += ' in "$locationFilter"';
           }
           if (specialtyFilter != null) {
-            message += ' with specialty $specialtyFilter.';
+            message += ' with specialty "$specialtyFilter".';
           }
-          return Center(child: Text(message, style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)));
+          return Center(child: Text(message, style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)));
         }
 
         return Column(
@@ -522,20 +534,24 @@ class VeterinarianList extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                crossAxisSpacing: 10,
+                crossAxisSpacing: 8,
                 mainAxisSpacing: 10,
                 childAspectRatio: 3 / 4,
               ),
               itemCount: veterinarians.length,
               itemBuilder: (context, index) {
                 final vet = veterinarians[index];
-                final specialization = specializations[index];
+                final details = (veterinariansData[index]['details'] as Map<String, dynamic>?);
+                final specialization = details != null ? details['specialization']?.toString() : null;
                 String? profileUrl = vet.profilePicture;
-                // Replace localhost with IP for network URLs
                 if (profileUrl != null && profileUrl.contains('localhost')) {
                   profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.16');
                 }
-                debugPrint('Vet profile picture: $profileUrl');
+                // Validate profile picture path
+                final isValidImageUrl = profileUrl != null &&
+                    (profileUrl.startsWith('http') ||
+                        (profileUrl.startsWith('/') && File(profileUrl).existsSync()));
+                debugPrint('Vet $index profile picture: $profileUrl, valid: $isValidImageUrl');
                 return GestureDetector(
                   onTap: () {
                     Navigator.push(
@@ -551,8 +567,8 @@ class VeterinarianList extends StatelessWidget {
                         Expanded(
                           child: ClipRRect(
                             borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                            child: profileUrl != null && profileUrl.isNotEmpty
-                                ? profileUrl.startsWith('http')
+                            child: isValidImageUrl
+                                ? profileUrl!.startsWith('http')
                                 ? Image.network(
                               profileUrl,
                               width: double.infinity,

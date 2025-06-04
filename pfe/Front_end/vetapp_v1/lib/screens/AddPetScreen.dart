@@ -25,7 +25,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
   @override
   void initState() {
     super.initState();
-    Dio dio = Dio(BaseOptions(baseUrl: 'http://192.168.1.16:3000/api'));
+    Dio dio = Dio(BaseOptions(baseUrl: PetService.baseUrl + '/api'));
     _petService = PetService(dio: dio);
   }
 
@@ -33,9 +33,23 @@ class _AddPetScreenState extends State<AddPetScreen> {
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
     if (image != null) {
+      final file = File(image.path);
+      if (!file.existsSync()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selected image is invalid')),
+        );
+        return;
+      }
+      final sizeInMB = file.lengthSync() / 1024 / 1024;
+      if (sizeInMB > 5) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image size must be less than 5 MB')),
+        );
+        return;
+      }
       setState(() {
-        _imageFile = File(image.path);
-        print('Selected image: ${image.path}'); // Debug log
+        _imageFile = file;
+        print('Selected image: ${image.path}, size: $sizeInMB MB');
       });
     }
   }
@@ -58,6 +72,15 @@ class _AddPetScreenState extends State<AddPetScreen> {
   Future<void> _submit() async {
     if (_formKey.currentState?.validate() ?? false) {
       try {
+        print('Starting pet creation...');
+        print('Image file: ${_imageFile?.path}');
+        if (_imageFile != null) {
+          print('Image file exists: ${_imageFile!.existsSync()}');
+          print('Image file size: ${_imageFile!.lengthSync() / 1024 / 1024} MB');
+        } else {
+          print('No image selected');
+        }
+
         final response = await _petService.createPet(
           name: _nameController.text,
           species: _speciesController.text,
@@ -66,13 +89,17 @@ class _AddPetScreenState extends State<AddPetScreen> {
           birthDate: _selectedBirthDate?.toIso8601String(),
           imageFile: _imageFile,
         );
-        print('AddPetScreen response: $response'); // Debug log
+
+        print('AddPetScreen response: $response');
+        print('Returned pet picture: ${response['picture']}');
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Pet added successfully!')),
         );
+
         Navigator.pop(context, response);
       } catch (e) {
-        print('AddPetScreen error: $e'); // Debug log
+        print('AddPetScreen error: $e');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to add pet: $e')),
         );

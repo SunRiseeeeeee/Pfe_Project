@@ -11,7 +11,7 @@ class ChatScreen extends StatefulWidget {
     super.key,
     required this.chatId,
     required this.veterinaireId,
-    required this.participants,
+    required this.participants, required String vetId, required recipientId, required String recipientName,
   });
 
   @override
@@ -53,26 +53,27 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    // Set conversation title from participants
     final otherParticipants = widget.participants
-        .where((p) => p['_id'] != _userId)
+        .where((p) => p['id'] != _userId)
         .map((p) => '${p['firstName'] ?? ''} ${p['lastName'] ?? ''}'.trim())
         .where((name) => name.isNotEmpty)
         .toList();
     _conversationTitle = otherParticipants.isEmpty ? 'Group Chat' : otherParticipants.join(', ');
 
     try {
-      await _chatService.connect(_userId!, 'CLIENT'); // Adjust role as needed
+      final userRole = await TokenStorage.getUserRoleFromToken();
+      await _chatService.connect(_userId!, userRole?.toUpperCase() ?? 'CLIENT');
       _chatService.onNewMessage().listen((data) {
+        print('Received message event: $data');
         if (data['chatId'] == widget.chatId && data['type'] == 'NEW_MESSAGE') {
           final newMessage = data['message'] as Map<String, dynamic>;
           setState(() {
-            if (!_messages.any((m) => m['_id'] == newMessage['_id'])) {
+            if (!_messages.any((m) => m['id'] == newMessage['id'])) {
               _messages.insert(0, newMessage);
             }
           });
           _scrollToBottom();
-          if (newMessage['sender']['_id'] != _userId) {
+          if (newMessage['sender']['id'] != _userId) {
             _chatService.markMessagesAsRead(
               chatId: widget.chatId,
               userId: _userId!,
@@ -80,26 +81,41 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         } else if (data['chatId'] == widget.chatId && data['type'] == 'MESSAGES_LIST') {
           setState(() {
-            _messages = List<Map<String, dynamic>>.from(data['messages'] ?? []).reversed.toList();
+            _messages = List<Map<String, dynamic>>.from(data['messages'] ?? [])
+                .map((m) => {
+              'id': m['id'],
+              'sender': {
+                'id': m['sender']['_id'],
+                'firstName': m['sender']['firstName'] ?? '',
+                'lastName': m['sender']['lastName'] ?? '',
+                'profilePicture': m['sender']['profilePicture'],
+              },
+              'content': m['content'],
+              'type': m['type'],
+              'createdAt': m['createdAt'],
+              'readBy': List<String>.from(m['readBy'] ?? []),
+            })
+                .toList()
+                .reversed
+                .toList();
           });
           _scrollToBottom();
-        } else if (data['type'] == 'MESSAGE_READ') {
+        } else if (data['type'] == 'MESSAGE_READ' && data['chatId'] == widget.chatId) {
           final messageId = data['messageId'] as String?;
           final readBy = List<String>.from(data['readBy'] ?? []);
-          if (messageId != null) {
-            setState(() {
-              final index = _messages.indexWhere((m) => m['_id'] == messageId);
-              if (index != -1) {
-                _messages[index] = {
-                  ..._messages[index],
-                  'readBy': readBy,
-                };
+          print('Updating read status for message $messageId: $readBy');
+          setState(() {
+            _messages = _messages.map((m) {
+              if (m['id'] == messageId) {
+                return {...m, 'readBy': readBy};
               }
-            });
-          }
+              return m;
+            }).toList();
+          });
         }
       });
       await _chatService.getMessages(widget.chatId);
+      await _chatService.markMessagesAsRead(chatId: widget.chatId, userId: _userId!);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error connecting: $e')),
@@ -114,18 +130,18 @@ class _ChatScreenState extends State<ChatScreen> {
     final content = _messageController.text;
     final tempId = DateTime.now().millisecondsSinceEpoch.toString();
 
-    // Optimistically add message to UI
     setState(() {
       _messages.insert(0, {
-        '_id': tempId,
+        'id': tempId,
         'sender': {
-          '_id': _userId,
-          'firstName': 'You', // Replace with actual user data if available
+          'id': _userId,
+          'firstName': 'You',
           'lastName': '',
         },
         'content': content,
         'createdAt': DateTime.now().toIso8601String(),
-        'readBy': [], // Empty readBy for "Sent" status
+        'readBy': [_userId],
+        'type': 'text',
       });
     });
     _messageController.clear();
@@ -134,13 +150,12 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await _chatService.sendMessage(
         senderId: _userId!,
-        veterinaireId: widget.veterinaireId,
+        targetId: widget.veterinaireId,
         content: content,
       );
     } catch (e) {
-      // Remove optimistic message on failure
       setState(() {
-        _messages.removeWhere((m) => m['_id'] == tempId);
+        _messages.removeWhere((m) => m['id'] == tempId);
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send message: $e')),
@@ -171,7 +186,10 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_conversationTitle)),
+      appBar: AppBar(
+        title: Text(_conversationTitle),
+        backgroundColor: Colors.deepPurple,
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -183,9 +201,11 @@ class _ChatScreenState extends State<ChatScreen> {
               itemCount: _messages.length,
               itemBuilder: (context, index) {
                 final message = _messages[index];
-                final isMe = (message['sender']?['_id'] as String?) == _userId;
+                final isMe = (message['sender']?['id'] as String?) == _userId;
                 final readBy = List<String>.from(message['readBy'] ?? []);
-                final isRead = isMe ? readBy.any((id) => id != _userId) : readBy.contains(_userId);
+                final isRead = isMe
+                    ? readBy.any((id) => id != _userId)
+                    : readBy.contains(_userId);
                 return Align(
                   alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(

@@ -16,6 +16,7 @@ import 'package:dio/dio.dart';
 import '../models/service.dart';
 import '../services/service_service.dart';
 import 'conversations_screen.dart';
+import '../services/chat_service.dart';
 
 class VetService {
   static const String baseUrl = "http://192.168.1.16:3000/api/users/veterinarians";
@@ -69,6 +70,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   String? userRole;
+  String? userId;
+  final ChatService _chatService = ChatService();
+  int _unreadMessageCount = 0;
+  final Map<String, Map<String, dynamic>> _unreadMessages = {};
+  StreamSubscription<Map<String, dynamic>>? _messageSubscription;
+  StreamSubscription<Map<String, dynamic>>? _conversationSubscription;
 
   @override
   void initState() {
@@ -79,48 +86,236 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadUserRole() async {
     try {
       final rawRole = await TokenStorage.getUserRoleFromToken();
+      final userIdFromToken = await TokenStorage.getUserId();
       print('Raw role from TokenStorage: $rawRole');
       final normalizedRole = rawRole?.toLowerCase().trim();
       setState(() {
         userRole = normalizedRole ?? 'client';
+        userId = userIdFromToken;
         if (normalizedRole == 'vet' || normalizedRole == 'veterinaire') {
           userRole = 'veterinarian';
         }
-        print('Final userRole: $userRole');
+        print('Final userRole: $userRole, userId: $userId');
       });
+      await _initializeChatService();
     } catch (e) {
-      print('Error fetching user role: $e');
+      print('Error fetching user role or ID: $e');
       setState(() {
         userRole = 'client';
+        userId = null;
         print('Final userRole (error): $userRole');
       });
     }
   }
 
+  Future<void> _initializeChatService() async {
+    if (userId != null && userRole != null) {
+      try {
+        print('Initializing ChatService for userId: $userId, role: $userRole');
+        await _chatService.connect(userId!, userRole!);
+        _listenToMessages();
+        _listenToConversations();
+        // Delay to ensure WebSocket is connected
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _chatService.getConversations(userId!);
+        print('ChatService initialized and conversations fetched');
+      } catch (e) {
+        print('Error initializing ChatService: $e');
+      }
+    } else {
+      print('Cannot initialize ChatService: userId or userRole is null');
+    }
+  }
+
+  void _listenToMessages() {
+    _messageSubscription = _chatService.onNewMessage().listen((data) {
+      print('New message event: $data');
+      if (data['type'] == 'NEW_MESSAGE' && data['message'] != null && data['message']['sender']['id'] != userId) {
+        setState(() {
+          final chatId = data['chatId'] as String? ?? '';
+          if (chatId.isEmpty) return;
+          final sender = data['message']['sender'] as Map<String, dynamic>? ?? {};
+          _unreadMessages[chatId] = {
+            'senderId': sender['id'] ?? '',
+            'firstName': sender['firstName'] ?? 'Unknown',
+            'lastName': sender['lastName'] ?? '',
+            'profilePicture': sender['profilePicture'],
+            'content': data['message']['content'] ?? '',
+            'chatId': chatId,
+          };
+          _unreadMessageCount = _unreadMessages.length;
+          print('Added unread message for chatId: $chatId, count: $_unreadMessageCount');
+        });
+      } else if (data['type'] == 'MESSAGE_READ' && data['readBy'] != null && (data['readBy'] as List).contains(userId)) {
+        setState(() {
+          final chatId = data['chatId'] as String? ?? '';
+          _unreadMessages.remove(chatId);
+          _unreadMessageCount = _unreadMessages.length;
+          print('Removed unread message for chatId: $chatId, count: $_unreadMessageCount');
+        });
+      }
+    }, onError: (error) {
+      print('Error in message subscription: $error');
+    });
+  }
+
+  void _listenToConversations() {
+    _conversationSubscription = _chatService.onConversations().listen((data) {
+      print('Conversation event: $data');
+      if (data['type'] == 'CONVERSATIONS_LIST' && data['conversations'] != null) {
+        setState(() {
+          int totalUnread = 0;
+          final conversations = List<Map<String, dynamic>>.from(data['conversations']);
+          _unreadMessages.clear();
+
+          for (var convo in conversations) {
+            final unreadCount = convo['unreadCount'] as int? ?? 0;
+            totalUnread += unreadCount;
+
+            if (unreadCount > 0 && convo['lastMessage'] != null) {
+              final chatId = convo['chatId'] as String? ?? '';
+              final lastMessage = convo['lastMessage'] as Map<String, dynamic>? ?? {};
+              final participants = List<Map<String, dynamic>>.from(convo['participants'] ?? []);
+
+              // Find the other participant (not the current user)
+              Map<String, dynamic>? otherParticipant;
+              for (var participant in participants) {
+                if (participant['id'] != userId) {
+                  otherParticipant = participant;
+                  break;
+                }
+              }
+
+              if (chatId.isNotEmpty && otherParticipant != null) {
+                _unreadMessages[chatId] = {
+                  'senderId': otherParticipant['id'] ?? '',
+                  'firstName': otherParticipant['firstName'] ?? 'Unknown',
+                  'lastName': otherParticipant['lastName'] ?? '',
+                  'profilePicture': otherParticipant['profilePicture'],
+                  'content': lastMessage['content'] ?? '',
+                  'chatId': chatId,
+                };
+              }
+            }
+          }
+
+          _unreadMessageCount = totalUnread;
+          print('Updated unread messages from conversations, count: $_unreadMessageCount');
+        });
+      }
+    }, onError: (error) {
+      print('Error in conversation subscription: $error');
+    });
+  }
+
+  void _showNotificationsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('New Messages'),
+          content: _unreadMessages.isEmpty
+              ? const Text('No new messages.')
+              : SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _unreadMessages.entries.map((entry) {
+                final message = entry.value;
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundImage: message['profilePicture'] != null
+                        ? NetworkImage(message['profilePicture'])
+                        : null,
+                    child: message['profilePicture'] == null
+                        ? Text(message['firstName']?.substring(0, 1) ?? 'U')
+                        : null,
+                  ),
+                  title: Text('${message['firstName']} ${message['lastName']}'),
+                  subtitle: Text(
+                    message['content'],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatScreen(
+                          chatId: message['chatId'],
+                          recipientId: message['senderId'],
+                          recipientName: '${message['firstName']} ${message['lastName']}',
+                          veterinaireId: '',
+                          participants: [],
+                          vetId: '',
+                        ),
+                      ),
+                    ).then((_) {
+                      if (userId != null) {
+                        _chatService.markMessagesAsRead(
+                          chatId: message['chatId'],
+                          userId: userId!,
+                        );
+                        setState(() {
+                          _unreadMessages.remove(message['chatId']);
+                          _unreadMessageCount = _unreadMessages.length;
+                        });
+                        print('Marked messages as read for chatId: ${message['chatId']}');
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   List<Widget> get _screens {
     if (userRole == 'admin') {
       return [
-        HomeContent(onServiceChanged: () => setState(() {})),
+        HomeContent(
+          onServiceChanged: () => setState(() {}),
+          unreadMessageCount: _unreadMessageCount,
+          unreadMessages: _unreadMessages,
+          onShowNotifications: _showNotificationsDialog,
+        ),
         const ServiceScreen(),
         const FypScreen(),
         const VetsScreen(),
         const ProfileScreen(),
       ];
     } else if (userRole == 'veterinarian' || userRole == 'secretary') {
-      return const [
-        HomeContent(),
-        VetAppointmentScreen(),
-        FypScreen(),
-        VetClientScreen(),
-        ProfileScreen(),
+      return [
+        HomeContent(
+          unreadMessageCount: _unreadMessageCount,
+          unreadMessages: _unreadMessages,
+          onShowNotifications: _showNotificationsDialog,
+        ),
+        const VetAppointmentScreen(),
+        const FypScreen(),
+        const VetClientScreen(),
+        const ProfileScreen(),
       ];
     } else {
-      return const [
-        HomeContent(),
-        AppointmentScreen(),
-        FypScreen(),
-        PetsScreen(),
-        ProfileScreen(),
+      return [
+        HomeContent(
+          unreadMessageCount: _unreadMessageCount,
+          unreadMessages: _unreadMessages,
+          onShowNotifications: _showNotificationsDialog,
+        ),
+        const AppointmentScreen(),
+        const FypScreen(),
+        const PetsScreen(),
+        const ProfileScreen(),
       ];
     }
   }
@@ -135,19 +330,31 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const ConversationsScreen()),
-    );
+    ).then((_) {
+      if (userId != null) {
+        _chatService.getConversations(userId!);
+        print('Refreshed conversations after returning from ConversationsScreen');
+      }
+    });
   }
 
   Future<bool> _onWillPop() async {
     if (_selectedIndex != 0) {
-      // If not on the HomeContent tab, navigate back to it
       setState(() {
         _selectedIndex = 0;
       });
-      return false; // Prevent popping the route
+      return false;
     }
-    // If already on HomeContent, allow the default back action (e.g., exit app)
     return true;
+  }
+
+  @override
+  void dispose() {
+    _messageSubscription?.cancel();
+    _conversationSubscription?.cancel();
+    _chatService.dispose();
+    print('Disposed HomeScreen subscriptions and ChatService');
+    super.dispose();
   }
 
   @override
@@ -165,19 +372,44 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget? _buildFloatingActionButton() {
-    // Show FAB only on the HomeScreen (index 0) and for veterinarian, secretary, or pet_owner (client) roles
     if (_selectedIndex != 0 || userRole == null || userRole == 'guest') {
       return null;
     }
     if (userRole == 'veterinarian' || userRole == 'secretary' || userRole == 'client') {
       return FloatingActionButton(
         onPressed: _openChat,
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.blue,
         elevation: 6,
-        child: const Icon(
-          Icons.chat,
-          color: Colors.white,
-          size: 28,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const Icon(
+              Icons.chat,
+              color: Colors.white,
+              size: 28,
+            ),
+            if (_unreadMessageCount > 0)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                  child: Text(
+                    '$_unreadMessageCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
         tooltip: 'Chat',
       );
@@ -326,7 +558,17 @@ class _CustomNavIcon extends StatelessWidget {
 
 class HomeContent extends StatefulWidget {
   final VoidCallback? onServiceChanged;
-  const HomeContent({super.key, this.onServiceChanged});
+  final int unreadMessageCount;
+  final Map<String, Map<String, dynamic>> unreadMessages;
+  final VoidCallback onShowNotifications;
+
+  const HomeContent({
+    super.key,
+    this.onServiceChanged,
+    required this.unreadMessageCount,
+    required this.unreadMessages,
+    required this.onShowNotifications,
+  });
 
   @override
   _HomeContentState createState() => _HomeContentState();
@@ -407,6 +649,41 @@ class _HomeContentState extends State<HomeContent> {
     _searchController.dispose();
     _debounceTimer?.cancel();
     super.dispose();
+  }
+
+  Widget _buildNotificationIcon() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        const Icon(Icons.notifications_none, size: 28),
+        if (widget.unreadMessageCount > 0)
+          Positioned(
+            top: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1),
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 16,
+                minHeight: 16,
+              ),
+              child: Text(
+                widget.unreadMessageCount > 9 ? '9+' : '${widget.unreadMessageCount}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   void _showSearchDialog() {
@@ -507,7 +784,7 @@ class _HomeContentState extends State<HomeContent> {
                       icon: const Icon(Icons.search),
                       onPressed: _showSearchDialog,
                     ),
-                    IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
+                    _buildNotificationIcon(),
                   ],
                 ),
               ],

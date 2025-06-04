@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:io';
 import 'package:vetapp_v1/services/chat_service.dart';
-import 'package:vetapp_v1/screens/chat_screen.dart'; // Ensure correct import path
+import 'package:vetapp_v1/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+
+import '../models/token_storage.dart';
 
 // Define interfaces for type safety
 interface class Participant {
@@ -94,6 +97,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
   List<Conversation> _conversations = [];
   String? _userId;
   bool _isLoading = true;
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -105,29 +111,39 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('userId');
-      const role = 'CLIENT';
+      final role = await TokenStorage.getUserRoleFromToken() ?? 'client';
 
       if (userId != null) {
         setState(() {
           _userId = userId;
         });
         await _chatService.connect(userId, role);
-        _chatService.onConversations().listen((data) {
-          print('Received conversation stream event: $data');
-          if (data['type'] == 'CONVERSATIONS_LIST') {
-            final conversationsJson = data['conversations'] as List<dynamic>? ?? [];
-            setState(() {
-              _conversations = conversationsJson
-                  .map((c) => Conversation.fromJson(c as Map<String, dynamic>))
-                  .toList();
-              _isLoading = false;
-              print('Updated conversations in UI: ${_conversations.length} conversations');
-              for (final convo in _conversations) {
-                print('Conversation ${convo.chatId}: lastMessage = ${convo.lastMessage?.content}');
-              }
-            });
-          }
-        });
+        _chatService.onConversations().listen(
+              (data) {
+            if (data['type'] == 'CONVERSATIONS_LIST') {
+              final conversationsJson = data['conversations'] as List<dynamic>? ?? [];
+              print('Received CONVERSATIONS_LIST with ${conversationsJson.length} conversations');
+              setState(() {
+                _conversations = conversationsJson
+                    .map((c) => Conversation.fromJson(c as Map<String, dynamic>))
+                    .toList();
+                _isLoading = false;
+                print('Updated UI with ${_conversations.length} conversations');
+                for (final convo in _conversations) {
+                  print('Conversation ${convo.chatId}: lastMessage = ${convo.lastMessage?.content}');
+                }
+              });
+            }
+          },
+          onError: (error) {
+            print('Conversation stream error: $error');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Erreur de mise à jour : $error')),
+              );
+            }
+          },
+        );
         await _chatService.getConversations(userId);
       } else {
         setState(() {
@@ -140,6 +156,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         }
       }
     } catch (e) {
+      print('Initialization error: $e');
       setState(() {
         _isLoading = false;
       });
@@ -149,6 +166,31 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         );
       }
     }
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _searchController.clear();
+        _isLoading = true;
+        if (_userId != null) {
+          _chatService.getConversations(_userId!);
+        }
+      }
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 1000), () {
+      setState(() {
+        _isLoading = true;
+      });
+      if (_userId != null) {
+        _chatService.getConversations(_userId!, searchTerm: value.trim().isNotEmpty ? value.trim() : null);
+      }
+    });
   }
 
   Widget _buildProfilePicture(String? profilePicture, double size) {
@@ -196,19 +238,52 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
+        title: _isSearching
+            ? TextField(
+          controller: _searchController,
+          autofocus: true,
+          style: GoogleFonts.poppins(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Rechercher par nom...',
+            hintStyle: GoogleFonts.poppins(color: Colors.white70),
+            border: InputBorder.none,
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.clear, color: Colors.white),
+              onPressed: () {
+                _searchController.clear();
+                setState(() {
+                  _isLoading = true;
+                });
+                if (_userId != null) {
+                  _chatService.getConversations(_userId!);
+                }
+              },
+            ),
+          ),
+          onChanged: _onSearchChanged,
+        )
+            : Text(
           'Conversations',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.deepPurple,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search, color: Colors.white),
+            onPressed: _toggleSearch,
+            tooltip: _isSearching ? 'Annuler la recherche' : 'Rechercher',
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _conversations.isEmpty
           ? Center(
         child: Text(
-          'Aucune conversation',
+          _searchController.text.isNotEmpty
+              ? 'Aucune conversation trouvée pour "${_searchController.text}"'
+              : 'Aucune conversation',
           style: GoogleFonts.poppins(color: Colors.grey),
         ),
       )
@@ -274,6 +349,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                       'profilePicture': p.profilePicture,
                     })
                         .toList(),
+                    vetId: participant.id, recipientId: null, recipientName: '',
                   ),
                 ),
               );
@@ -286,6 +362,8 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
+    _debounceTimer?.cancel();
     _chatService.dispose();
     super.dispose();
   }

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:multi_select_flutter/multi_select_flutter.dart';
 import '../services/user_service.dart';
+import '../services/service_service.dart';
 
 class AddVeterinaryScreen extends StatefulWidget {
-  const AddVeterinaryScreen({Key? key}) : super(key: key);
+  const AddVeterinaryScreen({super.key});
 
   @override
   _AddVeterinaryScreenState createState() => _AddVeterinaryScreenState();
@@ -17,14 +19,29 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneNumberController = TextEditingController();
-  final _specializationController = TextEditingController();
-  final _servicesController = TextEditingController();
   final _experienceYearsController = TextEditingController();
-  final _mapsLocationController = TextEditingController(); // New controller for mapsLocation
+  final _mapsLocationController = TextEditingController();
+  String? _selectedSpecialization;
+  List<String> _selectedServices = [];
   bool _isLoading = false;
+  bool _isServicesLoading = true;
+  String? _servicesError;
+  List<String> _availableServices = [];
   final UserService _userService = UserService();
 
-  // Static working hours; can be made dynamic with additional UI
+  // List of available specialties (fixed typo)
+  final List<String> _specialties = [
+    'General Practice',
+    'Surgery',
+    'Dentistry',
+    'Dermatology',
+    'Cardiology',
+    'Oncology',
+    'Chirurgie canine',
+    'Urgences & NAC',
+  ];
+
+  // Static working hours
   final List<Map<String, dynamic>> _workingHours = [
     {'day': 'Monday', 'start': '09:00', 'end': '17:00', 'pauseStart': '12:00', 'pauseEnd': '13:00'},
     {'day': 'Tuesday', 'start': '09:00', 'end': '17:00', 'pauseStart': '12:00', 'pauseEnd': '13:00'},
@@ -33,12 +50,50 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
     {'day': 'Friday', 'start': '09:00', 'end': '17:00', 'pauseStart': '12:00', 'pauseEnd': '13:00'},
   ];
 
-  Future<void> _createVeterinary() async {
-    if (!_formKey.currentState!.validate()) return;
+  @override
+  void initState() {
+    super.initState();
+    _fetchServices();
+  }
 
-    setState(() {
-      _isLoading = true;
-    });
+  Future<void> _fetchServices() async {
+    try {
+      setState(() => _isServicesLoading = true);
+      final services = await ServiceService.fetchServiceNames();
+      if (mounted) {
+        setState(() {
+          _availableServices = services;
+          _isServicesLoading = false;
+          _servicesError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isServicesLoading = false;
+          _servicesError = 'Failed to load services: $e';
+        });
+      }
+      print('Error in _fetchServices: $e');
+    }
+  }
+
+  Future<void> _createVeterinarian() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    if (_selectedServices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please select at least one service', style: GoogleFonts.poppins()),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
 
     try {
       await _userService.createVeterinary(
@@ -48,14 +103,15 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
         phoneNumber: _phoneNumberController.text.trim(),
-        services: _servicesController.text.trim().split(',').map((s) => s.trim()).toList(),
+        services: _selectedServices,
         workingHours: _workingHours,
-        specialization: _specializationController.text.trim(),
+        specialization: _selectedSpecialization!,
         experienceYears: int.tryParse(_experienceYearsController.text.trim()),
         mapsLocation: _mapsLocationController.text.trim().isNotEmpty
             ? _mapsLocationController.text.trim()
-            : null, // Pass mapsLocation if not empty
+            : null,
       );
+      if (!context.mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -65,6 +121,7 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
         ),
       );
     } catch (e) {
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to create veterinarian: $e', style: GoogleFonts.poppins()),
@@ -73,9 +130,9 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
         ),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -87,10 +144,8 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _phoneNumberController.dispose();
-    _specializationController.dispose();
-    _servicesController.dispose();
     _experienceYearsController.dispose();
-    _mapsLocationController.dispose(); // Dispose new controller
+    _mapsLocationController.dispose();
     super.dispose();
   }
 
@@ -269,33 +324,74 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
                             },
                           ),
                           const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _specializationController,
+                          DropdownButtonFormField<String>(
+                            value: _selectedSpecialization,
                             decoration: InputDecoration(
                               labelText: 'Specialization',
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               labelStyle: GoogleFonts.poppins(),
                             ),
-                            style: GoogleFonts.poppins(),
+                            style: GoogleFonts.poppins(color: Colors.black),
+                            items: _specialties.map((specialty) {
+                              return DropdownMenuItem<String>(
+                                value: specialty,
+                                child: Text(specialty, style: GoogleFonts.poppins()),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedSpecialization = value;
+                              });
+                            },
                             validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Please enter a specialization';
+                              if (value == null) {
+                                return 'Please select a specialization';
                               }
                               return null;
                             },
                           ),
                           const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _servicesController,
-                            decoration: InputDecoration(
-                              labelText: 'Services (comma-separated)',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                              labelStyle: GoogleFonts.poppins(),
+                          _isServicesLoading
+                              ? const Center(child: CircularProgressIndicator(color: Color(0xFF800080)))
+                              : _servicesError != null
+                              ? Text(
+                            _servicesError!,
+                            style: GoogleFonts.poppins(color: Colors.red, fontSize: 14),
+                          )
+                              : MultiSelectDialogField(
+                            items: _availableServices
+                                .map((service) => MultiSelectItem<String>(service, service))
+                                .toList(),
+                            title: Text('Select Services', style: GoogleFonts.poppins()),
+                            selectedColor: const Color(0xFF800080),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            style: GoogleFonts.poppins(),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Please enter at least one service';
+                            buttonText: Text(
+                              'Select Services',
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey,
+                                fontSize: 16,
+                              ),
+                            ),
+                            chipDisplay: MultiSelectChipDisplay(
+                              chipColor: const Color(0xFF800080).withOpacity(0.1),
+                              textStyle: GoogleFonts.poppins(color: const Color(0xFF800080)),
+                              onTap: (value) {
+                                setState(() {
+                                  _selectedServices.remove(value);
+                                });
+                              },
+                            ),
+                            onConfirm: (values) {
+                              setState(() {
+                                _selectedServices = values.cast<String>();
+                              });
+                            },
+                            validator: (values) {
+                              if (values == null || values.isEmpty) {
+                                return 'Please select at least one service';
                               }
                               return null;
                             },
@@ -332,7 +428,6 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
                             ),
                             style: GoogleFonts.poppins(),
                             validator: (value) {
-                              // Optional field, so no validation required
                               return null;
                             },
                           ),
@@ -354,7 +449,7 @@ class _AddVeterinaryScreenState extends State<AddVeterinaryScreen> {
                               ],
                             ),
                             child: ElevatedButton(
-                              onPressed: _createVeterinary,
+                              onPressed: _isLoading || _isServicesLoading ? null : _createVeterinarian,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.transparent,
                                 shadowColor: Colors.transparent,

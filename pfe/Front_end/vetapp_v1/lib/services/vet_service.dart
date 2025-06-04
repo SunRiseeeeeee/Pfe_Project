@@ -12,7 +12,7 @@ class VetService {
     List<String>? services,
     int page = 1,
     int limit = 10,
-    String sort = "desc",
+    String sort = "desc", String? name,
   }) async {
     try {
       final token = await TokenStorage.getToken();
