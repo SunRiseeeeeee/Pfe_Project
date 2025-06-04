@@ -41,7 +41,7 @@ const router = express.Router();
  *       201:
  *         description: Animal créé avec succès
  */
-router.post("/:userId/animals", asyncHandler(createAnimal));
+router.post("/:userId/animals",createAnimal);
 
 /**
  * @swagger
