@@ -21,6 +21,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
   DateTime? _selectedBirthDate;
   File? _imageFile;
   late final PetService _petService;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -31,7 +32,10 @@ class _AddPetScreenState extends State<AddPetScreen> {
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery);
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
     if (image != null) {
       final file = File(image.path);
       if (!file.existsSync()) {
@@ -44,6 +48,13 @@ class _AddPetScreenState extends State<AddPetScreen> {
       if (sizeInMB > 5) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Image size must be less than 5 MB')),
+        );
+        return;
+      }
+      final extension = image.path.split('.').last.toLowerCase();
+      if (extension != 'jpg' && extension != 'jpeg' && extension != 'png') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a JPEG or PNG image')),
         );
         return;
       }
@@ -71,14 +82,15 @@ class _AddPetScreenState extends State<AddPetScreen> {
 
   Future<void> _submit() async {
     if (_formKey.currentState?.validate() ?? false) {
+      setState(() {
+        _isLoading = true;
+      });
       try {
         print('Starting pet creation...');
         print('Image file: ${_imageFile?.path}');
         if (_imageFile != null) {
           print('Image file exists: ${_imageFile!.existsSync()}');
           print('Image file size: ${_imageFile!.lengthSync() / 1024 / 1024} MB');
-        } else {
-          print('No image selected');
         }
 
         final response = await _petService.createPet(
@@ -86,12 +98,13 @@ class _AddPetScreenState extends State<AddPetScreen> {
           species: _speciesController.text,
           breed: _breedController.text,
           gender: _selectedGender,
-          birthDate: _selectedBirthDate?.toIso8601String(),
+          birthDate: _selectedBirthDate != null
+              ? DateFormat('yyyy-MM-dd').format(_selectedBirthDate!)
+              : null,
           imageFile: _imageFile,
         );
 
         print('AddPetScreen response: $response');
-        print('Returned pet picture: ${response['picture']}');
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Pet added successfully!')),
@@ -100,9 +113,17 @@ class _AddPetScreenState extends State<AddPetScreen> {
         Navigator.pop(context, response);
       } catch (e) {
         print('AddPetScreen error: $e');
+        String errorMessage = 'Failed to add pet';
+        if (e.toString().contains('DioException')) {
+          errorMessage = e.toString().split('Exception: ').last;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add pet: $e')),
+          SnackBar(content: Text(errorMessage)),
         );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }
@@ -197,7 +218,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                     labelText: 'Pet Name',
                                     prefixIcon: const Icon(Icons.pets),
                                   ),
-                                  validator: (value) => value == null || value.isEmpty
+                                  validator: (value) => value == null || value.trim().isEmpty
                                       ? 'Please enter a name'
                                       : null,
                                 ),
@@ -208,7 +229,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                     labelText: 'Species',
                                     prefixIcon: const Icon(Icons.category),
                                   ),
-                                  validator: (value) => value == null || value.isEmpty
+                                  validator: (value) => value == null || value.trim().isEmpty
                                       ? 'Please enter the species'
                                       : null,
                                 ),
@@ -219,7 +240,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                     labelText: 'Breed',
                                     prefixIcon: const Icon(Icons.pets),
                                   ),
-                                  validator: (value) => value == null || value.isEmpty
+                                  validator: (value) => value == null || value.trim().isEmpty
                                       ? 'Please enter the breed'
                                       : null,
                                 ),
@@ -324,7 +345,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
 
   Widget _buildSubmitButton() {
     return InkWell(
-      onTap: _submit,
+      onTap: _isLoading ? null : _submit,
       borderRadius: BorderRadius.circular(12),
       splashColor: const Color(0xFF800080).withOpacity(0.2),
       child: Container(
@@ -344,8 +365,10 @@ class _AddPetScreenState extends State<AddPetScreen> {
             ),
           ],
         ),
-        child: const Center(
-          child: Text(
+        child: Center(
+          child: _isLoading
+              ? const CircularProgressIndicator(color: Colors.white)
+              : const Text(
             'ADD PET',
             style: TextStyle(
               fontSize: 16,

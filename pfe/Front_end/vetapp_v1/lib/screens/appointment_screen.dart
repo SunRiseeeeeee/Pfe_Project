@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:vetapp_v1/services/appointment_service.dart';
 import 'package:vetapp_v1/models/token_storage.dart';
 import 'package:vetapp_v1/screens/EditAppointmentScreen.dart';
+import 'package:vetapp_v1/screens/client_appointment_details_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppointmentScreen extends StatefulWidget {
@@ -127,11 +128,43 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
     }
   }
 
+  Future<void> _acceptAppointment(String appointmentId) async {
+    try {
+      final response = await _appointmentService.updateAppointment(appointmentId, 'accepted' as Map<String, dynamic>);
+      if (response['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Appointment accepted'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        _loadAppointments();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['message']),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
   List<dynamic> get _filteredAppointments {
     final now = DateTime.now();
     return _appointments.where((appt) {
       final date = _parseDate(appt['date']);
-      return _currentTabIndex == 0 ? date.isAfter(now) : date.isBefore(now);
+      return _currentTabIndex == 0 ? date.isAfter(now) || date.isAtSameMomentAs(now) : date.isBefore(now);
     }).toList();
   }
 
@@ -159,7 +192,6 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
                         'Appointments',
@@ -173,7 +205,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                     ],
                   ),
                 ),
-                // Content Section (Extended to bottom)
+                // Content Section
                 Expanded(
                   child: Container(
                     decoration: const BoxDecoration(
@@ -249,6 +281,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                                 return _AppointmentCard(
                                   appointment: _filteredAppointments[index],
                                   onCancel: _cancelAppointment,
+                                  onAccept: _acceptAppointment,
                                   isPast: _currentTabIndex == 1,
                                 );
                               },
@@ -271,13 +304,23 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
 class _AppointmentCard extends StatelessWidget {
   final Map<String, dynamic> appointment;
   final Function(String) onCancel;
+  final Function(String) onAccept;
   final bool isPast;
 
   const _AppointmentCard({
     required this.appointment,
     required this.onCancel,
+    required this.onAccept,
     required this.isPast,
   });
+
+  DateTime _parseDate(dynamic date) {
+    try {
+      return DateTime.parse(date.toString()).toLocal();
+    } catch (e) {
+      return DateTime.now();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -292,9 +335,7 @@ class _AppointmentCard extends StatelessWidget {
         : 'Unknown Vet';
 
     final pet = appointment['animalId'];
-    final petName = pet != null
-        ? pet['name'] ?? 'Unknown Pet'
-        : 'Unknown Pet';
+    final petName = pet != null ? pet['name'] ?? 'Unknown Pet' : 'Unknown Pet';
 
     final status = appointment['status']?.toString().toLowerCase() ?? 'pending';
 
@@ -322,7 +363,19 @@ class _AppointmentCard extends StatelessWidget {
       shadowColor: Colors.black.withOpacity(0.1),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {}, // Add tap effect
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ClientAppointmentDetailsScreen(
+                appointment: appointment,
+                onAccept: onAccept,
+                onCancel: onCancel,
+                isPast: isPast,
+              ),
+            ),
+          );
+        },
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -481,13 +534,5 @@ class _AppointmentCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  DateTime _parseDate(dynamic date) {
-    try {
-      return DateTime.parse(date.toString()).toLocal();
-    } catch (e) {
-      return DateTime.now();
-    }
   }
 }

@@ -7,8 +7,9 @@ import 'package:vetapp_v1/services/pet_service.dart';
 
 class PetFormScreen extends StatefulWidget {
   final Map<String, dynamic> existingPet;
+  final bool isEditing;
 
-  const PetFormScreen({super.key, required this.existingPet, required bool isEditing});
+  const PetFormScreen({super.key, required this.existingPet, required this.isEditing});
 
   @override
   State<PetFormScreen> createState() => _PetFormScreenState();
@@ -16,7 +17,7 @@ class PetFormScreen extends StatefulWidget {
 
 class _PetFormScreenState extends State<PetFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  final PetService _petService = PetService(dio: Dio());
+  final PetService _petService = PetService(dio: Dio(BaseOptions(baseUrl: PetService.baseUrl + '/api')));
 
   late TextEditingController _nameController;
   late TextEditingController _speciesController;
@@ -29,18 +30,37 @@ class _PetFormScreenState extends State<PetFormScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.existingPet['name']);
-    _speciesController = TextEditingController(text: widget.existingPet['species']);
-    _breedController = TextEditingController(text: widget.existingPet['breed']);
-    _genderController = TextEditingController(text: widget.existingPet['gender']);
-    _birthDateController = TextEditingController(text: widget.existingPet['birthDate']);
+    _nameController = TextEditingController(text: widget.existingPet['name']?.toString());
+    _speciesController = TextEditingController(text: widget.existingPet['species']?.toString());
+    _breedController = TextEditingController(text: widget.existingPet['breed']?.toString());
+    _genderController = TextEditingController(text: widget.existingPet['gender']?.toString());
+    _birthDateController = TextEditingController(
+      text: widget.existingPet['birthDate'] != null
+          ? widget.existingPet['birthDate'].toString().split('T')[0]
+          : '',
+    );
   }
 
   Future<void> _pickImage() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
     if (picked != null) {
+      final file = File(picked.path);
+      final extension = picked.path.split('.').last.toLowerCase();
+      final sizeMB = file.lengthSync() / 1024 / 1024;
+      if (!['jpg', 'jpeg', 'png'].contains(extension)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a JPEG or PNG image')),
+        );
+        return;
+      }
+      if (sizeMB > 5) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image size must be less than 5 MB')),
+        );
+        return;
+      }
       setState(() {
-        _selectedImage = File(picked.path);
+        _selectedImage = file;
       });
     }
   }
@@ -48,13 +68,14 @@ class _PetFormScreenState extends State<PetFormScreen> {
   Future<void> _submit() async {
     if (_formKey.currentState!.validate()) {
       try {
+        final birthDate = _birthDateController.text.isNotEmpty ? _birthDateController.text : null;
         await _petService.updatePet(
           petId: widget.existingPet['id'].toString(),
-          name: _nameController.text,
-          species: _speciesController.text,
-          breed: _breedController.text,
-          gender: _genderController.text,
-          birthDate: _birthDateController.text,
+          name: _nameController.text.trim(),
+          species: _speciesController.text.trim(),
+          breed: _breedController.text.trim(),
+          gender: _genderController.text.isNotEmpty ? _genderController.text.trim() : null,
+          birthDate: birthDate,
           imageFile: _selectedImage,
         );
 
@@ -62,12 +83,22 @@ class _PetFormScreenState extends State<PetFormScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Pet updated successfully')),
           );
-          Navigator.pop(context);
+          Navigator.pop(context, true); // Return true to trigger refresh in PetsScreen
         }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Update failed: $e')),
-        );
+        String errorMessage = 'Failed to update pet';
+        if (e is DioException && e.response != null) {
+          errorMessage = e.response?.data['message'] ?? 'Network error';
+          debugPrint('Dio error: status=${e.response?.statusCode}, data=${e.response?.data}');
+        } else {
+          errorMessage = e.toString().replaceAll('Exception: ', '');
+          debugPrint('Update error: $e');
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMessage)),
+          );
+        }
       }
     }
   }
@@ -115,7 +146,6 @@ class _PetFormScreenState extends State<PetFormScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Custom Header with Back Arrow
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                 child: Row(
@@ -143,9 +173,7 @@ class _PetFormScreenState extends State<PetFormScreen> {
                   ],
                 ),
               ),
-              // Image Picker Section
               _buildImagePickerSection(),
-              // Content Section (Extended to bottom)
               Expanded(
                 child: Container(
                   decoration: const BoxDecoration(
@@ -173,18 +201,24 @@ class _PetFormScreenState extends State<PetFormScreen> {
                                   controller: _nameController,
                                   label: 'Name',
                                   icon: Icons.pets,
+                                  validator: (value) =>
+                                  value == null || value.trim().isEmpty ? 'Please enter a name' : null,
                                 ),
                                 const SizedBox(height: 24),
                                 _buildTextField(
                                   controller: _speciesController,
                                   label: 'Species',
                                   icon: Icons.category,
+                                  validator: (value) =>
+                                  value == null || value.trim().isEmpty ? 'Please enter a species' : null,
                                 ),
                                 const SizedBox(height: 24),
                                 _buildTextField(
                                   controller: _breedController,
                                   label: 'Breed',
                                   icon: Icons.pets,
+                                  validator: (value) =>
+                                  value == null || value.trim().isEmpty ? 'Please enter a breed' : null,
                                 ),
                                 const SizedBox(height: 24),
                                 _buildTextField(
@@ -198,6 +232,18 @@ class _PetFormScreenState extends State<PetFormScreen> {
                                   label: 'Birth Date',
                                   hint: 'YYYY-MM-DD',
                                   icon: Icons.calendar_today,
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) return null;
+                                    final regex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+                                    if (!regex.hasMatch(value)) {
+                                      return 'Please enter a valid date (YYYY-MM-DD)';
+                                    }
+                                    final date = DateTime.tryParse(value);
+                                    if (date == null || date.isAfter(DateTime.now())) {
+                                      return 'Please enter a valid past date';
+                                    }
+                                    return null;
+                                  },
                                 ),
                                 const SizedBox(height: 24),
                               ],
@@ -205,7 +251,6 @@ class _PetFormScreenState extends State<PetFormScreen> {
                           ),
                         ),
                       ),
-                      // Submit Button at the Bottom
                       Padding(
                         padding: const EdgeInsets.all(20),
                         child: _buildSubmitButton(),
@@ -226,7 +271,7 @@ class _PetFormScreenState extends State<PetFormScreen> {
       alignment: Alignment.center,
       children: [
         Container(
-          margin: const EdgeInsets.only(top: 10,bottom: 10),
+          margin: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [
@@ -242,9 +287,12 @@ class _PetFormScreenState extends State<PetFormScreen> {
             backgroundColor: Colors.grey[200],
             backgroundImage: _selectedImage != null
                 ? FileImage(_selectedImage!)
-                : widget.existingPet['picture'] != null && widget.existingPet['picture'].isNotEmpty
-                ? NetworkImage(widget.existingPet['picture']) as ImageProvider
+                : widget.existingPet['imageUrl'] != null && widget.existingPet['imageUrl'].isNotEmpty
+                ? NetworkImage(widget.existingPet['imageUrl'])
                 : const AssetImage('assets/default_pet.png'),
+            onBackgroundImageError: (error, stackTrace) {
+              debugPrint('Image load error: $error, URL: ${widget.existingPet['imageUrl']}');
+            },
           ),
         ),
         Positioned(
@@ -270,6 +318,7 @@ class _PetFormScreenState extends State<PetFormScreen> {
     required String label,
     String? hint,
     IconData? icon,
+    String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
@@ -290,7 +339,8 @@ class _PetFormScreenState extends State<PetFormScreen> {
         labelText: label,
         hintText: hint,
       ),
-      validator: (value) => value == null || value.isEmpty ? 'Please enter $label' : null,
+      validator: validator ??
+              (value) => value == null || value.trim().isEmpty ? 'Please enter $label' : null,
     );
   }
 

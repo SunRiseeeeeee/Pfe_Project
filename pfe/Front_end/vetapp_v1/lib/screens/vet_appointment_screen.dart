@@ -272,7 +272,7 @@ class _VetAppointmentScreenState extends State<VetAppointmentScreen> {
                         appointment: appointment,
                         onAccept: _acceptAppointment,
                         onReject: _rejectAppointment,
-                        isPast: _currentTabIndex == 2,
+                        isPast: _currentTabIndex == 2, appointmentId: '',
                       ),
                     ),
                   );
@@ -517,7 +517,7 @@ class AppointmentDetailsScreen extends StatefulWidget {
     required this.appointment,
     required this.onAccept,
     required this.onReject,
-    required this.isPast,
+    required this.isPast, required String appointmentId,
   });
 
   @override
@@ -596,7 +596,20 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     final formattedTime = DateFormat.jm().format(date);
 
     final client = widget.appointment['client'] ?? {};
+    debugPrint('Full appointment data: ${widget.appointment}');
     debugPrint('Client data: $client');
+    debugPrint('Client fields: ${client.keys.join(', ')}');
+    debugPrint('Client mapsLocation (raw): ${client.containsKey('mapsLocation') ? client['mapsLocation']?.toString() : 'key not found'}');
+    debugPrint('Client address (raw): ${client.containsKey('address') ? client['address']?.toString() : 'key not found'}');
+    try {
+      final clientObj = Client.fromJson(client);
+      debugPrint('Parsed Client model: ${clientObj.toJson()}');
+      debugPrint('Client model has mapsLocation field: ${clientObj.toJson().containsKey('mapsLocation')}');
+      debugPrint('Parsed Client mapsLocation: ${clientObj.toJson()['mapsLocation']?.toString() ?? 'null'}');
+    } catch (e, stackTrace) {
+      debugPrint('Error parsing Client model: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
     final clientName = client.isNotEmpty
         ? '${client['firstName'] ?? 'Unknown'} ${client['lastName'] ?? 'Client'}'.trim()
         : 'Unknown Client';
@@ -606,7 +619,7 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
     }
     final clientEmail = client['email']?.toString() ?? 'N/A';
     final clientPhone = client['phoneNumber']?.toString() ?? 'N/A';
-    final clientAddress = client['address'] != null
+    final clientAddress = client.containsKey('address') && client['address'] != null
         ? [
       client['address']['street']?.toString() ?? '',
       client['address']['city']?.toString() ?? '',
@@ -615,7 +628,9 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
       client['address']['postalCode']?.toString() ?? '',
     ].where((e) => e.isNotEmpty).join(', ')
         : 'N/A';
-    final clientLastLogin = client['lastLogin'] != null
+    final clientMapsLocation = client.containsKey('mapsLocation') ? client['mapsLocation']?.toString() ?? 'N/A' : 'N/A';
+    debugPrint('UI clientMapsLocation: $clientMapsLocation');
+    final clientLastLogin = client.containsKey('lastLogin') && client['lastLogin'] != null
         ? DateFormat.yMMMd().add_jm().format(DateTime.parse(client['lastLogin'].toString()).toLocal())
         : 'N/A';
 
@@ -772,7 +787,8 @@ class _AppointmentDetailsScreenState extends State<AppointmentDetailsScreen> {
                     const SizedBox(height: 16),
                     _buildInfoRow(Icons.email, 'Email', clientEmail, context),
                     _buildInfoRow(Icons.phone, 'Phone', clientPhone, context),
-                    _buildInfoRow(Icons.location_on, 'Location', clientAddress, context),
+                    _buildInfoRow(Icons.location_on, 'Address', clientAddress, context),
+                    _buildInfoRow(Icons.map, 'Map Location', client['mapsLocation']?.toString() ?? 'N/A', context),
                     _buildInfoRow(Icons.access_time, 'Last Login', clientLastLogin, context),
                   ],
                 ),
