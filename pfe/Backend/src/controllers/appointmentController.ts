@@ -4,7 +4,7 @@ import Appointment, { AppointmentStatus, AppointmentType, IAppointment } from ".
 import User, { UserRole } from "../models/User";
 import { UserTokenPayload } from "../middlewares/authMiddleware";
 import Animal from "../models/Animal";
-
+import { DateTime } from "luxon";
 
 declare module "express" {
   interface Request {
@@ -81,9 +81,9 @@ export const createAppointment = async (
       return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
     }
 
-    // Convertir la date reçue en objet Date (en local, sans Z)
-    const appointmentDate = new Date(date);
-    if (isNaN(appointmentDate.getTime())) {
+    // ✅ Conversion de la date en tenant compte du fuseau horaire local (Tunisie)
+    const appointmentDate = DateTime.fromISO(date, { zone: "Africa/Tunis" }).toJSDate();
+    if (!appointmentDate || isNaN(appointmentDate.getTime())) {
       return sendResponse(res, 400, {}, "Format de date invalide.");
     }
 
@@ -126,7 +126,6 @@ export const createAppointment = async (
     next(error);
   }
 };
-
 
 // Détail pour un vétérinaire
 export const getAppointmentForVeterinaireById = async (
@@ -183,7 +182,6 @@ export const getAppointmentForClientById = async (
     next(error);
   }
 };
-
 // Historique client
 export const getAppointmentsByClient: RequestHandler<{ clientId: string }> =
   async (req, res, next) => {
@@ -244,7 +242,6 @@ export const getAppointmentsByClient: RequestHandler<{ clientId: string }> =
       next(err);
     }
   };
-
 // Historique vétérinaire
 export const getAppointmentsByVeterinaire: RequestHandler<{ veterinaireId: string }> =
   async (req, res, next) => {
