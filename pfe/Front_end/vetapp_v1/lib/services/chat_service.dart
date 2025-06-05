@@ -241,6 +241,15 @@ class ChatService {
       'chatId': chatId,
     }));
   }
+  Future<void> fetchUnreadMessages(String chatId, String userId) async {
+    if (_channel == null) throw Exception('WebSocket not connected');
+    _channel!.sink.add(jsonEncode({
+      'type': 'FETCH_UNREAD_MESSAGES',
+      'chatId': chatId,
+      'userId': userId,
+    }));
+  }
+
 
   Future<void> sendMessage({
     required String senderId,

@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vetapp_v1/services/pet_service.dart';
-
 import 'package:dio/dio.dart';
 import 'AddPetScreen.dart';
 import 'PetDetailsScreen.dart';
-
 
 class PetsScreen extends StatefulWidget {
   const PetsScreen({super.key});
@@ -47,36 +45,54 @@ class _PetsScreenState extends State<PetsScreen> {
     }
   }
 
-  Widget getPetPictureWidget(String? picture) {
-    debugPrint('Loading pet picture: $picture');
-    if (picture != null && picture.isNotEmpty) {
-      return Image.network(
-        picture,
-        width: 100,
-        height: 100,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('Pet image error: $error');
-          return Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.pets, color: Colors.grey, size: 40),
-          );
-        },
+  Widget getPetPictureWidget(String? imageUrl) {
+    debugPrint('Loading pet picture from URL: $imageUrl');
+
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          color: Colors.grey[300],
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.pets, color: Colors.grey, size: 40),
       );
     }
-    return Container(
-      width: 100,
-      height: 100,
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        shape: BoxShape.circle,
+
+    return ClipOval(
+      child: SizedBox(
+        width: 80,
+        height: 80,
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                shape: BoxShape.circle,
+              ),
+              child: const CircularProgressIndicator(strokeWidth: 2),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            debugPrint('Pet image error: $error, URL: $imageUrl');
+            return Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.pets, color: Colors.grey, size: 40),
+            );
+          },
+        ),
       ),
-      child: const Icon(Icons.pets, color: Colors.grey, size: 40),
     );
   }
 
@@ -146,7 +162,20 @@ class _PetsScreenState extends State<PetsScreen> {
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
                       } else if (snapshot.hasError) {
-                        return Center(child: Text('Error: ${snapshot.error}'));
+                        debugPrint('Fetch error: ${snapshot.error}');
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('Error: ${snapshot.error}'),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: _loadPets,
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        );
                       } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
                         return const Center(child: Text('You have no pets.'));
                       }
@@ -160,7 +189,7 @@ class _PetsScreenState extends State<PetsScreen> {
                             crossAxisCount: 2,
                             crossAxisSpacing: 16.0,
                             mainAxisSpacing: 16.0,
-                            childAspectRatio: 0.9,
+                            childAspectRatio: 0.85,
                           ),
                           itemCount: pets.length,
                           shrinkWrap: true,
@@ -191,9 +220,7 @@ class _PetsScreenState extends State<PetsScreen> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    ClipOval(
-                                      child: getPetPictureWidget(pet['imageUrl']),
-                                    ),
+                                    getPetPictureWidget(pet['imageUrl']),
                                     const SizedBox(height: 12),
                                     Text(
                                       pet['name'] ?? 'Unnamed',
@@ -202,6 +229,8 @@ class _PetsScreenState extends State<PetsScreen> {
                                         fontWeight: FontWeight.w600,
                                         color: const Color(0xFF800080),
                                       ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
@@ -218,30 +247,10 @@ class _PetsScreenState extends State<PetsScreen> {
           ),
         ),
       ),
-      floatingActionButton: InkWell(
-        onTap: _navigateToAddPet,
-        borderRadius: BorderRadius.circular(28),
-        splashColor: const Color(0xFF800080).withOpacity(0.2),
-        child: Container(
-          width: 56,
-          height: 56,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF800080), Color(0xFF4B0082)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black12,
-                blurRadius: 8,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.add, color: Colors.white, size: 28),
-        ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToAddPet,
+        backgroundColor: const Color(0xFF800080),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }

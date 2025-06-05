@@ -47,6 +47,7 @@ class Client {
   final String? email;
   final String? phoneNumber;
   final Address? address;
+
   final String? username;
   final bool? isActive;
   final DateTime? lastLogin;

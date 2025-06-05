@@ -1,55 +1,87 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:vetapp_v1/models/token_storage.dart';
 
 class PetService {
   final Dio dio;
-  static const String baseUrl = 'http://192.168.1.16:3000'; // Backend IP
+  static const String baseUrl = 'http://192.168.1.16:3000';
 
   PetService({required this.dio});
 
   Future<String?> _getToken() async => await TokenStorage.getToken();
 
   String _getUserId(String token) {
-    final decoded = JwtDecoder.decode(token);
-    final userId = decoded['id']?.toString();
-    if (userId == null || userId.isEmpty) {
-      throw Exception('User ID missing in token');
+    try {
+      final decoded = JwtDecoder.decode(token);
+      final userId = decoded['id']?.toString();
+      if (userId == null || userId.isEmpty) {
+        throw Exception('User ID missing in token');
+      }
+      return userId;
+    } catch (e) {
+      print('Token decode error: $e');
+      throw Exception('Invalid token');
     }
-    return userId;
+  }
+
+  String _normalizeImageUrl(String? imagePath) {
+    if (imagePath == null || imagePath.isEmpty) return '';
+    String cleaned = imagePath.replaceAll(
+      RegExp(r'http://(localhost|192\.168\.1\.18):3000'),
+      baseUrl,
+    );
+    if (cleaned.contains('/uploads/animals/')) {
+      cleaned = cleaned.replaceAll(RegExp(r'/uploads/animals/animals/'), '/uploads/animals/');
+    } else {
+      cleaned = cleaned.replaceAll('/uploads/', '/uploads/animals/');
+    }
+    print('Normalized image URL: $cleaned');
+    return cleaned;
   }
 
   Future<List<Map<String, dynamic>>> getUserPets() async {
     final token = await _getToken();
-    if (token == null || token.isEmpty) throw Exception('Token missing');
+    if (token == null || token.isEmpty) {
+      print('No token found');
+      throw Exception('Token missing');
+    }
 
     final userId = _getUserId(token);
-    final response = await dio.get(
-      '/animals/$userId/animals',
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
-    );
+    print('Fetching pets for userId: $userId');
 
-    print('getUserPets response: ${response.data}');
+    try {
+      final response = await dio.get(
+        '/animals/$userId/animals',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
 
-    if (response.statusCode == 200) {
-      List<Map<String, dynamic>> pets = List<Map<String, dynamic>>.from(response.data);
-      for (var pet in pets) {
-        final imagePath = pet['picture'];
-        print('Processing pet ${pet['name']}: picture=$imagePath');
-        if (imagePath != null && imagePath.toString().isNotEmpty) {
-          pet['imageUrl'] = imagePath.toString().replaceAll(
-            RegExp(r'http://(localhost|192\.168\.1\.18):3000'),
-            baseUrl,
-          );
-        } else {
-          pet['imageUrl'] = null;
-          print('No picture for pet ${pet['name']}');
+      print('getUserPets response: ${response.data}');
+
+      if (response.statusCode == 200) {
+        List<Map<String, dynamic>> pets = List<Map<String, dynamic>>.from(response.data);
+        for (var pet in pets) {
+          final imagePath = pet['picture'];
+          print('Processing pet ${pet['name']}: picture=$imagePath');
+          pet['imageUrl'] = _normalizeImageUrl(imagePath);
+          if (pet['imageUrl'].isEmpty) {
+            print('No picture for pet ${pet['name']}');
+          }
         }
+        return pets;
+      } else {
+        print('getUserPets failed: ${response.statusCode}, ${response.data}');
+        throw Exception('Failed to load pets: ${response.statusCode} - ${response.data['message'] ?? response.data}');
       }
-      return pets;
-    } else {
-      throw Exception('Failed to load pets: ${response.statusCode}');
+    } catch (e) {
+      print('getUserPets error: $e');
+      if (e is DioException) {
+        final errorMessage = e.response?.data['message'] ?? 'Network error: ${e.message}';
+        print('Dio error details: status=${e.response?.statusCode}, data=${e.response?.data}');
+        throw Exception(errorMessage);
+      }
+      rethrow;
     }
   }
 
@@ -62,23 +94,32 @@ class PetService {
     File? imageFile,
   }) async {
     final token = await _getToken();
-    if (token == null || token.isEmpty) throw Exception('Token missing');
+    if (token == null || token.isEmpty) {
+      print('No token found');
+      throw Exception('Token missing');
+    }
 
     final userId = _getUserId(token);
 
     final Map<String, dynamic> formDataMap = {
-      'name': name,
-      'species': species,
-      'breed': breed,
-      if (gender != null) 'gender': gender,
-      if (birthDate != null) 'birthDate': birthDate,
+      'name': name.trim(),
+      'species': species.trim(),
+      'breed': breed.trim(),
+      if (gender != null && gender.isNotEmpty) 'gender': gender,
+      if (birthDate != null && birthDate.isNotEmpty) 'birthDate': birthDate,
     };
 
     if (imageFile != null) {
       print('Image file: ${imageFile.path}, size: ${imageFile.lengthSync() / 1024 / 1024} MB');
+      final extension = imageFile.path.split('.').last.toLowerCase();
+      if (!['jpg', 'jpeg', 'png'].contains(extension)) {
+        throw Exception('Only JPEG or PNG images are allowed');
+      }
+      final mimeType = extension == 'png' ? 'image/png' : 'image/jpeg';
       final multipartFile = await MultipartFile.fromFile(
         imageFile.path,
-        filename: imageFile.path.split('/').last,
+        filename: 'pet-${DateTime.now().millisecondsSinceEpoch}.$extension',
+        contentType: MediaType.parse(mimeType),
       );
       formDataMap['image'] = multipartFile;
     } else {
@@ -87,7 +128,7 @@ class PetService {
 
     final formData = FormData.fromMap(formDataMap);
 
-    print('Creating pet with data: name=$name, species=$species, breed=$breed, imageFile=${imageFile?.path}');
+    print('Creating pet with data: $formDataMap');
 
     try {
       final response = await dio.post(
@@ -107,22 +148,19 @@ class PetService {
         final pet = Map<String, dynamic>.from(response.data);
         final imagePath = pet['picture'];
         print('Pet ${pet['name']}: picture=$imagePath');
-        if (imagePath != null && imagePath.toString().isNotEmpty) {
-          pet['imageUrl'] = imagePath.toString().replaceAll(
-            RegExp(r'http://(localhost|192\.168\.1\.18):3000'),
-            baseUrl,
-          );
-        } else {
-          pet['imageUrl'] = null;
-          print('No picture returned for pet ${pet['name']}');
-        }
+        pet['imageUrl'] = _normalizeImageUrl(imagePath);
         return pet;
       } else {
-        print('Failed response: ${response.data}');
-        throw Exception('Failed to create pet: ${response.data}');
+        print('createPet failed: ${response.statusCode}, ${response.data}');
+        throw Exception('Failed to create pet: ${response.data['message'] ?? response.data}');
       }
     } catch (e) {
       print('createPet error: $e');
+      if (e is DioException && e.response != null) {
+        final errorMessage = e.response?.data['message'] ?? 'Failed to create pet';
+        print('Dio error details: status=${e.response?.statusCode}, data=${e.response?.data}');
+        throw Exception(errorMessage);
+      }
       rethrow;
     }
   }
@@ -137,73 +175,99 @@ class PetService {
     File? imageFile,
   }) async {
     final token = await _getToken();
-    if (token == null || token.isEmpty) throw Exception('Token missing');
+    if (token == null || token.isEmpty) {
+      print('No token found');
+      throw Exception('Token missing');
+    }
 
     final userId = _getUserId(token);
 
     final Map<String, dynamic> formDataMap = {
-      'name': name,
-      'species': species,
-      'breed': breed,
-      if (gender != null) 'gender': gender,
-      if (birthDate != null) 'birthDate': birthDate,
+      'name': name.trim(),
+      'species': species.trim(),
+      'breed': breed.trim(),
+      if (gender != null && gender.isNotEmpty) 'gender': gender,
+      if (birthDate != null && birthDate.isNotEmpty) 'birthDate': birthDate,
     };
 
     if (imageFile != null) {
       print('Image file: ${imageFile.path}, size: ${imageFile.lengthSync() / 1024 / 1024} MB');
+      final extension = imageFile.path.split('.').last.toLowerCase();
+      if (!['jpg', 'jpeg', 'png'].contains(extension)) {
+        throw Exception('Only JPEG or PNG images are allowed');
+      }
+      final mimeType = extension == 'png' ? 'image/png' : 'image/jpeg';
       final multipartFile = await MultipartFile.fromFile(
         imageFile.path,
-        filename: imageFile.path.split('/').last,
+        filename: 'pet-${DateTime.now().millisecondsSinceEpoch}.$extension',
+        contentType: MediaType.parse(mimeType),
       );
       formDataMap['image'] = multipartFile;
     }
 
     final formData = FormData.fromMap(formDataMap);
 
-    final response = await dio.put(
-      '/animals/$userId/animals/$petId',
-      data: formData,
-      options: Options(
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'multipart/form-data',
-        },
-      ),
-    );
+    print('Updating pet with data: $formDataMap');
 
-    if (response.statusCode == 200) {
-      final pet = Map<String, dynamic>.from(response.data);
-      final imagePath = pet['picture'];
-      print('Pet ${pet['name']}: picture=$imagePath');
-      if (imagePath != null && imagePath.toString().isNotEmpty) {
-        pet['imageUrl'] = imagePath.toString().replaceAll(
-          RegExp(r'http://(localhost|192\.168\.1\.18):3000'),
-          baseUrl,
-        );
+    try {
+      final response = await dio.put(
+        '/animals/$userId/animals/$petId',
+        data: formData,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'multipart/form-data',
+          },
+        ),
+      );
+
+      print('updatePet response: ${response.data}');
+
+      if (response.statusCode == 200) {
+        final pet = Map<String, dynamic>.from(response.data);
+        final imagePath = pet['picture'];
+        print('Pet ${pet['name']}: picture=$imagePath');
+        pet['imageUrl'] = _normalizeImageUrl(imagePath);
+        return pet;
       } else {
-        pet['imageUrl'] = null;
-        print('No picture returned for pet ${pet['name']}');
+        print('updatePet failed: ${response.statusCode}, ${response.data}');
+        throw Exception('Failed to update pet: ${response.data['message'] ?? response.data}');
       }
-      return pet;
-    } else {
-      print('Failed response: ${response.data}');
-      throw Exception('Failed to update pet: ${response.data}');
+    } catch (e) {
+      print('updatePet error: $e');
+      if (e is DioException && e.response != null) {
+        final errorMessage = e.response?.data['message'] ?? 'Failed to update pet';
+        print('Dio error details: status=${e.response?.statusCode}, data=${e.response?.data}');
+        throw Exception(errorMessage);
+      }
+      rethrow;
     }
   }
 
   Future<void> deletePet(String petId) async {
     final token = await _getToken();
-    if (token == null || token.isEmpty) throw Exception('Token missing');
+    if (token == null || token.isEmpty) {
+      print('No token found');
+      throw Exception('Token missing');
+    }
 
     final userId = _getUserId(token);
 
-    final response = await dio.delete(
-      '/animals/$userId/animals/$petId',
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
-    );
+    try {
+      final response = await dio.delete(
+        '/animals/$userId/animals/$petId',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to delete pet: ${response.data}');
+      print('deletePet response: ${response.statusCode}, ${response.data}');
+
+      if (response.statusCode != 200) {
+        print('deletePet failed: ${response.data}');
+        throw Exception('Failed to delete pet: ${response.data}');
+      }
+    } catch (e) {
+      print('deletePet error: $e');
+      rethrow;
     }
   }
 }
