@@ -11,6 +11,7 @@ class ChatService {
   StreamController<Map<String, dynamic>>? _conversationController;
   String? _lastSentContent;
   List<Map<String, dynamic>> _conversations = [];
+  String? _pendingChatId;
 
   ChatService() {
     _messageController = StreamController<Map<String, dynamic>>.broadcast();
@@ -45,22 +46,27 @@ class ChatService {
               });
               break;
             case 'MESSAGES_LIST':
-              _messageController?.add(message);
+              _messageController?.add({
+                'type': 'MESSAGES_LIST',
+                'chatId': message['chatId'],
+                'messages': List<Map<String, dynamic>>.from(message['messages'] ?? []),
+              });
               break;
             case 'NEW_MESSAGE':
               final newMessage = {
-                '_id': message['timestamp'].toString(),
+                'id': message['message']?['_id'] ?? message['timestamp'].toString(),
                 'sender': {
-                  'id': message['senderId'],
-                  'firstName': message['senderName'].split(' ')[0],
-                  'lastName': message['senderName'].split(' ').length > 1
-                      ? message['senderName'].split(' ')[1]
+                  'id': message['senderId'] ?? '',
+                  'firstName': (message['senderName'] as String?)?.split(' ')[0] ?? 'Inconnu',
+                  'lastName': (message['senderName'] as String?)!.split(' ').length > 1
+                      ? (message['senderName'] as String).split(' ')[1]
                       : '',
+                  'profilePicture': message['sender']?['profilePicture'] as String?,
                 },
-                'content': message['content'],
-                'type': message['contentType'] ?? 'text',
-                'createdAt': DateTime.now().toIso8601String(),
-                'readBy': [message['senderId']],
+                'content': message['content'] as String? ?? '',
+                'type': message['contentType'] as String? ?? 'text',
+                'createdAt': message['message']?['createdAt'] as String? ?? DateTime.now().toIso8601String(),
+                'readBy': List<String>.from(message['message']?['readBy'] ?? [message['senderId']]),
               };
               _messageController?.add({
                 'type': 'NEW_MESSAGE',
@@ -69,31 +75,41 @@ class ChatService {
               });
 
               final chatId = message['chatId'] as String?;
-              if (chatId != null) {
+              if (chatId != null && _userId != null) {
                 final index = _conversations.indexWhere((c) => c['chatId'] == chatId);
+                final isOwnMessage = message['senderId'] == _userId;
                 if (index != -1) {
                   _conversations[index] = {
                     ..._conversations[index],
-                    'lastMessage': newMessage,
-                    'unreadCount': message['senderId'] == _userId
-                        ? _conversations[index]['unreadCount']
+                    'lastMessage': {
+                      'content': newMessage['content'],
+                      'type': newMessage['type'],
+                      'createdAt': newMessage['createdAt'],
+                    },
+                    'unreadCount': isOwnMessage
+                        ? _conversations[index]['unreadCount'] as int? ?? 0
                         : (_conversations[index]['unreadCount'] as int? ?? 0) + 1,
+                    'updatedAt': DateTime.now().toIso8601String(),
                   };
                 } else {
                   _conversations.add({
                     'chatId': chatId,
                     'participants': [
                       {
-                        'id': message['senderId'],
-                        'firstName': message['senderName'].split(' ')[0],
-                        'lastName': message['senderName'].split(' ').length > 1
-                            ? message['senderName'].split(' ')[1]
+                        'id': message['senderId'] ?? '',
+                        'firstName': (message['senderName'] as String?)?.split(' ')[0] ?? 'Inconnu',
+                        'lastName': (message['senderName'] as String?)!.split(' ').length > 1
+                            ? (message['senderName'] as String).split(' ')[1]
                             : '',
-                        'profilePicture': null,
+                        'profilePicture': message['sender']?['profilePicture'] as String?,
                       },
                     ],
-                    'lastMessage': newMessage,
-                    'unreadCount': message['senderId'] == _userId ? 0 : 1,
+                    'lastMessage': {
+                      'content': newMessage['content'],
+                      'type': newMessage['type'],
+                      'createdAt': newMessage['createdAt'],
+                    },
+                    'unreadCount': isOwnMessage ? 0 : 1,
                     'updatedAt': DateTime.now().toIso8601String(),
                   });
                 }
@@ -108,7 +124,7 @@ class ChatService {
                 'type': 'MESSAGE_READ',
                 'chatId': message['chatId'],
                 'messageId': message['messageId'],
-                'readBy': message['readBy'],
+                'readBy': List<String>.from(message['readBy'] ?? []),
               });
               final index = _conversations.indexWhere((c) => c['chatId'] == message['chatId']);
               if (index != -1) {
@@ -121,6 +137,59 @@ class ChatService {
                   'conversations': _conversations,
                 });
               }
+              break;
+            case 'MESSAGE_SENT':
+              _pendingChatId = message['chatId'] as String?;
+              print('Message sent confirmation: $_pendingChatId');
+              if (_pendingChatId != null && _userId != null && _lastSentContent != null) {
+                final index = _conversations.indexWhere((c) => c['chatId'] == _pendingChatId);
+                final targetId = message['targetId'] as String? ?? '';
+                if (index != -1) {
+                  _conversations[index] = {
+                    ..._conversations[index],
+                    'lastMessage': {
+                      'content': _lastSentContent!,
+                      'type': 'text',
+                      'createdAt': DateTime.now().toIso8601String(),
+                    },
+                    'unreadCount': _conversations[index]['unreadCount'] as int? ?? 0,
+                    'updatedAt': DateTime.now().toIso8601String(),
+                  };
+                } else {
+                  _conversations.add({
+                    'chatId': _pendingChatId!,
+                    'participants': [
+                      {
+                        'id': _userId!,
+                        'firstName': 'Moi',
+                        'lastName': '',
+                      },
+                      {
+                        'id': targetId,
+                        'firstName': 'Inconnu',
+                        'lastName': '',
+                      },
+                    ],
+                    'lastMessage': {
+                      'content': _lastSentContent!,
+                      'type': 'text',
+                      'createdAt': DateTime.now().toIso8601String(),
+                    },
+                    'unreadCount': 0,
+                    'updatedAt': DateTime.now().toIso8601String(),
+                  });
+                }
+                _conversationController?.add({
+                  'type': 'CONVERSATIONS_LIST',
+                  'conversations': _conversations,
+                });
+                getConversations(_userId!);
+              }
+              _messageController?.add({
+                'type': 'MESSAGE_SENT',
+                'chatId': message['chatId'],
+                'messageId': message['messageId'],
+              });
               break;
             default:
               if (message['status'] == 'error') {
@@ -156,11 +225,12 @@ class ChatService {
     return _conversationController!.stream;
   }
 
-  Future<void> getConversations(String userId) async {
+  Future<void> getConversations(String userId, {String? searchTerm}) async {
     if (_channel == null) throw Exception('WebSocket not connected');
     _channel!.sink.add(jsonEncode({
       'type': 'GET_CONVERSATIONS',
       'userId': userId,
+      if (searchTerm != null && searchTerm.isNotEmpty) 'searchTerm': searchTerm,
     }));
   }
 
@@ -174,18 +244,34 @@ class ChatService {
 
   Future<void> sendMessage({
     required String senderId,
-    required String veterinaireId,
+    required String targetId,
     required String content,
     String contentType = 'text',
   }) async {
     if (_channel == null) throw Exception('WebSocket not connected');
     _lastSentContent = content;
+
+    final userRole = await TokenStorage.getUserRoleFromToken();
+    String? clientId;
+    String? veterinaireId;
+
+    if (userRole == 'client') {
+      clientId = senderId;
+      veterinaireId = targetId;
+    } else if (userRole == 'veterinaire' || userRole == 'secretary') {
+      clientId = targetId;
+      veterinaireId = senderId;
+    } else {
+      throw Exception('Invalid user role: $userRole');
+    }
+
     _channel!.sink.add(jsonEncode({
       'type': 'SEND_MESSAGE',
       'senderId': senderId,
       'veterinaireId': veterinaireId,
       'content': content,
       'contentType': contentType,
+      'clientId': clientId,
     }));
   }
 
@@ -209,6 +295,7 @@ class ChatService {
     try {
       print('Checking cached conversations for user $userId and vet $vetId');
       print('Cached conversation IDs: ${_conversations.map((c) => c['chatId']).toList()}');
+
       for (var convo in _conversations) {
         final participants = List<Map<String, dynamic>>.from(convo['participants'] ?? []);
         final participantIds = participants.map((p) => p['id'] as String).toSet();
@@ -222,115 +309,53 @@ class ChatService {
         }
       }
 
-      const maxFetchRetries = 3;
-      for (int attempt = 1; attempt <= maxFetchRetries; attempt++) {
-        print('Fetching conversations (attempt $attempt/$maxFetchRetries) for user $userId');
-        await getConversations(userId);
-        await Future.delayed(Duration(seconds: 2));
-        print('Conversations after fetch: ${_conversations.length} conversations');
-        print('Fetched conversation IDs: ${_conversations.map((c) => c['chatId']).toList()}');
-        for (var convo in _conversations) {
-          final participants = List<Map<String, dynamic>>.from(convo['participants'] ?? []);
-          final participantIds = participants.map((p) => p['id'] as String).toSet();
-          if (participantIds.contains(userId) && participantIds.contains(vetId)) {
-            print('Found existing conversation after fetch: ${convo['chatId']}');
-            return {
-              'chatId': convo['chatId'] as String,
-              'participants': participants,
-              'unreadCount': convo['unreadCount'] ?? 0,
-            };
-          }
-        }
-      }
-
       print('No existing conversation found. Creating new conversation for user $userId with vet $vetId');
-      await sendMessage(
-        senderId: userId,
-        veterinaireId: vetId,
-        content: 'Conversation started',
-      );
 
       final completer = Completer<Map<String, dynamic>>();
       StreamSubscription? subscription;
-      StreamSubscription? messageSubscription;
-      int retryCount = 0;
-      const maxRetries = 5;
 
-      // Listen for SEND_MESSAGE success
-      messageSubscription = _channel!.stream.listen((data) async {
-        final message = jsonDecode(data as String) as Map<String, dynamic>;
-        if (message['status'] == 'success' && message['chatId'] != null && message['message']?.startsWith('Message envoyé au chat')) {
-          final chatId = message['chatId'] as String;
-          print('Received SEND_MESSAGE success for chat: $chatId');
-          await getConversations(userId);
-          final convo = _conversations.firstWhere(
-                (c) => c['chatId'] == chatId,
-            orElse: () => {},
-          );
-          if (convo.isNotEmpty) {
-            final participants = List<Map<String, dynamic>>.from(convo['participants'] ?? []);
-            final participantIds = participants.map((p) => p['id'] as String).toSet();
-            if (participantIds.contains(userId) && participantIds.contains(vetId)) {
-              print('Found new conversation via SEND_MESSAGE: $chatId');
-              completer.complete({
-                'chatId': chatId,
-                'participants': participants,
-                'unreadCount': convo['unreadCount'] ?? 0,
-              });
-              subscription?.cancel();
-              messageSubscription?.cancel();
-            }
-          }
-        }
-      });
-
-      // Listen for CONVERSATIONS_LIST
-      subscription = onConversations().listen((data) async {
+      subscription = onConversations().listen((data) {
         if (data['type'] == 'CONVERSATIONS_LIST') {
           final conversations = List<Map<String, dynamic>>.from(data['conversations'] ?? []);
-          print('Received CONVERSATIONS_LIST during creation: ${conversations.map((c) => c['chatId']).toList()}');
+          print('Received CONVERSATIONS_LIST: ${conversations.map((c) => c['chatId']).toList()}');
           for (var convo in conversations) {
             final participants = List<Map<String, dynamic>>.from(convo['participants'] ?? []);
             final participantIds = participants.map((p) => p['id'] as String).toSet();
             if (participantIds.contains(userId) && participantIds.contains(vetId)) {
-              print('Found new conversation: ${convo['chatId']}');
-              completer.complete({
-                'chatId': convo['chatId'] as String,
-                'participants': participants,
-                'unreadCount': convo['unreadCount'] ?? 0,
-              });
-              subscription?.cancel();
-              messageSubscription?.cancel();
-              return;
+              if (_pendingChatId == null || convo['chatId'] == _pendingChatId) {
+                print('Found new conversation: ${convo['chatId']}');
+                completer.complete({
+                  'chatId': convo['chatId'] as String,
+                  'participants': participants,
+                  'unreadCount': convo['unreadCount'] ?? 0,
+                });
+                subscription?.cancel();
+                return;
+              }
             }
           }
-
-          if (retryCount < maxRetries) {
-            retryCount++;
-            print('New conversation not found, retrying ($retryCount/$maxRetries)');
-            await getConversations(userId);
-          } else {
-            print('Max retries reached for new conversation');
-            completer.completeError(Exception('Failed to find new conversation'));
-            subscription?.cancel();
-            messageSubscription?.cancel();
-          }
         }
+      }, onError: (error) {
+        print('Conversation stream error: $error');
       });
 
-      Future.delayed(Duration(seconds: 20), () {
+      await sendMessage(
+        senderId: userId,
+        targetId: vetId,
+        content: 'Conversation started',
+      );
+
+      await getConversations(userId);
+
+      Future.delayed(const Duration(seconds: 40), () {
         if (!completer.isCompleted) {
           print('Conversation creation timed out');
           completer.completeError(Exception('Failed to find new conversation'));
           subscription?.cancel();
-          messageSubscription?.cancel();
         }
       });
 
-      final result = await completer.future;
-      subscription?.cancel();
-      messageSubscription?.cancel();
-      return result;
+      return await completer.future;
     } catch (e) {
       print('Error getting or creating conversation: $e');
       rethrow;

@@ -331,32 +331,88 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       for (var entry in entries) {
         if (entry is Map<String, dynamic>) {
           final day = entry['day']?.toString().toLowerCase();
-          final start = entry['start']?.toString();
-          final end = entry['end']?.toString();
-          final pauseStart = entry['pauseStart']?.toString();
-          final pauseEnd = entry['pauseEnd']?.toString();
+          if (day == null || !daysMapping.containsKey(day)) {
+            debugPrint('Invalid or missing day: $day');
+            continue;
+          }
 
-          if (day != null && start != null && end != null) {
-            final weekday = daysMapping[day];
-            if (weekday != null) {
-              final timeFormat = RegExp(r'^\d{1,2}:\d{2}$');
-              if (timeFormat.hasMatch(start) && timeFormat.hasMatch(end)) {
-                final normalizedStart = start.padLeft(5, '0');
-                final normalizedEnd = end.padLeft(5, '0');
+          final weekday = daysMapping[day]!;
+          final timeFormat = RegExp(r'^\d{1,2}:\d{2}$');
+
+          // Case 1: Entry has separate start, end, pauseStart, pauseEnd fields
+          if (entry.containsKey('start') && entry.containsKey('end')) {
+            final start = entry['start']?.toString();
+            final end = entry['end']?.toString();
+            final pauseStart = entry['pauseStart']?.toString();
+            final pauseEnd = entry['pauseEnd']?.toString();
+
+            if (start != null && end != null && timeFormat.hasMatch(start) && timeFormat.hasMatch(end)) {
+              final normalizedStart = start.padLeft(5, '0');
+              final normalizedEnd = end.padLeft(5, '0');
+              result[weekday] = {
+                'start': normalizedStart,
+                'end': normalizedEnd,
+                'pauseStart': pauseStart != null && timeFormat.hasMatch(pauseStart) ? pauseStart.padLeft(5, '0') : '',
+                'pauseEnd': pauseEnd != null && timeFormat.hasMatch(pauseEnd) ? pauseEnd.padLeft(5, '0') : '',
+              };
+              debugPrint('Parsed entry for $day: start=$normalizedStart, end=$normalizedEnd, pauseStart=$pauseStart, pauseEnd=$pauseEnd');
+            } else {
+              debugPrint('Invalid time format for day $day: start=$start, end=$end');
+            }
+          }
+          // Case 2: Entry has a 'hours' field like "08:00 -> 12:00 (Break) -> 13:00 -> 18:00"
+          else if (entry.containsKey('hours')) {
+            final hours = entry['hours']?.toString();
+            if (hours == null || hours.isEmpty) {
+              debugPrint('Empty hours field for day $day');
+              continue;
+            }
+
+            // Parse hours string: "start -> pauseStart (Break) -> pauseEnd -> end"
+            final hoursPattern = RegExp(r'(\d{2}:\d{2})\s*->\s*(\d{2}:\d{2})\s*\(Break\)\s*->\s*(\d{2}:\d{2})\s*->\s*(\d{2}:\d{2})');
+            final simplePattern = RegExp(r'(\d{2}:\d{2})\s*->\s*(\d{2}:\d{2})');
+
+            if (hoursPattern.hasMatch(hours)) {
+              final match = hoursPattern.firstMatch(hours)!;
+              final start = match.group(1);
+              final pauseStart = match.group(2);
+              final pauseEnd = match.group(3);
+              final end = match.group(4);
+
+              if (start != null && pauseStart != null && pauseEnd != null && end != null &&
+                  timeFormat.hasMatch(start) && timeFormat.hasMatch(pauseStart) &&
+                  timeFormat.hasMatch(pauseEnd) && timeFormat.hasMatch(end)) {
                 result[weekday] = {
-                  'start': normalizedStart,
-                  'end': normalizedEnd,
-                  'pauseStart': pauseStart ?? '',
-                  'pauseEnd': pauseEnd ?? '',
+                  'start': start.padLeft(5, '0'),
+                  'pauseStart': pauseStart.padLeft(5, '0'),
+                  'pauseEnd': pauseEnd.padLeft(5, '0'),
+                  'end': end.padLeft(5, '0'),
                 };
+                debugPrint('Parsed hours for $day: start=$start, pauseStart=$pauseStart, pauseEnd=$pauseEnd, end=$end');
               } else {
-                debugPrint('Invalid time format for day $day: start=$start, end=$end');
+                debugPrint('Invalid time format in hours for day $day: $hours');
+              }
+            } else if (simplePattern.hasMatch(hours)) {
+              final match = simplePattern.firstMatch(hours)!;
+              final start = match.group(1);
+              final end = match.group(2);
+
+              if (start != null && end != null && timeFormat.hasMatch(start) && timeFormat.hasMatch(end)) {
+                result[weekday] = {
+                  'start': start.padLeft(5, '0'),
+                  'end': end.padLeft(5, '0'),
+                  'pauseStart': '',
+                  'pauseEnd': '',
+                };
+                debugPrint('Parsed simple hours for $day: start=$start, end=$end');
+              } else {
+                debugPrint('Invalid time format in simple hours for day $day: $hours');
               }
             } else {
-              debugPrint('Invalid day: $day');
+              debugPrint('Unrecognized hours format for day $day: $hours');
             }
           } else {
-            debugPrint('Missing fields in entry: $entry');
+            debugPrint('Missing required fields in entry: $entry');
           }
         }
       }
@@ -840,17 +896,17 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       final day = daysMapping[entry.key] ?? 'Day ${entry.key}';
       final start = entry.value['start'] ?? 'N/A';
       final end = entry.value['end'] ?? 'N/A';
-      final pauseStart = entry.value['pauseStart'] ?? '';
-      final pauseEnd = entry.value['pauseEnd'] ?? '';
-      String formatted = '$day: $start → $end';
-      if (pauseStart.isNotEmpty && pauseEnd.isNotEmpty) {
-        formatted += ' (Break: $pauseStart → $pauseEnd)';
+      final pauseStart = entry.value['pauseStart']?.isNotEmpty == true ? entry.value['pauseStart'] : null;
+      final pauseEnd = entry.value['pauseEnd']?.isNotEmpty == true ? entry.value['pauseEnd'] : null;
+      String formatted = '$day: $start - $end';
+      if (pauseStart != null && pauseEnd != null) {
+        formatted += ' (Break: $pauseStart - $pauseEnd)';
       }
       return formatted;
-    }).join(', ');
+    }).join('\n');
 
     return Text(
-      'Working Hours: $hoursText',
+      'Working Hours:\n$hoursText',
       style: const TextStyle(fontSize: 14, color: Colors.black87),
     );
   }

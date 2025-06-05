@@ -4,7 +4,7 @@ import '../models/review.dart';
 import '../models/token_storage.dart';
 
 class ReviewService {
-  static const String baseUrl = 'http://192.168.1.16:3000/api';
+  static const String baseUrl = 'http://192.168.1.16:3000/api/reviews';
   static final Dio dio = Dio();
 
   // Fetch the stored token from TokenStorage
@@ -25,7 +25,9 @@ class ReviewService {
     }
 
     try {
-      final response = await dio.get('$baseUrl/reviews/reviews/$vetId');
+      // Assuming a hypothetical endpoint to check if the veterinarian exists
+      // Replace with actual endpoint if available, e.g., '/users/:vetId'
+      final response = await dio.get('$baseUrl/ratings/$vetId');
       return {'success': true};
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
@@ -35,8 +37,7 @@ class ReviewService {
         };
       }
       return {
-        'success': false,
-        'message': 'Error verifying veterinarian: ${e.message ?? "Unknown error"}',
+        'success': false , 'message': 'Error verifying veterinarian: ${e.message ?? "Unknown error"}',
       };
     }
   }
@@ -57,7 +58,7 @@ class ReviewService {
 
     try {
       final response = await dio.post(
-        '$baseUrl/reviews/ratings/$vetId',
+        '$baseUrl/ratings/$vetId',
         data: {
           'rating': rating,
           'clientId': clientId,
@@ -88,10 +89,13 @@ class ReviewService {
     if (reviewText.trim().isEmpty) {
       return {'success': false, 'message': 'Review text cannot be empty'};
     }
+    if (reviewText.length < 10 || reviewText.length > 500) {
+      return {'success': false, 'message': 'Review must be between 10 and 500 characters'};
+    }
 
     try {
       final response = await dio.post(
-        '$baseUrl/reviews/reviews/$vetId',
+        '$baseUrl/reviews/$vetId',
         data: {
           'review': reviewText,
           'clientId': clientId,
@@ -128,7 +132,7 @@ class ReviewService {
 
     try {
       final response = await dio.put(
-        '$baseUrl/reviews/ratings/$vetId/$ratingId',
+        '$baseUrl/ratings/$vetId/$ratingId',
         data: {
           'rating': rating,
           'clientId': clientId,
@@ -162,10 +166,13 @@ class ReviewService {
     if (reviewText.trim().isEmpty) {
       return {'success': false, 'message': 'Review text cannot be empty'};
     }
+    if (reviewText.length < 10 || reviewText.length > 500) {
+      return {'success': false, 'message': 'Review must be between 10 and 500 characters'};
+    }
 
     try {
       final response = await dio.put(
-        '$baseUrl/reviews/reviews/$vetId/$reviewId',
+        '$baseUrl/reviews/$vetId/$reviewId',
         data: {
           'review': reviewText,
           'clientId': clientId,
@@ -199,7 +206,7 @@ class ReviewService {
 
     try {
       final response = await dio.delete(
-        '$baseUrl/reviews/ratings/$vetId/$ratingId',
+        '$baseUrl/ratings/$vetId/$ratingId',
         data: {
           'clientId': clientId,
         },
@@ -231,7 +238,7 @@ class ReviewService {
 
     try {
       final response = await dio.delete(
-        '$baseUrl/reviews/reviews/$vetId/$reviewId',
+        '$baseUrl/reviews/$vetId/$reviewId',
         data: {
           'clientId': clientId,
         },
@@ -254,8 +261,8 @@ class ReviewService {
     }
 
     try {
-      final ratingsResponse = await dio.get('$baseUrl/reviews/ratings/$vetId');
-      final reviewsResponse = await dio.get('$baseUrl/reviews/reviews/$vetId');
+      final ratingsResponse = await dio.get('$baseUrl/ratings/$vetId');
+      final reviewsResponse = await dio.get('$baseUrl/reviews/$vetId');
 
       // Validate response structure
       if (ratingsResponse.data is! Map<String, dynamic> || reviewsResponse.data is! Map<String, dynamic>) {
@@ -294,6 +301,16 @@ class ReviewService {
         'ratingCount': (ratingsData['count'] is int ? ratingsData['count'] : 0),
       };
     } on DioException catch (e) {
+      // Allow empty reviews/ratings for valid veterinarians
+      if (e.response?.statusCode == 404) {
+        return {
+          'success': true,
+          'reviews': <Review>[],
+          'ratings': <dynamic>[],
+          'averageRating': 0.0,
+          'ratingCount': 0,
+        };
+      }
       return _handleError(e);
     } catch (e) {
       return {
@@ -307,20 +324,9 @@ class ReviewService {
   static Map<String, dynamic> _handleError(DioException e) {
     String message;
     if (e.response?.statusCode == 404) {
-      if (e.response?.data is String && (e.response?.data as String).contains('<!DOCTYPE html')) {
-        message = 'Endpoint not found: Please verify the server configuration';
-      } else {
-        message = 'Veterinarian not found: Please verify the veterinarian ID';
-      }
+      message = e.response?.data['message']?.toString() ?? 'Resource not found';
     } else if (e.response?.data is Map<String, dynamic>) {
       message = e.response?.data['message']?.toString() ?? 'Error occurred';
-    } else if (e.response?.data is String) {
-      final data = e.response?.data as String;
-      if (data.contains('<!DOCTYPE html')) {
-        message = 'Unexpected server response: Please verify the server configuration';
-      } else {
-        message = data;
-      }
     } else {
       message = 'Error occurred: ${e.message ?? "Unknown error"}';
     }

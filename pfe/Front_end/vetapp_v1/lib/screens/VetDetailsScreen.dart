@@ -1,24 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:vetapp_v1/models/veterinarian.dart';
-import 'package:vetapp_v1/screens/reviews_screen.dart';
-import 'package:vetapp_v1/services/review_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vetapp_v1/screens/bookAppointment.dart';
 import 'dart:convert';
 import 'dart:io';
+import '../models/veterinarian.dart';
 import '../models/token_storage.dart';
-import '../services/vet_service.dart';
 import '../services/chat_service.dart';
+import '../services/review_service.dart';
+import '../services/vet_service.dart';
+import '../screens/reviews_screen.dart';
+import '../screens/bookAppointment.dart';
 import './chat_screen.dart';
 
 class VetDetailsScreen extends StatefulWidget {
   final Veterinarian vet;
 
-  const VetDetailsScreen({Key? key, required this.vet}) : super(key: key);
+  const VetDetailsScreen({super.key, required this.vet});
 
   @override
-  _VetDetailsScreenState createState() => _VetDetailsScreenState();
+  State<VetDetailsScreen> createState() => _VetDetailsScreenState();
 }
 
 class _VetDetailsScreenState extends State<VetDetailsScreen> {
@@ -29,6 +28,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   String? _userRole;
   String? _userId;
   bool _isLoading = false;
+  bool _isStartingChat = false;
 
   @override
   void initState() {
@@ -39,27 +39,25 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   Future<void> _initialize() async {
     setState(() => _isLoading = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('userId');
-      final role = await TokenStorage.getUserRoleFromToken();
+      _userId = await TokenStorage.getUserId();
+      _userRole = await TokenStorage.getUserRoleFromToken();
+      print('User ID: $_userId, Role: $_userRole');
 
-      if (userId != null && role != null) {
-        setState(() {
-          _userId = userId;
-          _userRole = role;
-        });
-        await _chatService.connect(userId, role.toUpperCase());
-        debugPrint('WebSocket connected for user $userId with role $role');
+      if (_userId != null && _userRole != null) {
+        await _chatService.connect(_userId!, _userRole!.toUpperCase());
+        print('WebSocket connected for user $_userId with role: $_userRole');
       } else {
-        debugPrint('User ID or role not found');
+        print('User ID or role not found');
       }
 
       await fetchReviewData();
     } catch (e) {
-      debugPrint('Initialization error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to initialize: $e')),
-      );
+      print('Initialization error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to initialize: $e')),
+        );
+      }
     } finally {
       setState(() => _isLoading = false);
     }
@@ -71,38 +69,37 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
       if (response['success']) {
         setState(() {
           reviewCount = response['ratingCount'] ?? 0;
-          averageRating = response['averageRating']?.toDouble() ?? 0.0;
+          averageRating = (response['averageRating'] as num?)?.toDouble() ?? 0.0;
         });
       } else {
-        debugPrint('Failed to load reviews: ${response['message']}');
+        print('Failed to load reviews: ${response['message']}');
       }
     } catch (e) {
-      debugPrint('Error fetching reviews: $e');
+      print('Error fetching reviews: $e');
     }
   }
 
   void navigateToReviews() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final currentUserId = prefs.getString('userId');
-      if (currentUserId != null) {
+      _userId ??= await TokenStorage.getUserId();
+      if (_userId != null) {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ReviewsScreen(
               vetId: widget.vet.id,
-              currentUserId: currentUserId,
+              currentUserId: _userId!,
             ),
           ),
         );
       } else {
-        debugPrint('User ID not found in SharedPreferences');
+        print('User ID not found');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please log in to view reviews')),
         );
       }
     } catch (e) {
-      debugPrint('Error navigating to reviews: $e');
+      print('Error navigating to reviews: $e');
     }
   }
 
@@ -152,65 +149,44 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   void _startConversation() async {
     if (_userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User not logged in')),
+        const SnackBar(content: Text('Please log in to start a chat')),
       );
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _isStartingChat = true);
     try {
-      final conversation = await _chatService.getOrCreateConversation(
+      final conversation = await _chatService
+          .getOrCreateConversation(
         userId: _userId!,
         vetId: widget.vet.id,
+      )
+          .timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception('Conversation creation timed out'),
       );
 
       final chatId = conversation['chatId'] as String;
       final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
-
-      // Standardize participant keys to match ChatScreen and ConversationsScreen
-      final standardizedParticipants = participants.map((p) {
-        return {
-          'id': p['id'] as String? ?? '',
-          'firstName': p['firstName'] as String? ?? 'Unknown',
-          'lastName': p['lastName'] as String? ?? '',
-          'profilePicture': p['profilePicture'] as String?,
-        };
-      }).toList();
-
-      // Add client if missing
-      if (!standardizedParticipants.any((p) => p['id'] == _userId)) {
-        standardizedParticipants.add({
-          'id': _userId!,
-          'firstName': 'You',
-          'lastName': '',
-          'profilePicture': null,
-        });
-      }
-
-      // Add vet if missing
-      if (!standardizedParticipants.any((p) => p['id'] == widget.vet.id)) {
-        standardizedParticipants.add({
-          'id': widget.vet.id,
-          'firstName': widget.vet.firstName,
-          'lastName': widget.vet.lastName,
-          'profilePicture': widget.vet.profilePicture,
-        });
-      }
+      print('Navigating to ChatScreen with chatId: $chatId, participants: $participants');
 
       if (mounted) {
         Navigator.push(
           context,
-          MaterialPageRoute(
+          MaterialPageRoute<void>(
             builder: (context) => ChatScreen(
               chatId: chatId,
               veterinaireId: widget.vet.id,
-              participants: standardizedParticipants,
+              participants: participants,
+              vetId: '',
+              recipientId: null,
+              recipientName: '',
             ),
           ),
         );
       }
     } catch (e) {
-      debugPrint('Error starting conversation: $e');
+      print('Error starting conversation: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to start conversation: $e')),
@@ -218,261 +194,289 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isStartingChat = false);
       }
     }
   }
 
-  Map<String, dynamic> parseWorkingHours(String workingHoursString) {
-    debugPrint('Raw working hours input: $workingHoursString');
-    if (workingHoursString.isEmpty) {
-      return {'formatted': 'Not available', 'parsed': []};
+  String formatWorkingHours(dynamic workingHours) {
+    if (workingHours == null || (workingHours is String && workingHours.isEmpty)) {
+      return 'Not available';
     }
 
     try {
-      final entries = workingHoursString.split(RegExp(r'\},\s*\{'));
-      List<Map<String, String?>> parsedHours = [];
+      // If it's already a properly formatted list/Map, use it directly
+      if (workingHours is List<Map<String, dynamic>>) {
+        return _formatHoursList(workingHours);
+      }
+      if (workingHours is Map<String, dynamic>) {
+        return _formatHoursList([workingHours]);
+      }
 
-      for (var entry in entries) {
-        entry = entry.replaceAll(RegExp(r'[\{\}]'), '');
-        final pairs = entry.split(',').map((e) => e.trim()).toList();
+      // Handle string input
+      if (workingHours is String) {
+        String sanitized = workingHours.trim();
 
-        Map<String, String?> data = {};
-        for (var pair in pairs) {
-          final parts = pair.split(':');
-          if (parts.length >= 2) {
-            final key = parts[0].trim();
-            final value = parts.sublist(1).join(':').trim();
-            data[key] = value == 'null' ? null : value;
+        // Convert the malformed JSON to proper JSON
+        sanitized = _fixMalformedJson(sanitized);
+
+        try {
+          final parsed = jsonDecode(sanitized);
+          if (parsed is List) {
+            return _formatHoursList(parsed.cast<Map<String, dynamic>>());
+          } else if (parsed is Map) {
+            return _formatHoursList([parsed.cast<String, dynamic>()]);
           }
-        }
-
-        final day = data['day'];
-        final start = data['start'];
-        final end = data['end'];
-
-        if (day != null && start != null && end != null) {
-          parsedHours.add({
-            'day': day,
-            'start': start,
-            'end': end,
-            'pauseStart': data['pauseStart'],
-            'pauseEnd': data['pauseEnd'],
-          });
+        } catch (e) {
+          print('Error parsing sanitized working hours: $e\nSanitized: $sanitized');
+          return 'Invalid format';
         }
       }
 
-      return {
-        'formatted': parsedHours.isEmpty
-            ? 'Not available'
-            : parsedHours
-            .map((e) {
-          String formattedEntry = '${e['day']}: ${e['start']}';
-          if (e['pauseStart'] != null && e['pauseEnd'] != null) {
-            formattedEntry += ' → ${e['pauseStart']} (Break) → ${e['pauseEnd']}';
-          }
-          formattedEntry += ' → ${e['end']}';
-          return formattedEntry;
-        })
-            .join('\n'),
-        'parsed': parsedHours,
-      };
+      return 'Not available';
     } catch (e) {
-      debugPrint('Error parsing working hours: $e');
-      return {'formatted': 'Not available', 'parsed': []};
+      print('Error parsing working hours: $e');
+      return 'Not available';
     }
   }
 
-  String formatWorkingHoursFromString(String workingHoursString) {
-    final result = parseWorkingHours(workingHoursString);
-    return result['formatted'];
+  String _fixMalformedJson(String input) {
+    String result = input.trim();
+
+    // Step 1: If it's not an array and contains multiple objects, wrap in []
+    if (!result.startsWith('[') && result.contains('}, {')) {
+      result = '[${result}]';
+    }
+
+    // Step 2: Quote property names (convert day: to "day":)
+    result = result.replaceAllMapped(
+      RegExp(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9]*)(\s*:)'),
+          (match) => '${match.group(1)}"${match.group(2)}"${match.group(3)}',
+    );
+
+    // Step 3: Quote string values (convert Monday to "Monday")
+    result = result.replaceAllMapped(
+      RegExp(r':\s*([a-zA-Z][a-zA-Z0-9]*)(\s*[,}])'),
+          (match) => ': "${match.group(1)}"${match.group(2)}',
+    );
+
+    // Step 4: Ensure time values are quoted (09:00 -> "09:00")
+    result = result.replaceAllMapped(
+      RegExp(r':\s*(\d{2}:\d{2})'),
+          (match) => ': "${match.group(1)}"',
+    );
+
+    // Step 5: Handle malformed times ("08":"00" -> "08:00" or "08":00)
+    result = result.replaceAllMapped(
+      RegExp(r'"(\d{2})":"(\d{2})"'),
+          (match) => '"${match.group(1)}:${match.group(2)}"',
+    ).replaceAllMapped(
+      RegExp(r'"(\d{2})":(\d{2})'),
+          (match) => '"${match.group(1)}:${match.group(2)}"',
+    );
+
+    // Step 6: Convert string "null" to null
+    result = result.replaceAll(RegExp(r':\s*"null"'), ': null');
+
+    // Step 7: Remove _id fields
+    result = result.replaceAllMapped(
+      RegExp(r'"_id":\s*("[^"]*"|[a-fA-F0-9]+)(,\s*|\s*})'),
+          (match) => '${match.group(2)}',
+    );
+
+    // Step 8: Clean up trailing commas
+    result = result.replaceAll(RegExp(r',\s*}'), '}').replaceAll(RegExp(r',\s*]'), ']');
+
+    return result;
   }
 
+  String _formatHoursList(List<Map<String, dynamic>> hours) {
+    return hours.map((e) {
+      // Create a copy without _id
+      final cleaned = Map<String, dynamic>.from(e)..remove('_id');
+      final day = cleaned['day'] as String? ?? 'Unknown day';
+      final start = cleaned['start']?.toString() ?? '?';
+      final end = cleaned['end']?.toString() ?? '?';
+      final pauseStart = cleaned['pauseStart'] == 'null' ? null : cleaned['pauseStart']?.toString();
+      final pauseEnd = cleaned['pauseEnd'] == 'null' ? null : cleaned['pauseEnd']?.toString();
+
+      if (pauseStart != null && pauseEnd != null) {
+        return '$day: $start - $pauseStart (Break) $pauseEnd - $end';
+      }
+      return '$day: $start - $end';
+    }).join('\n');
+  }
   @override
   Widget build(BuildContext context) {
-    String? profileUrl = widget.vet.profilePicture;
-    if (profileUrl != null && profileUrl.contains('localhost')) {
-      profileUrl = profileUrl.replaceFirst('localhost', '192.168.1.16');
+    String? profilePicture = widget.vet.profilePicture;
+    if (profilePicture != null && profilePicture.contains('localhost')) {
+      profilePicture = profilePicture.replaceAll('localhost', '192.168.1.16');
     }
-    debugPrint('Vet profile picture: $profileUrl');
+    print('Profile picture URL: $profilePicture');
 
     return Scaffold(
-      backgroundColor: Colors.white,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.deepPurple))
           : SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const Spacer(),
-                  Text(
-                    'Doctor Details',
-                    style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(
-                      isFavorite ? Icons.favorite : Icons.favorite_border,
-                      color: isFavorite ? Colors.red : null,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        isFavorite = !isFavorite;
-                      });
-                      debugPrint(
-                          '${widget.vet.firstName} ${widget.vet.lastName} is now ${isFavorite ? "favorited" : "unfavorited"}');
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Hero(
-                tag: widget.vet.id,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: profileUrl != null && profileUrl.isNotEmpty
-                      ? profileUrl.startsWith('http')
-                      ? Image.network(
-                    profileUrl,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      debugPrint('Vet network image error for $profileUrl: $error');
-                      return Image.asset(
-                        'assets/images/default_avatar.png',
-                        height: 200,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          debugPrint('Vet asset error: $error');
-                          return Container(
-                            height: 200,
-                            width: double.infinity,
-                            color: Colors.grey,
-                            child: const Icon(Icons.person, color: Colors.white),
-                          );
-                        },
-                      );
-                    },
-                  )
-                      : Image.file(
-                    File(profileUrl),
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      debugPrint('Vet file image error for $profileUrl: $error');
-                      return Image.asset(
-                        'assets/images/default_avatar.png',
-                        height: 200,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          debugPrint('Vet asset error: $error');
-                          return Container(
-                            height: 200,
-                            width: double.infinity,
-                            color: Colors.grey,
-                            child: const Icon(Icons.person, color: Colors.white),
-                          );
-                        },
-                      );
-                    },
-                  )
-                      : Image.asset(
-                    'assets/images/default_avatar.png',
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      debugPrint('Vet asset error: $error');
-                      return Container(
-                        height: 200,
-                        width: double.infinity,
-                        color: Colors.grey,
-                        child: const Icon(Icons.person, color: Colors.white),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Dr. ${widget.vet.firstName} ${widget.vet.lastName}',
-                style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    widget.vet.location ?? 'Unknown Location',
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _infoStat(Icons.people, "4,500+", "Patients"),
-                    _infoStat(Icons.history, "10+", "Years Exp."),
-                    _infoStat(Icons.star, averageRating.toStringAsFixed(1), "Rating"),
-                    GestureDetector(
-                      onTap: navigateToReviews,
-                      child: _infoStat(Icons.comment, "$reviewCount", "Review${reviewCount == 1 ? '' : 's'}"),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Text(
+                          'Doctor Details',
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            color: isFavorite ? Colors.red : null,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              isFavorite = !isFavorite;
+                            });
+                            print('Favorite toggled: $isFavorite');
+                          },
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 16),
+                    Hero(
+                      tag: widget.vet.id,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: profilePicture != null && profilePicture.isNotEmpty
+                            ? profilePicture.startsWith('http')
+                            ? Image.network(
+                          profilePicture,
+                          height: 200,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, error, __) {
+                            print('Error loading image: $error');
+                            return Image.asset(
+                              'assets/images/default_avatar.png',
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            );
+                          },
+                        )
+                            : Image.file(
+                          File(profilePicture),
+                          height: 200,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, error, __) {
+                            print('Error loading file: $error');
+                            return Image.asset(
+                              'assets/images/default_avatar.png',
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            );
+                          },
+                        )
+                            : Image.asset(
+                          'assets/images/default_avatar.png',
+                          height: 200,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Dr. ${widget.vet.firstName} ${widget.vet.lastName}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(
+                          widget.vet.location,
+                          style: GoogleFonts.poppins(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _infoStat(Icons.people, '4,500+', 'Patients'),
+                          _infoStat(Icons.history, '10+', 'Clients'),
+                          _infoStat(Icons.star, averageRating.toStringAsFixed(1), 'Rating'),
+                          GestureDetector(
+                            onTap: navigateToReviews,
+                            child: _infoStat(Icons.comment, '$reviewCount', 'Reviews'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'About',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.vet.description ?? 'No description available.',
+                      style: GoogleFonts.poppins(color: Colors.grey),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Working Hours',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      formatWorkingHours(widget.vet.workingHours),
+                      style: GoogleFonts.poppins(color: Colors.grey),
+                    ),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
-              Text(
-                'About',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                widget.vet.description ?? 'No description available for this veterinarian.',
-                style: const TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Working Hours',
-                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                formatWorkingHoursFromString(widget.vet.workingHours ?? ''),
-                style: const TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       bottomNavigationBar: Padding(
@@ -485,15 +489,53 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                 children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _isLoading
+                      onPressed: _isLoading || _isStartingChat
                           ? null
                           : () {
-                        final workingHoursData = parseWorkingHours(widget.vet.workingHours ?? '');
-                        final workingHoursJson = jsonEncode(workingHoursData['parsed']);
-                        debugPrint('Passing working hours JSON to AppointmentsScreen: $workingHoursJson');
+                        List<Map<String, dynamic>> workingHours = [];
+                        if (widget.vet.workingHours != null) {
+                          try {
+                            String hoursString = widget.vet.workingHours is String
+                                ? widget.vet.workingHours as String
+                                : jsonEncode(widget.vet.workingHours);
+
+                            // Fix malformed JSON
+                            hoursString = _fixMalformedJson(hoursString);
+
+                            final parsed = jsonDecode(hoursString);
+                            if (parsed is List) {
+                              workingHours = parsed.cast<Map<String, dynamic>>();
+                            } else if (parsed is Map) {
+                              workingHours = [parsed.cast<String, dynamic>()];
+                            }
+                            // Remove _id and handle "null" strings
+                            workingHours = workingHours
+                                .map((e) => Map<String, dynamic>.from(e)
+                              ..remove('_id')
+                              ..updateAll((key, value) => value == 'null' ? null : value))
+                                .toList();
+                          } catch (e) {
+                            print('Error parsing working hours for appointment: $e');
+                          }
+                        }
+
+                        final workingHoursJson = jsonEncode(
+                          workingHours.map((e) {
+                            final day = e['day'] as String? ?? '';
+                            final start = e['start'] as String? ?? '';
+                            final end = e['end'] as String? ?? '';
+                            final pauseStart = e['pauseStart'] as String?;
+                            final pauseEnd = e['pauseEnd'] as String?;
+                            final hours = pauseStart != null && pauseEnd != null
+                                ? '$start -> $pauseStart (Break) -> $pauseEnd -> $end'
+                                : '$start -> $end';
+                            return {'day': day, 'hours': hours};
+                          }).toList(),
+                        );
+                        print('Navigating to BookAppointment with working hours: $workingHoursJson');
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
+                          MaterialPageRoute<void>(
                             builder: (context) => AppointmentsScreen(
                               vet: widget.vet,
                               workingHours: workingHoursJson,
@@ -515,8 +557,10 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.chat, color: Colors.deepPurple),
+                  _isStartingChat
+                      ? const CircularProgressIndicator(color: Colors.deepPurple)
+                      : IconButton(
+                    icon: const Icon(Icons.chat, color: Colors.green),
                     onPressed: _isLoading ? null : _startConversation,
                     tooltip: 'Start Chat',
                   ),
@@ -535,7 +579,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                     ),
                   ),
                   child: const Text(
-                    'Delete',
+                    'Delete Veterinarian',
                     style: TextStyle(fontSize: 16, color: Colors.white),
                   ),
                 ),
@@ -553,12 +597,12 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
         const SizedBox(height: 8),
         Text(
           value,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
+          style: GoogleFonts.poppins(color: Colors.grey, fontSize: 12),
         ),
       ],
     );
@@ -566,7 +610,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
 
   @override
   void dispose() {
-    _chatService.disconnect();
+    _chatService.dispose();
     super.dispose();
   }
 }

@@ -7,10 +7,37 @@ class ServiceService {
   static const String baseUrl = 'http://192.168.1.16:3000/api/services';
   static final Dio _dio = Dio();
 
+  // Fetch all service names
+  static Future<List<String>> fetchServiceNames() async {
+    try {
+      final token = await TokenStorage.getToken();
+      final response = await _dio.get(
+        baseUrl,
+        options: token != null
+            ? Options(headers: {'Authorization': 'Bearer $token'})
+            : null,
+      );
+      print('Fetch service names response: ${response.statusCode} - ${response.data}');
+      if (response.statusCode == 200) {
+        return (response.data as List).map((json) => json['name'].toString()).toList();
+      }
+      throw Exception('Failed to load service names: ${response.statusCode} - ${response.statusMessage}');
+    } catch (e) {
+      print('Error fetching service names: $e');
+      throw Exception('Error fetching service names: $e');
+    }
+  }
+
   // Fetch all services
   static Future<Map<String, dynamic>> getAllServices() async {
     try {
-      final response = await _dio.get(baseUrl);
+      final token = await TokenStorage.getToken();
+      final response = await _dio.get(
+        baseUrl,
+        options: token != null
+            ? Options(headers: {'Authorization': 'Bearer $token'})
+            : null,
+      );
       print('Get all services response: ${response.statusCode} - ${response.data}');
       if (response.statusCode == 200) {
         return {
@@ -110,7 +137,13 @@ class ServiceService {
   // Get service by ID
   static Future<Map<String, dynamic>> getServiceById(String id) async {
     try {
-      final response = await _dio.get('$baseUrl/$id');
+      final token = await TokenStorage.getToken();
+      final response = await _dio.get(
+        '$baseUrl/$id',
+        options: token != null
+            ? Options(headers: {'Authorization': 'Bearer $token'})
+            : null,
+      );
       print('Get service by ID response: ${response.statusCode} - ${response.data}');
       if (response.statusCode == 200) {
         return {
