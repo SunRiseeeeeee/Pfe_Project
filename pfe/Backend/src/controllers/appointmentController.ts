@@ -5,6 +5,7 @@ import User, { UserRole } from "../models/User";
 import { UserTokenPayload } from "../middlewares/authMiddleware";
 import Animal from "../models/Animal";
 
+
 declare module "express" {
   interface Request {
     user?: UserTokenPayload;
@@ -49,11 +50,11 @@ export const createAppointment = async (
         res,
         400,
         {},
-        `Type de rendez-vous invalide. Autorisés : ${Object.values(AppointmentType).join(", ")}`
+        `Type de rendez-vous invalide. Autorisés : ${Object.values(AppointmentType).join(", ")}.`
       );
     }
 
-    // Vérification de l'existence du client
+    // Vérification du client
     const client = await User.findById(user.id);
     if (!client) {
       return sendResponse(res, 404, {}, "Client non trouvé.");
@@ -80,27 +81,32 @@ export const createAppointment = async (
       return sendResponse(res, 404, {}, "Vétérinaire non trouvé.");
     }
 
-// Vérification du créneau - Seulement pour les rendez-vous ACCEPTED
-const appointmentDate = new Date(date);
-const windowStart = new Date(appointmentDate.getTime() - 29 * 60000);
-const windowEnd = new Date(appointmentDate.getTime() + 29 * 60000);
+    // Convertir la date reçue en objet Date (en local, sans Z)
+    const appointmentDate = new Date(date);
+    if (isNaN(appointmentDate.getTime())) {
+      return sendResponse(res, 400, {}, "Format de date invalide.");
+    }
 
-const conflicting = await Appointment.find({
-  veterinaireId: veterinaire._id,
-  date: { $gte: windowStart, $lte: windowEnd },
-  status: AppointmentStatus.ACCEPTED // Seulement vérifier les rendez-vous acceptés
-});
+    // Vérification des conflits de créneau (±29 min)
+    const windowStart = new Date(appointmentDate.getTime() - 29 * 60 * 1000);
+    const windowEnd = new Date(appointmentDate.getTime() + 29 * 60 * 1000);
 
-if (conflicting.length) {
-  return sendResponse(
-    res,
-    400,
-    {},
-    "Créneau indisponible. Il doit y avoir au moins 30 minutes entre deux rendez-vous acceptés."
-  );
-}
+    const conflicting = await Appointment.find({
+      veterinaireId: veterinaire._id,
+      date: { $gte: windowStart, $lte: windowEnd },
+      status: AppointmentStatus.ACCEPTED,
+    });
 
-    // Enregistrer le rendez-vous
+    if (conflicting.length > 0) {
+      return sendResponse(
+        res,
+        400,
+        {},
+        "Créneau indisponible : un autre rendez-vous accepté est déjà prévu dans cette plage horaire (±30 min)."
+      );
+    }
+
+    // Création du rendez-vous
     const appointment = new Appointment({
       clientId: client._id,
       veterinaireId: veterinaire._id,
@@ -113,12 +119,14 @@ if (conflicting.length) {
     });
 
     await appointment.save();
+
     sendResponse(res, 201, { appointment }, "Rendez-vous créé avec succès.");
   } catch (error) {
     console.error("[createAppointment] Error:", error);
     next(error);
   }
 };
+
 
 // Détail pour un vétérinaire
 export const getAppointmentForVeterinaireById = async (
