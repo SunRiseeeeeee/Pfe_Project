@@ -16,7 +16,7 @@ const createInAppNotification = async (
 ): Promise<void> => {
   try {
     const formattedDate = new Date(appointment.date).toLocaleString("fr-FR");
-    const message = `Bonjour ${clientName}, votre rendez-vous pour ${appointment.animalId} est prévu le ${formattedDate}.`;
+const message = `Hello ${clientName}, your appointment for ${appointment.animalId} is scheduled on ${formattedDate}.`;
 
     const notification = await Notification.create({
       userId,
