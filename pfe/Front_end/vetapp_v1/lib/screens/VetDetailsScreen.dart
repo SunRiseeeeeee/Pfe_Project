@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:vetapp_v1/screens/posts_screen.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../models/veterinarian.dart';
@@ -487,6 +488,37 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
             if (_userRole == 'client')
               Row(
                 children: [
+                  // Posts Button
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                        // Navigate to PostsScreen or handle posts action
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (context) => PostsScreen(
+                              vetId: widget.vet.id,
+                            ),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue, // Customize color as needed
+                        minimumSize: const Size(double.infinity, 50),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Posts',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Book Appointment Button
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _isLoading || _isStartingChat
@@ -557,6 +589,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // Start Conversation Button
                   _isStartingChat
                       ? const CircularProgressIndicator(color: Colors.deepPurple)
                       : IconButton(

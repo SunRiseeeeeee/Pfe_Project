@@ -1,395 +1,330 @@
+import 'dart:async';
 import 'dart:convert';
-import 'package:dio/dio.dart';
-import 'package:socket_io_client/socket_io_client.dart' as socket_io;
-import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/token_storage.dart';
 
-// =========================
-// 📦 Notification Model
-// =========================
-class Notification {
-  final String id;
-  final String userId;
-  final String appointmentId;
-  final String message;
-  final bool read;
-  final String createdAt;
-  final String? updatedAt;
-
-  Notification({
-    required this.id,
-    required this.userId,
-    required this.appointmentId,
-    required this.message,
-    required this.read,
-    required this.createdAt,
-    this.updatedAt,
-  });
-
-  factory Notification.fromJson(Map<String, dynamic> json) {
-    return Notification(
-      id: json['_id'] as String,
-      userId: json['userId'] as String,
-      appointmentId: json['appointmentId'] as String,
-      message: json['message'] as String,
-      read: json['read'] as bool,
-      createdAt: json['createdAt'] as String,
-      updatedAt: json['updatedAt'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      '_id': id,
-      'userId': userId,
-      'appointmentId': appointmentId,
-      'message': message,
-      'read': read,
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
-    };
-  }
-}
-
-// =========================
-// 📦 Appointment Model
-// =========================
-class Appointment {
-  final String id;
-  final String date;
-  final String type;
-  final String caseDescription;
-
-  Appointment({
-    required this.id,
-    required this.date,
-    required this.type,
-    required this.caseDescription,
-  });
-
-  factory Appointment.fromJson(Map<String, dynamic> json) {
-    return Appointment(
-      id: json['_id'] as String,
-      date: json['date'] as String,
-      type: json['type'] as String,
-      caseDescription: json['caseDescription'] as String? ?? '',
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      '_id': id,
-      'date': date,
-      'type': type,
-      'caseDescription': caseDescription,
-    };
-  }
-}
-
-// =========================
-// 📦 API Response Models
-// =========================
-class NotificationsResponse {
-  final bool success;
-  final List<Notification> notifications;
-  final int count;
-  final int unreadCount;
-  final String? message;
-
-  NotificationsResponse({
-    required this.success,
-    required this.notifications,
-    required this.count,
-    required this.unreadCount,
-    this.message,
-  });
-
-  factory NotificationsResponse.fromJson(Map<String, dynamic> json) {
-    return NotificationsResponse(
-      success: json['success'] as bool,
-      notifications: (json['notifications'] as List)
-          .map((item) => Notification.fromJson(item as Map<String, dynamic>))
-          .toList(),
-      count: json['count'] as int,
-      unreadCount: json['unreadCount'] as int,
-      message: json['message'] as String?,
-    );
-  }
-}
-
-class MarkReadResponse {
-  final bool success;
-  final Notification notification;
-  final String message;
-
-  MarkReadResponse({
-    required this.success,
-    required this.notification,
-    required this.message,
-  });
-
-  factory MarkReadResponse.fromJson(Map<String, dynamic> json) {
-    return MarkReadResponse(
-      success: json['success'] as bool,
-      notification: Notification.fromJson(json['notification'] as Map<String, dynamic>),
-      message: json['message'] as String,
-    );
-  }
-}
-
-// =========================
-// 🔌 Notification Service
-// =========================
 class NotificationService {
-  final Dio _dio;
-  socket_io.Socket? _socket;
+  static final NotificationService _instance = NotificationService._internal();
+  factory NotificationService() => _instance;
+  NotificationService._internal();
 
-  static const List<String> _socketUrls = [
-    'http://localhost:3000',
-    'http://192.168.1.16:3001',
-    'http://192.168.1.16:3000',
-  ];
+  final String _baseUrl = 'http://192.168.1.16:3000/api';
+  final String _socketUrl = 'http://192.168.1.16:3000/socket.io';
+  IO.Socket? _socket;
+  String? _userId;
+  int _retryCount = 0;
+  static const int _maxRetries = 3;
+  Timer? _pollingTimer;
+  final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
+  FlutterLocalNotificationsPlugin();
+  int _notificationId = 0;
+  int _unreadNotificationCount = 0;
+  bool _shouldDisconnect = false; // New flag to control disconnection
+  final StreamController<int> _unreadCountStreamController = StreamController<int>.broadcast();
 
-  static const String _baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://192.168.1.16:3000',
-  );
+  Stream<int> get unreadNotificationCountStream => _unreadCountStreamController.stream;
 
-  NotificationService({Dio? dio})
-      : _dio = dio ?? Dio(BaseOptions(baseUrl: _baseUrl));
+  Future<void> _initLocalNotifications() async {
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+    const initializationSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+    await _localNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (response) {
+        print('NotificationService: Notification tapped: ${response.payload}');
+      },
+      onDidReceiveBackgroundNotificationResponse: backgroundHandler,
+    );
 
-  Future<bool> connectSocket(String userId) async {
+    const androidChannel = AndroidNotificationChannel(
+      'notification_channel',
+      'Notifications',
+      description: 'Appointment notifications',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    );
+    await _localNotificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(androidChannel);
+
+    await _localNotificationsPlugin
+        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+  }
+
+  Future<void> _showLocalNotification(String title, String body, {String? payload}) async {
+    const androidDetails = AndroidNotificationDetails(
+      'notification_channel',
+      'Notifications',
+      channelDescription: 'Appointment notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      styleInformation: BigTextStyleInformation(''),
+    );
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    const notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+    await _localNotificationsPlugin.show(
+      _notificationId++,
+      title,
+      body,
+      notificationDetails,
+      payload: payload,
+    );
+    print('NotificationService: Displayed notification ID: ${_notificationId - 1}, Title: $title, Body: $body');
+  }
+
+  void resetOnLogout() {
+    print('NotificationService: Resetting for logout');
+    _shouldDisconnect = true;
+    disconnectSocket();
+    _userId = null;
+    _unreadNotificationCount = 0;
+    _unreadCountStreamController.add(0);
+  }
+
+  Future<void> connectToSocket() async {
+    await _initLocalNotifications();
+    _userId = await TokenStorage.getUserId();
     final token = await TokenStorage.getToken();
-    if (token == null) {
-      if (kDebugMode) print('No JWT token found in storage');
-      return false;
+
+    if (_userId == null || token == null) {
+      print('NotificationService: User ID or token not found');
+      throw Exception('User ID or token not found');
     }
 
-    for (final url in _socketUrls) {
+    if (_socket != null && _socket!.connected) {
+      print('NotificationService: Socket already connected for userId: $_userId');
+      return;
+    }
+
+    print('NotificationService: Attempting to connect to $_socketUrl for userId: $_userId (Attempt ${_retryCount + 1}/$_maxRetries)');
+    _socket = IO.io(_socketUrl, <String, dynamic>{
+      'transports': ['websocket'],
+      'autoConnect': false,
+      'forceNew': true,
+      'timeout': 5000,
+      'query': {'userId': _userId},
+      'auth': {'token': token},
+    });
+
+    _socket!.connect();
+
+    _socket!.onConnect((_) {
+      print('NotificationService: Connected to socket as $_userId');
+      _retryCount = 0;
+      _socket!.emit('join', _userId);
+      _stopPolling();
+      _fetchUnreadCount();
+    });
+
+    _socket!.onConnectError((data) {
+      print('NotificationService: Connection error for userId: $_userId: $data');
+      if (data.toString().contains('timeout')) {
+        print('NotificationService: Connection timeout detected');
+      }
+      _retryCount++;
+      if (_retryCount < _maxRetries) {
+        print('NotificationService: Retrying in 5 seconds...');
+        Future.delayed(const Duration(seconds: 5), connectToSocket);
+      } else {
+        print('NotificationService: Failed after $_maxRetries attempts: $data');
+        _startPolling();
+      }
+    });
+
+    _socket!.onDisconnect((_) {
+      print('NotificationService: Disconnected from socket for userId: $_userId');
+      _retryCount = 0;
+      if (!_shouldDisconnect) {
+        print('NotificationService: Attempting to reconnect for userId: $_userId');
+        Future.delayed(const Duration(seconds: 5), connectToSocket);
+      } else {
+        _stopPolling();
+      }
+    });
+
+    _socket!.onError((data) => print('NotificationService: Socket error for userId: $_userId: $data'));
+  }
+
+  void _startPolling() {
+    if (_pollingTimer != null || _shouldDisconnect) return;
+    print('NotificationService: Starting HTTP polling for userId: $_userId');
+    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (timer) async {
       try {
-        _socket = socket_io.io(
-          url,
-          <String, dynamic>{
-            'transports': ['websocket', 'polling'],
-            'path': '/socket.io',
-            'reconnection': true,
-            'reconnectionAttempts': 5,
-            'reconnectionDelay': 1000,
-            'auth': {'token': token},
-          },
-        );
-
-        _socket?.onConnect((_) {
-          if (kDebugMode) print('✅ Socket connected for user $userId to $url');
-        });
-
-        _socket?.onDisconnect((_) {
-          if (kDebugMode) print('❌ Socket disconnected for user $userId');
-        });
-
-        _socket?.onConnectError((error) {
-          if (kDebugMode) print('[Socket] Connection error for $url: $error');
-        });
-
-        _socket?.on('error', (data) {
-          if (kDebugMode) print('[Socket] Received error: $data');
-        });
-
-        await Future.any([
-          Future.delayed(const Duration(seconds: 10)),
-          Future(() async {
-            while (_socket?.connected != true) {
-              await Future.delayed(const Duration(milliseconds: 100));
-            }
-          }),
-        ]);
-
-        if (_socket?.connected == true) {
-          return true;
-        } else {
-          if (kDebugMode) print('Failed to connect to $url: Timeout');
-          _socket?.dispose();
-          _socket = null;
+        final notifications = await fetchNotifications();
+        if (notifications.isNotEmpty) {
+          final latest = notifications.first;
+          if (!(latest['read'] ?? true)) {
+            await _showLocalNotification(
+              'New Notification',
+              latest['message'] ?? 'No message',
+              payload: json.encode(latest),
+            );
+            _fetchUnreadCount();
+          }
         }
       } catch (e) {
-        if (kDebugMode) print('Failed to connect to $url: $e');
-        _socket?.dispose();
-        _socket = null;
+        print('NotificationService: Polling error for userId: $_userId: $e');
       }
-    }
+    });
+  }
 
-    return false;
+  void _stopPolling() {
+    if (_pollingTimer != null) {
+      print('NotificationService: Stopping HTTP polling for userId: $_userId');
+      _pollingTimer!.cancel();
+      _pollingTimer = null;
+    }
   }
 
   void disconnectSocket() {
+    if (!_shouldDisconnect) {
+      print('NotificationService: Unauthorized disconnect attempt blocked for userId: $_userId');
+      return;
+    }
+    _stopPolling();
     _socket?.disconnect();
-    _socket?.dispose();
     _socket = null;
-    if (kDebugMode) print('🔌 Socket disconnected');
+    _retryCount = 0;
+    print('NotificationService: Socket disconnected for userId: $_userId');
   }
 
-  void onNewNotification(void Function(Notification) callback) {
+  void onNotificationReceived(Function(Map<String, dynamic>) callback) {
     _socket?.on('newNotification', (data) {
-      if (kDebugMode) print('[Socket] Received newNotification: $data');
-      try {
-        callback(Notification.fromJson(data as Map<String, dynamic>));
-      } catch (e) {
-        if (kDebugMode) print('[Socket] Error parsing notification: $e');
+      print('NotificationService: New notification for userId: $_userId: $data');
+      final notification = Map<String, dynamic>.from(data);
+      callback(notification);
+      if (!(notification['read'] ?? false)) {
+        _unreadNotificationCount++;
+        _unreadCountStreamController.add(_unreadNotificationCount);
       }
+      _showLocalNotification(
+        'New Notification',
+        notification['message'] ?? 'No message',
+        payload: json.encode(notification),
+      );
     });
   }
 
-  void onAnyEvent(void Function(String, dynamic) callback) {
-    _socket?.onAny((event, data) {
-      if (kDebugMode) print('[Socket] Received event: $event, data: $data');
-      callback(event, data);
-    });
-  }
-  Future<List<Notification>> fetchUnreadNotifications(String userId) async {
-    final token = await TokenStorage.getToken();
-    if (token == null) {
-      if (kDebugMode) print('No JWT token for fetchUnreadNotifications');
-      throw Exception('No JWT token found');
-    }
-
+  Future<List<Map<String, dynamic>>> fetchNotifications() async {
     try {
-      final response = await _dio.get(
-        '/notifications/$userId/unread',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      final token = await TokenStorage.getToken();
+      final userId = _userId ?? await TokenStorage.getUserId();
+
+      if (token == null || userId == null) {
+        throw Exception('Token or User ID not found');
+      }
+
+      print('NotificationService: Fetching notifications for userId: $userId');
+      final response = await http.get(
+        Uri.parse('$_baseUrl/notifications/$userId'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
       );
 
-      final List<dynamic> list = response.data['notifications'];
-      return list.map((e) => Notification.fromJson(e)).toList();
-    } catch (e) {
-      if (kDebugMode) print('[fetchUnreadNotifications] Error: $e');
-      throw Exception('Failed to fetch unread notifications');
-    }
-  }
-
-  /// ✅ Mark all notifications as read for a user
-  Future<void> markAllAsRead(String userId) async {
-    final token = await TokenStorage.getToken();
-    if (token == null) {
-      if (kDebugMode) print('No JWT token found for markAllAsRead');
-      throw Exception('No JWT token found');
-    }
-
-    try {
-      await _dio.patch(
-        '/notifications/$userId/read-all',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-      if (kDebugMode) print('✅ All notifications marked as read');
-    } catch (e) {
-      if (kDebugMode) print('[markAllAsRead] Error: $e');
-      throw Exception('Failed to mark all notifications as read');
-    }
-  }
-
-  /// ❌ Delete a single notification
-  Future<void> deleteNotification(String notificationId) async {
-    final token = await TokenStorage.getToken();
-    if (token == null) {
-      if (kDebugMode) print('No JWT token found for deleteNotification');
-      throw Exception('No JWT token found');
-    }
-
-    try {
-      await _dio.delete(
-        '/notifications/$notificationId',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-      if (kDebugMode) print('🗑️ Notification $notificationId deleted');
-    } catch (e) {
-      if (kDebugMode) print('[deleteNotification] Error: $e');
-      throw Exception('Failed to delete notification');
-    }
-  }
-
-  /// 🧹 Delete all notifications for a user
-  Future<void> deleteAllNotifications(String userId) async {
-    final token = await TokenStorage.getToken();
-    if (token == null) {
-      if (kDebugMode) print('No JWT token found for deleteAllNotifications');
-      throw Exception('No JWT token found');
-    }
-
-    try {
-      await _dio.delete(
-        '/notifications/user/$userId',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-      if (kDebugMode) print('🧹 All notifications for user $userId deleted');
-    } catch (e) {
-      if (kDebugMode) print('[deleteAllNotifications] Error: $e');
-      throw Exception('Failed to delete all notifications');
-    }
-  }
-
-
-  /// 🧪 Send a test notification via HTTP (NOT socket emit)
-  Future<void> sendTestNotification(String userId) async {
-    final token = await TokenStorage.getToken();
-    if (token == null) return;
-
-    try {
-      await _dio.post(
-        '/notifications/test',
-        data: {'userId': userId},
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-      if (kDebugMode) {
-        print('📤 Sent test notification request to backend');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('NotificationService: Fetched notifications for userId: $userId: ${data['notifications']}');
+        _updateUnreadCount(data['notifications']);
+        return List<Map<String, dynamic>>.from(data['notifications']);
+      } else {
+        print('NotificationService: Failed to fetch notifications for userId: $userId: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to fetch: ${response.statusCode}');
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error sending test notification: $e');
-      }
+      print('NotificationService: Error fetching notifications for userId: $_userId: $e');
+      throw e;
     }
   }
 
-  Future<NotificationsResponse> getUserNotifications(String userId) async {
-    final token = await TokenStorage.getToken();
-    if (token == null) {
-      if (kDebugMode) print('No JWT token found for fetching notifications');
-      throw Exception('No JWT token found');
-    }
-
+  Future<int> getUnreadNotificationCount() async {
     try {
-      final response = await _dio.get(
-        '/notifications/$userId',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
-      return NotificationsResponse.fromJson(response.data);
-    } catch (error) {
-      if (kDebugMode) {
-        print('[getUserNotifications] Error: $error');
-      }
-      throw Exception('Failed to fetch notifications');
+      final notifications = await fetchNotifications();
+      _updateUnreadCount(notifications);
+      return _unreadNotificationCount;
+    } catch (e) {
+      print('NotificationService: Error fetching unread count: $e');
+      return _unreadNotificationCount;
     }
   }
 
-  Future<MarkReadResponse> markNotificationAsRead(String notificationId) async {
-    final token = await TokenStorage.getToken();
-    if (token == null) {
-      if (kDebugMode) print('No JWT token found for marking notification as read');
-      throw Exception('No JWT token found');
-    }
-
+  Future<void> _fetchUnreadCount() async {
     try {
-      final response = await _dio.patch(
-        '/notifications/$notificationId/read',
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      final count = await getUnreadNotificationCount();
+      _unreadNotificationCount = count;
+      _unreadCountStreamController.add(_unreadNotificationCount);
+      print('NotificationService: Fetched unread count: $_unreadNotificationCount');
+    } catch (e) {
+      print('NotificationService: Error in _fetchUnreadCount: $e');
+    }
+  }
+
+  void _updateUnreadCount(List<dynamic> notifications) {
+    _unreadNotificationCount = notifications.where((n) => !(n['read'] ?? true)).length;
+    _unreadCountStreamController.add(_unreadNotificationCount);
+    print('NotificationService: Updated unread count: $_unreadNotificationCount');
+  }
+
+  Future<bool> markAsRead(String notificationId) async {
+    try {
+      final token = await TokenStorage.getToken();
+      if (token == null) throw Exception('Token not found');
+
+      final response = await http.patch(
+        Uri.parse('$_baseUrl/notifications/$notificationId/read'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
       );
-      return MarkReadResponse.fromJson(response.data);
-    } catch (error) {
-      if (kDebugMode) {
-        print('[markNotificationAsRead] Error: $error');
+
+      if (response.statusCode == 200) {
+        print('NotificationService: Notification $notificationId marked as read for userId: $_userId');
+        _unreadNotificationCount = _unreadNotificationCount > 0 ? _unreadNotificationCount - 1 : 0;
+        _unreadCountStreamController.add(_unreadNotificationCount);
+        return true;
+      } else {
+        print('NotificationService: Failed to mark as read for userId: $_userId: ${response.statusCode}');
+        return false;
       }
-      throw Exception('Failed to mark notification as read');
+    } catch (e) {
+      print('NotificationService: Error marking as read for userId: $_userId: $e');
+      return false;
+    }
+  }
+
+  void close() {
+    if (_shouldDisconnect) {
+      _unreadCountStreamController.close();
+      print('NotificationService: Closing stream controller for userId: $_userId');
+    } else {
+      print('NotificationService: Preserving stream controller for userId: $_userId');
     }
   }
 }
 
-// Singleton instance
-final notificationService = NotificationService();
+@pragma('vm:entry-point')
+void backgroundHandler(NotificationResponse response) {
+  print('NotificationService: Background notification tapped: ${response.payload}');
+}

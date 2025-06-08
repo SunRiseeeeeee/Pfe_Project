@@ -17,7 +17,8 @@ import '../models/service.dart';
 import '../services/service_service.dart';
 import 'conversations_screen.dart';
 import '../services/chat_service.dart';
-import '../services/notif_service.dart' as notif; // Alias to avoid conflict
+import '../services/notif_service.dart' as notif;
+import 'notif_screen.dart';
 
 class VetService {
   static const String baseUrl = "http://192.168.1.16:3000/api/users/veterinarians";
@@ -75,11 +76,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final ChatService _chatService = ChatService();
   final notif.NotificationService _notificationService = notif.NotificationService();
   int _unreadMessageCount = 0;
-  int _unreadNotificationCount = 0;
   final Map<String, Map<String, dynamic>> _unreadMessages = {};
-  final Map<String, notif.Notification> _unreadNotifications = {};
   StreamSubscription<Map<String, dynamic>>? _messageSubscription;
   StreamSubscription<Map<String, dynamic>>? _conversationSubscription;
+  StreamSubscription<int>? _notificationSubscription;
 
   @override
   void initState() {
@@ -103,6 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       await _initializeChatService();
       await _initializeNotificationService();
+      _listenToNotifications();
     } catch (e) {
       print('Error fetching user role or ID: $e');
       setState(() {
@@ -135,16 +136,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (userId != null) {
       try {
         print('Initializing NotificationService for userId: $userId');
-        final connected = await _notificationService.connectSocket(userId!);
-        if (connected) {
-          _listenToNotifications();
-          await _fetchNotifications();
-          // Send a test notification to verify functionality, similar to Python script
-          await _notificationService.sendTestNotification(userId!);
-          print('NotificationService initialized and test notification sent');
-        } else {
-          print('Failed to connect to NotificationService socket');
-        }
+        await _notificationService.connectToSocket();
+        print('NotificationService initialized');
       } catch (e) {
         print('Error initializing NotificationService: $e');
       }
@@ -234,153 +227,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _listenToNotifications() {
-    _notificationService.onNewNotification((notification) {
-      if (!notification.read) {
-        setState(() {
-          _unreadNotifications[notification.id] = notification;
-          _unreadNotificationCount = _unreadNotifications.length;
-          print('New notification received: ${notification.message}, count: $_unreadNotificationCount');
-        });
-      }
+    _notificationSubscription = _notificationService.unreadNotificationCountStream.listen((count) {
+      print('Notification count updated: $count');
+    }, onError: (error) {
+      print('Error in notification subscription: $error');
     });
-
-    // Listen to all events for debugging, similar to Python script's catch_all
-    _notificationService.onAnyEvent((event, data) {
-      print('[Notification] Received event: $event, data: $data');
-    });
-  }
-
-  Future<void> _fetchNotifications() async {
-    if (userId != null) {
-      try {
-        final response = await _notificationService.getUserNotifications(userId!);
-        setState(() {
-          _unreadNotifications.clear();
-          for (var notification in response.notifications) {
-            if (!notification.read) {
-              _unreadNotifications[notification.id] = notification;
-            }
-          }
-          _unreadNotificationCount = _unreadNotifications.length;
-          print('Fetched notifications, unread count: $_unreadNotificationCount');
-        });
-      } catch (e) {
-        print('Error fetching notifications: $e');
-      }
-    }
-  }
-
-  void _showNotificationsDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Notifications'),
-          content: _unreadMessages.isEmpty && _unreadNotifications.isEmpty
-              ? const Text('No new notifications or messages.')
-              : SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_unreadNotifications.isNotEmpty) ...[
-                  const Text(
-                    'Appointment Notifications',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  ..._unreadNotifications.entries.map((entry) {
-                    final notification = entry.value;
-                    return ListTile(
-                      leading: const Icon(Icons.notifications, color: Colors.blue),
-                      title: Text(notification.message),
-                      subtitle: Text(
-                        'Received: ${DateTime.parse(notification.createdAt).toLocal().toString().substring(0, 16)}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      onTap: () async {
-                        try {
-                          await _notificationService.markNotificationAsRead(notification.id);
-                          setState(() {
-                            _unreadNotifications.remove(notification.id);
-                            _unreadNotificationCount = _unreadNotifications.length;
-                            print('Marked notification as read: ${notification.id}');
-                          });
-                          Navigator.pop(context);
-                        } catch (e) {
-                          print('Error marking notification as read: $e');
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to mark notification as read: $e')),
-                          );
-                        }
-                      },
-                    );
-                  }),
-                  const Divider(),
-                ],
-                if (_unreadMessages.isNotEmpty) ...[
-                  const Text(
-                    'Messages',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  ..._unreadMessages.entries.map((entry) {
-                    final message = entry.value;
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundImage: message['profilePicture'] != null
-                            ? NetworkImage(message['profilePicture'])
-                            : null,
-                        child: message['profilePicture'] == null
-                            ? Text(message['firstName']?.substring(0, 1) ?? 'U')
-                            : null,
-                      ),
-                      title: Text('${message['firstName']} ${message['lastName']}'),
-                      subtitle: Text(
-                        message['content'],
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ChatScreen(
-                              chatId: message['chatId'],
-                              recipientId: message['senderId'],
-                              recipientName: '${message['firstName']} ${message['lastName']}',
-                              veterinaireId: '',
-                              participants: [],
-                              vetId: '',
-                            ),
-                          ),
-                        ).then((_) {
-                          if (userId != null) {
-                            _chatService.markMessagesAsRead(
-                              chatId: message['chatId'],
-                              userId: userId!,
-                            );
-                            setState(() {
-                              _unreadMessages.remove(message['chatId']);
-                              _unreadMessageCount = _unreadMessages.length;
-                            });
-                            print('Marked messages as read for chatId: ${message['chatId']}');
-                          }
-                        });
-                      },
-                    );
-                  }),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   List<Widget> get _screens {
@@ -390,9 +241,6 @@ class _HomeScreenState extends State<HomeScreen> {
           onServiceChanged: () => setState(() {}),
           unreadMessageCount: _unreadMessageCount,
           unreadMessages: _unreadMessages,
-          unreadNotificationCount: _unreadNotificationCount,
-          unreadNotifications: _unreadNotifications,
-          onShowNotifications: _showNotificationsDialog,
         ),
         const ServiceScreen(),
         const FypScreen(),
@@ -404,9 +252,6 @@ class _HomeScreenState extends State<HomeScreen> {
         HomeContent(
           unreadMessageCount: _unreadMessageCount,
           unreadMessages: _unreadMessages,
-          unreadNotificationCount: _unreadNotificationCount,
-          unreadNotifications: _unreadNotifications,
-          onShowNotifications: _showNotificationsDialog,
         ),
         const VetAppointmentScreen(),
         const FypScreen(),
@@ -418,9 +263,6 @@ class _HomeScreenState extends State<HomeScreen> {
         HomeContent(
           unreadMessageCount: _unreadMessageCount,
           unreadMessages: _unreadMessages,
-          unreadNotificationCount: _unreadNotificationCount,
-          unreadNotifications: _unreadNotifications,
-          onShowNotifications: _showNotificationsDialog,
         ),
         const AppointmentScreen(),
         const FypScreen(),
@@ -462,9 +304,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _messageSubscription?.cancel();
     _conversationSubscription?.cancel();
+    _notificationSubscription?.cancel();
     _chatService.dispose();
-    _notificationService.disconnectSocket();
-    print('Disposed HomeScreen subscriptions, ChatService, and NotificationService');
+    // Avoid closing NotificationService unless logging out
+    print('Disposed HomeScreen subscriptions and ChatService');
     super.dispose();
   }
 
@@ -671,18 +514,12 @@ class HomeContent extends StatefulWidget {
   final VoidCallback? onServiceChanged;
   final int unreadMessageCount;
   final Map<String, Map<String, dynamic>> unreadMessages;
-  final int unreadNotificationCount;
-  final Map<String, notif.Notification> unreadNotifications;
-  final VoidCallback onShowNotifications;
 
   const HomeContent({
     super.key,
     this.onServiceChanged,
     required this.unreadMessageCount,
     required this.unreadMessages,
-    required this.unreadNotificationCount,
-    required this.unreadNotifications,
-    required this.onShowNotifications,
   });
 
   @override
@@ -767,41 +604,52 @@ class _HomeContentState extends State<HomeContent> {
   }
 
   Widget _buildNotificationIcon() {
-    final totalUnreadCount = widget.unreadMessageCount + widget.unreadNotificationCount;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.notifications_none, size: 28),
-          onPressed: widget.onShowNotifications,
-        ),
-        if (totalUnreadCount > 0)
-          Positioned(
-            top: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1),
-              ),
-              constraints: const BoxConstraints(
-                minWidth: 16,
-                minHeight: 16,
-              ),
-              child: Text(
-                totalUnreadCount > 9 ? '9+' : '$totalUnreadCount',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
+    return StreamBuilder<int>(
+      stream: notif.NotificationService().unreadNotificationCountStream,
+      initialData: 0,
+      builder: (context, snapshot) {
+        final unreadNotificationCount = snapshot.data ?? 0;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.notifications_none, size: 28),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const NotifScreen()),
+                );
+              },
+            ),
+            if (unreadNotificationCount > 0)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 16,
+                    minHeight: 16,
+                  ),
+                  child: Text(
+                    unreadNotificationCount > 9 ? '9+' : '$unreadNotificationCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -954,10 +802,10 @@ class _HomeContentState extends State<HomeContent> {
                         label: Text('Specialty: $specialtyFilter'),
                         deleteIcon: const Icon(Icons.close, size: 16),
                         onDeleted: () {
-                          setState(() {
+                          setState() {
                             specialtyFilter = null;
                             _refreshVeterinarians(1);
-                          });
+                          };
                         },
                       ),
                   ],

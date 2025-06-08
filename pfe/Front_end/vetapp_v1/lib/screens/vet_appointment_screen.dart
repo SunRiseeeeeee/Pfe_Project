@@ -292,6 +292,8 @@ class _VetAppointmentScreenState extends State<VetAppointmentScreen> {
   }
 }
 
+
+
 class _AppointmentCard extends StatelessWidget {
   final Map<String, dynamic> appointment;
   final Function(String) onAccept;
@@ -308,9 +310,11 @@ class _AppointmentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final date = _parseDate(appointment['date']);
-    final formattedDate = DateFormat.yMMMd().format(date);
+    final date = _parseDate(appointment['date'], 'appointment date');
+    final formattedDate = DateFormat.yMMMd().format(date!);
     final formattedTime = DateFormat.jm().format(date);
+    final createdAt = _parseDate(appointment['createdAt'], 'createdAt');
+    final formattedCreatedAt = createdAt != null ? DateFormat.yMMMd().add_jm().format(createdAt) : 'N/A';
 
     final client = appointment['client'] ?? {};
     final clientName = client.isNotEmpty
@@ -324,7 +328,7 @@ class _AppointmentCard extends StatelessWidget {
       case 'accepted':
         statusColor = Colors.green;
         break;
-      case 'cancelled':
+      case 'rejected':
         statusColor = Colors.red;
         break;
       case 'completed':
@@ -394,6 +398,14 @@ class _AppointmentCard extends StatelessWidget {
                 Icon(Icons.access_time, size: 16, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(formattedTime, style: theme.textTheme.bodyMedium),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.event_available, size: 16, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('Booked: $formattedCreatedAt', style: theme.textTheme.bodyMedium),
               ],
             ),
             if (appointment['type'] != null) ...[
@@ -496,15 +508,20 @@ class _AppointmentCard extends StatelessWidget {
     );
   }
 
-  DateTime _parseDate(dynamic date) {
+  DateTime? _parseDate(dynamic date, String fieldName) {
+    if (date == null || date.toString().isEmpty) {
+      debugPrint('Error: $fieldName is null or empty in appointment: $appointment');
+      return null;
+    }
     try {
+      debugPrint('Parsing $fieldName: $date');
       return DateTime.parse(date.toString()).toLocal();
     } catch (e) {
-      return DateTime.now();
+      debugPrint('Error parsing $fieldName: $date, error: $e');
+      return null;
     }
   }
 }
-
 
 class AppointmentDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> appointment;

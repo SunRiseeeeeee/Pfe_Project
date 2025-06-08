@@ -1017,10 +1017,48 @@ class _FypScreenState extends State<FypScreen> {
   }
 
   Widget _buildCommentItem(String postId, Comment comment) {
-    final isOwnComment = _currentUserId != null && _currentUserId == comment.user.id && !isAdmin;
+    // Extract user ID from the nested structure
+    String? commentUserId;
+
+    try {
+      // Convert the user.id object to string and extract the actual ID
+      String userIdString = comment.user.id.toString();
+      debugPrint('FypScreen: Raw user.id string for comment ${comment.id}: $userIdString');
+
+      // Use regex to extract the ID (24-character hexadecimal, typical for MongoDB ObjectID)
+      final regex = RegExp(r'id: ([a-fA-F0-9]{24})');
+      final match = regex.firstMatch(userIdString);
+
+      if (match != null) {
+        commentUserId = match.group(1);
+        debugPrint('FypScreen: Extracted user ID: $commentUserId');
+      } else {
+        // Try alternative regex to match any 24-character hexadecimal string
+        final altRegex = RegExp(r'([a-fA-F0-9]{24})');
+        final altMatches = altRegex.allMatches(userIdString);
+
+        for (final match in altMatches) {
+          final potentialId = match.group(0);
+          if (potentialId != null && potentialId.length == 24) {
+            commentUserId = potentialId;
+            debugPrint('FypScreen: Extracted user ID (alternative): $commentUserId');
+            break;
+          }
+        }
+
+        if (commentUserId == null) {
+          debugPrint('FypScreen: Failed to extract user ID from: $userIdString');
+        }
+      }
+    } catch (e) {
+      debugPrint('FypScreen: Error extracting comment user ID: $e');
+      commentUserId = null;
+    }
+
+    final isOwnComment = _currentUserId != null && commentUserId == _currentUserId && !isAdmin;
     debugPrint('FypScreen: Building comment ${comment.id}, '
         'currentUserId: $_currentUserId, '
-        'commentUser: {id: ${comment.user.id}, firstName: ${comment.user.firstName}, lastName: ${comment.user.lastName}}, '
+        'commentUser: {id: $commentUserId, firstName: ${comment.user.firstName}, lastName: ${comment.user.lastName}}, '
         'isOwnComment: $isOwnComment');
 
     return Padding(
@@ -1049,7 +1087,7 @@ class _FypScreenState extends State<FypScreen> {
                         icon: Icon(
                           Icons.more_vert,
                           color: Colors.black87, // Darker color for prominence
-                          size: 28, // Slightly larger size
+                          size: 25, // Slightly larger size
                         ),
                         tooltip: 'Comment options',
                         onSelected: (value) {

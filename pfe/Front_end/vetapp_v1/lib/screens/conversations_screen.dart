@@ -23,8 +23,27 @@ interface class Participant {
   });
 
   factory Participant.fromJson(Map<String, dynamic> json) {
+    // Extract ID in case it's an object (e.g., MongoDB ObjectID)
+    String extractId(dynamic id) {
+      if (id is String) return id;
+      try {
+        String idString = id.toString();
+        final regex = RegExp(r'id: ([a-fA-F0-9]{24})');
+        final match = regex.firstMatch(idString);
+        if (match != null) {
+          return match.group(1)!;
+        }
+        final altRegex = RegExp(r'([a-fA-F0-9]{24})');
+        final altMatch = altRegex.firstMatch(idString);
+        return altMatch?.group(0) ?? idString;
+      } catch (e) {
+        print('Error extracting participant ID: $e');
+        return '';
+      }
+    }
+
     return Participant(
-      id: json['id'] as String? ?? '',
+      id: extractId(json['id']),
       firstName: json['firstName'] as String? ?? 'Inconnu',
       lastName: json['lastName'] as String? ?? '',
       profilePicture: json['profilePicture'] as String?,
@@ -36,18 +55,39 @@ interface class LastMessage {
   final String content;
   final String type;
   final String createdAt;
+  final String senderId; // Added to track sender
 
   LastMessage({
     required this.content,
     required this.type,
     required this.createdAt,
+    required this.senderId,
   });
 
   factory LastMessage.fromJson(Map<String, dynamic> json) {
+    String extractId(dynamic id) {
+      if (id is String) return id;
+      try {
+        String idString = id.toString();
+        final regex = RegExp(r'id: ([a-fA-F0-9]{24})');
+        final match = regex.firstMatch(idString);
+        if (match != null) {
+          return match.group(1)!;
+        }
+        final altRegex = RegExp(r'([a-fA-F0-9]{24})');
+        final altMatch = altRegex.firstMatch(idString);
+        return altMatch?.group(0) ?? idString;
+      } catch (e) {
+        print('Error extracting sender ID: $e');
+        return '';
+      }
+    }
+
     return LastMessage(
       content: json['content'] as String? ?? '',
       type: json['type'] as String? ?? 'text',
       createdAt: json['createdAt'] as String? ?? '',
+      senderId: extractId(json['senderId'] ?? json['sender']?['id'] ?? ''),
     );
   }
 }
@@ -56,8 +96,10 @@ interface class Conversation {
   final String chatId;
   final List<Participant> participants;
   final LastMessage? lastMessage;
-  final int unreadCount;
+  final int? unreadCount;
   final String updatedAt;
+  final String? senderId;  // Add this
+  final bool isLastMessageUnread;  // Add this
 
   Conversation({
     required this.chatId,
@@ -65,11 +107,19 @@ interface class Conversation {
     this.lastMessage,
     required this.unreadCount,
     required this.updatedAt,
+    this.senderId,
+    required this.isLastMessageUnread,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
     final participantsJson = json['participants'] as List<dynamic>? ?? [];
     final lastMessageJson = json['lastMessage'] as Map<String, dynamic>?;
+    final senderId = json['senderId'] as String?;
+
+    // Determine if last message is unread
+    final bool isUnread = json['isLastMessageUnread'] as bool? ??
+        (senderId != null && senderId != json['currentUserId'] &&
+            (json['unreadCount'] as int? ?? 0) > 0);
 
     return Conversation(
       chatId: json['chatId'] as String? ?? '',
@@ -79,11 +129,14 @@ interface class Conversation {
       lastMessage: lastMessageJson != null
           ? LastMessage.fromJson(lastMessageJson)
           : null,
-      unreadCount: json['unreadCount'] as int? ?? 0,
+      unreadCount: json['unreadCount'] as int?,
       updatedAt: json['updatedAt'] as String? ?? '',
+      senderId: senderId,
+      isLastMessageUnread: isUnread,
     );
   }
 }
+
 
 class ConversationsScreen extends StatefulWidget {
   const ConversationsScreen({super.key});
@@ -122,21 +175,20 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               (data) {
             if (data['type'] == 'CONVERSATIONS_LIST') {
               final conversationsJson = data['conversations'] as List<dynamic>? ?? [];
-              print('Received CONVERSATIONS_LIST with ${conversationsJson.length} conversations');
+              debugPrint('Received ${conversationsJson.length} conversations');
+              for (var convo in conversationsJson) {
+                debugPrint('Conversation: chatId=${convo['chatId']}, lastMessage=${convo['lastMessage']?['content'] ?? "None"}, senderId=${convo['lastMessage']?['senderId']}');
+              }
               setState(() {
                 _conversations = conversationsJson
                     .map((c) => Conversation.fromJson(c as Map<String, dynamic>))
                     .toList();
                 _isLoading = false;
-                print('Updated UI with ${_conversations.length} conversations');
-                for (final convo in _conversations) {
-                  print('Conversation ${convo.chatId}: lastMessage = ${convo.lastMessage?.content}');
-                }
               });
             }
           },
           onError: (error) {
-            print('Conversation stream error: $error');
+            debugPrint('Conversation stream error: $error');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('Erreur de mise à jour : $error')),
@@ -156,7 +208,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         }
       }
     } catch (e) {
-      print('Initialization error: $e');
+      debugPrint('Initialization error: $e');
       setState(() {
         _isLoading = false;
       });
@@ -193,6 +245,28 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     });
   }
 
+  String _formatTime(String isoTime) {
+    try {
+      final dateTime = DateTime.parse(isoTime);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inDays > 7) {
+        return '${dateTime.day}/${dateTime.month}';
+      } else if (difference.inDays > 0) {
+        return '${difference.inDays}j';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours}h';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes}m';
+      } else {
+        return 'Maintenant';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
   Widget _buildProfilePicture(String? profilePicture, double size) {
     if (profilePicture != null && profilePicture.isNotEmpty) {
       if (profilePicture.startsWith('http')) {
@@ -203,7 +277,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             height: size,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              print('Network image error for $profilePicture: $error');
+              debugPrint('Network image error for $profilePicture: $error');
               return _defaultAvatar(size);
             },
           ),
@@ -216,7 +290,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             height: size,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              print('File image error for $profilePicture: $error');
+              debugPrint('File image error for $profilePicture: $error');
               return _defaultAvatar(size);
             },
           ),
@@ -303,14 +377,24 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             lastName: '',
           );
           final lastMessage = conversation.lastMessage;
-          final chatId = conversation.chatId;
-          final unreadCount = conversation.unreadCount;
+          // Consider last message unread if sent by someone else
+          final isLastMessageUnread = lastMessage != null &&
+              lastMessage.senderId.isNotEmpty &&
+              lastMessage.senderId != _userId;
+
+          debugPrint('Conversation ${index + 1}: chatId=${conversation.chatId}, '
+              'participant=${participant.firstName} ${participant.lastName}, '
+              'lastMessage=${lastMessage?.content ?? "None"}, '
+              'senderId=${lastMessage?.senderId}, '
+              'isLastMessageUnread=$isLastMessageUnread');
 
           return ListTile(
             leading: _buildProfilePicture(participant.profilePicture, 50),
             title: Text(
               '${participant.firstName} ${participant.lastName}',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+              style: GoogleFonts.poppins(
+                fontWeight: isLastMessageUnread ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
             subtitle: Text(
               lastMessage != null && lastMessage.content.isNotEmpty
@@ -318,28 +402,25 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                   : 'Aucun message',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(color: Colors.grey),
-            ),
-            trailing: unreadCount > 0
-                ? CircleAvatar(
-              radius: 12,
-              backgroundColor: Colors.blue,
-              child: Text(
-                unreadCount.toString(),
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
+              style: GoogleFonts.poppins(
+                color: Colors.grey,
+                fontWeight: isLastMessageUnread ? FontWeight.bold : FontWeight.normal,
               ),
-            )
-                : null,
+            ),
+            trailing: Text(
+              _formatTime(conversation.updatedAt),
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
+            ),
             onTap: () {
+              debugPrint('Tapped conversation ${conversation.chatId}');
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => ChatScreen(
-                    chatId: chatId,
+                    chatId: conversation.chatId,
                     veterinaireId: participant.id,
                     participants: participants
                         .map((p) => {
@@ -349,7 +430,9 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                       'profilePicture': p.profilePicture,
                     })
                         .toList(),
-                    vetId: participant.id, recipientId: null, recipientName: '',
+                    vetId: participant.id,
+                    recipientId: null,
+                    recipientName: '',
                   ),
                 ),
               );

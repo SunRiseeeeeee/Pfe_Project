@@ -1,45 +1,64 @@
 import 'package:flutter/material.dart';
-import '../services/notif_service.dart' as notif;
+import '../services/notif_service.dart';
 
 class NotifScreen extends StatefulWidget {
-  final notif.NotificationService notificationService;
-  final String? userId;
-
-  const NotifScreen({
-    super.key,
-    required this.notificationService,
-    required this.userId,
-  });
+  const NotifScreen({super.key});
 
   @override
   State<NotifScreen> createState() => _NotifScreenState();
 }
 
 class _NotifScreenState extends State<NotifScreen> {
-  Map<String, notif.Notification> _unreadNotifications = {};
+  List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    _initializeSocket();
     _fetchNotifications();
   }
 
-  Future<void> _fetchNotifications() async {
-    if (widget.userId == null) return;
-
+  Future<void> _initializeSocket() async {
     try {
-      final notifications =
-      await widget.notificationService.fetchUnreadNotifications(widget.userId!);
-
-      setState(() {
-        _unreadNotifications = notifications as Map<String, notif.Notification>;
-        _isLoading = false;
+      await NotificationService().connectToSocket();
+      NotificationService().onNotificationReceived((notification) {
+        print('NotifScreen: New notification received: $notification');
+        setState(() {
+          _notifications.insert(0, notification);
+          print('NotifScreen: Updated notifications: $_notifications');
+        });
       });
     } catch (e) {
-      setState(() => _isLoading = false);
-      debugPrint("Error fetching notifications: $e");
+      setState(() {
+        _errorMessage = 'Failed to connect to notification server: $e';
+        _isLoading = false;
+      });
     }
+  }
+
+  Future<void> _fetchNotifications() async {
+    try {
+      final fetched = await NotificationService().fetchNotifications();
+      setState(() {
+        _notifications = fetched;
+        _isLoading = false;
+        _errorMessage = null;
+        print('NotifScreen: Fetched notifications: $_notifications');
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Error fetching notifications: $e';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    NotificationService().disconnectSocket();
+    super.dispose();
   }
 
   @override
@@ -56,42 +75,103 @@ class _NotifScreenState extends State<NotifScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.black),
+            onPressed: _fetchNotifications,
+            tooltip: 'Refresh Notifications',
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _unreadNotifications.isEmpty
+          : _errorMessage != null
+          ? Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _errorMessage!,
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 16,
+                color: Colors.red,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _isLoading = true;
+                  _errorMessage = null;
+                });
+                _initializeSocket();
+                _fetchNotifications();
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      )
+          : _notifications.isEmpty
           ? const Center(
         child: Text(
           'No new appointment notifications.',
-          style:
-          TextStyle(fontFamily: 'Poppins', fontSize: 16, color: Colors.grey),
+          style: TextStyle(fontFamily: 'Poppins', fontSize: 16, color: Colors.grey),
         ),
       )
           : RefreshIndicator(
         onRefresh: _fetchNotifications,
-        child: ListView(
+        child: ListView.builder(
           padding: const EdgeInsets.all(16),
-          children: _unreadNotifications.entries.map((entry) {
-            final notification = entry.value;
+          itemCount: _notifications.length,
+          itemBuilder: (context, index) {
+            final notification = _notifications[index];
+            final message = notification['message'] ?? 'No message';
+            final createdAt = notification['createdAt'] ?? DateTime.now().toString();
+            final isRead = notification['read'] ?? false;
             return Card(
               elevation: 2,
               margin: const EdgeInsets.only(bottom: 8),
+              color: isRead ? Colors.white : Colors.blue[50],
               child: ListTile(
-                leading: const Icon(Icons.notifications, color: Colors.blue),
+                leading: Icon(
+                  Icons.notifications,
+                  color: isRead ? Colors.grey : Colors.blue,
+                ),
                 title: Text(
-                  notification.message,
-                  style: const TextStyle(fontFamily: 'Poppins'),
+                  message,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                  ),
                 ),
                 subtitle: Text(
-                  'Received: ${DateTime.parse(notification.createdAt).toLocal().toString().substring(0, 16)}',
-                  style:
-                  const TextStyle(fontFamily: 'Poppins', fontSize: 12, color: Colors.grey),
+                  'Received: ${DateTime.parse(createdAt).toLocal().toString().substring(0, 16)}',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
                 ),
-
-
+                onTap: () async {
+                  if (!isRead) {
+                    final success = await NotificationService().markAsRead(notification['id']);
+                    if (success) {
+                      setState(() {
+                        _notifications[index]['read'] = true;
+                      });
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Failed to mark notification as read')),
+                      );
+                    }
+                  }
+                },
               ),
             );
-          }).toList(),
+          },
         ),
       ),
     );
