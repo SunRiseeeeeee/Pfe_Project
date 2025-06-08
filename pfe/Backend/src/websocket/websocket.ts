@@ -122,129 +122,146 @@ ws.on('message', async (rawMessage: string) => {
 
 
 
-case 'GET_CONVERSATIONS': {
-  const { userId, searchTerm } = data;
+        case 'GET_CONVERSATIONS': {
+          const { userId, searchTerm } = data;
 
-  if (!userId) {
-    ws.send(JSON.stringify({ status: 'error', message: 'userId est requis' }));
-    break;
-  }
-
-  // Interfaces locales pour typer correctement les données peuplées
-  interface PopulatedParticipant {
-    _id: string;
-    firstName: string;
-    lastName: string;
-    profilePicture?: string;
-    role: UserRole;
-  }
-
-  interface PopulatedLastMessage {
-    content: string;
-    type: string;
-    createdAt: Date;
-  }
-
-  interface PopulatedChat {
-    _id: string;
-    participants: PopulatedParticipant[];
-    lastMessage?: PopulatedLastMessage;
-    updatedAt: Date;
-  }
-
-  // Base query - get all chats for this user
-  let query = Chat.find({ participants: userId });
-
-  // Recherche des conversations avec populate
-  let conversations = await query
-    .populate({
-      path: 'participants',
-      select: 'firstName lastName profilePicture role',
-    })
-    .populate({
-      path: 'lastMessage',
-      select: 'content type createdAt',
-    })
-    .sort({ updatedAt: -1 })
-    .lean<PopulatedChat[]>();
-
-  // Si un terme de recherche est fourni, filtrer les conversations
-  if (searchTerm) {
-    const currentUser = await User.findById(userId);
-    if (!currentUser) {
-      ws.send(JSON.stringify({ status: 'error', message: 'Utilisateur introuvable' }));
-      break;
-    }
-
-    const searchTermLower = searchTerm.toLowerCase();
-
-    conversations = conversations.filter(chat => {
-      // Trouver les autres participants (exclure l'utilisateur courant)
-      const otherParticipants = chat.participants.filter(
-        p => p._id.toString() !== userId
-      );
-
-      // Pour chaque participant, vérifier si son nom correspond au terme de recherche
-      return otherParticipants.some(participant => {
-        // Si l'utilisateur courant est un client, on ne cherche que parmi les vétérinaires/secrétaires
-        if (currentUser.role === UserRole.CLIENT) {
-          if (participant.role !== UserRole.VETERINAIRE && 
-              participant.role !== UserRole.SECRETAIRE) {
-            return false;
+          if (!userId) {
+            ws.send(JSON.stringify({ status: 'error', message: 'userId est requis' }));
+            break;
           }
+
+          // Interfaces locales pour typer correctement les données peuplées
+          interface PopulatedParticipant {
+            _id: string;
+            firstName: string;
+            lastName: string;
+            profilePicture?: string;
+            role: UserRole;
+          }
+
+          interface PopulatedLastMessage {
+            content: string;
+            type: string;
+            createdAt: Date;
+            sender: {
+              _id: string;
+              firstName: string;
+              lastName: string;
+              profilePicture?: string;
+              role: UserRole;
+            };
+          }
+
+          interface PopulatedChat {
+            _id: string;
+            participants: PopulatedParticipant[];
+            lastMessage?: PopulatedLastMessage;
+            updatedAt: Date;
+          }
+
+          // Base query - get all chats for this user
+          let query = Chat.find({ participants: userId });
+
+          // Recherche des conversations avec populate
+          let conversations = await query
+            .populate({
+              path: 'participants',
+              select: 'firstName lastName profilePicture role',
+            })
+            .populate({
+              path: 'lastMessage',
+              select: 'content type createdAt',
+              populate: {
+                path: 'sender',
+                select: 'firstName lastName profilePicture role',
+              },
+            })
+            .sort({ updatedAt: -1 })
+            .lean<PopulatedChat[]>();
+
+          // Si un terme de recherche est fourni, filtrer les conversations
+          if (searchTerm) {
+            const currentUser = await User.findById(userId);
+            if (!currentUser) {
+              ws.send(JSON.stringify({ status: 'error', message: 'Utilisateur introuvable' }));
+              break;
+            }
+
+            const searchTermLower = searchTerm.toLowerCase();
+
+            conversations = conversations.filter(chat => {
+              // Trouver les autres participants (exclure l'utilisateur courant)
+              const otherParticipants = chat.participants.filter(
+                p => p._id.toString() !== userId
+              );
+
+              // Pour chaque participant, vérifier si son nom correspond au terme de recherche
+              return otherParticipants.some(participant => {
+                // Si l'utilisateur courant est un client, on ne cherche que parmi les vétérinaires/secrétaires
+                if (currentUser.role === UserRole.CLIENT) {
+                  if (participant.role !== UserRole.VETERINAIRE && 
+                      participant.role !== UserRole.SECRETAIRE) {
+                    return false;
+                  }
+                }
+                // Si l'utilisateur courant est un vétérinaire/secrétaire, on ne cherche que parmi les clients
+                else {
+                  if (participant.role !== UserRole.CLIENT) {
+                    return false;
+                  }
+                }
+
+                // Vérifier la correspondance avec le terme de recherche
+                return (
+                  participant.firstName.toLowerCase().includes(searchTermLower) ||
+                  participant.lastName.toLowerCase().includes(searchTermLower) ||
+                  `${participant.firstName} ${participant.lastName}`.toLowerCase().includes(searchTermLower)
+                );
+              });
+            });
+          }
+
+          // Formatage des données
+          const formattedConversations = conversations.map(chat => {
+            const otherParticipants = chat.participants.filter(p => p._id.toString() !== userId);
+
+            return {
+              chatId: chat._id,
+              participants: otherParticipants.map(p => ({
+                id: p._id,
+                firstName: p.firstName,
+                lastName: p.lastName,
+                profilePicture: p.profilePicture,
+                role: p.role,
+              })),
+              lastMessage: chat.lastMessage
+                ? {
+                    content: chat.lastMessage.content,
+                    type: chat.lastMessage.type,
+                    createdAt: chat.lastMessage.createdAt,
+                    sender: {
+                      id: chat.lastMessage.sender._id,
+                      firstName: chat.lastMessage.sender.firstName,
+                      lastName: chat.lastMessage.sender.lastName,
+                      profilePicture: chat.lastMessage.sender.profilePicture,
+                      role: chat.lastMessage.sender.role,
+                    },
+                  }
+                : null,
+              updatedAt: chat.updatedAt,
+            };
+          });
+
+          // Envoi au client
+          ws.send(
+            JSON.stringify({
+              type: 'CONVERSATIONS_LIST',
+              conversations: formattedConversations,
+            })
+          );
+
+          break;
         }
-        // Si l'utilisateur courant est un vétérinaire/secrétaire, on ne cherche que parmi les clients
-        else {
-          if (participant.role !== UserRole.CLIENT) {
-            return false;
-          }
-        }
-
-        // Vérifier la correspondance avec le terme de recherche
-        return (
-          participant.firstName.toLowerCase().includes(searchTermLower) ||
-          participant.lastName.toLowerCase().includes(searchTermLower) ||
-          `${participant.firstName} ${participant.lastName}`.toLowerCase().includes(searchTermLower)
-        );
-      });
-    });
-  }
-
-  // Formatage des données
-  const formattedConversations = conversations.map(chat => {
-    const otherParticipants = chat.participants.filter(p => p._id.toString() !== userId);
-
-    return {
-      chatId: chat._id,
-      participants: otherParticipants.map(p => ({
-        id: p._id,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        profilePicture: p.profilePicture,
-        role: p.role,
-      })),
-      lastMessage: chat.lastMessage
-        ? {
-            content: chat.lastMessage.content,
-            type: chat.lastMessage.type,
-            createdAt: chat.lastMessage.createdAt,
-          }
-        : null,
-      updatedAt: chat.updatedAt,
-    };
-  });
-
-  // Envoi au client
-  ws.send(
-    JSON.stringify({
-      type: 'CONVERSATIONS_LIST',
-      conversations: formattedConversations,
-    })
-  );
-
-  break;
-}
-
 
 case 'GET_MESSAGES': {
   const { chatId } = data;
