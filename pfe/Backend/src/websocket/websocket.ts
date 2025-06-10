@@ -37,7 +37,9 @@ const getOrCreateChat = async (
     }
 
     const client = await User.findById(clientId);
-/////////
+    if (!client || client.role !== UserRole.CLIENT) {
+      throw new Error('clientId invalide ou utilisateur non client');
+    }
 
     if (initiator.role === UserRole.SECRETAIRE && initiator.veterinaireId?.toString() !== veterinaireId) {
       throw new Error('Secrétaire non autorisé pour ce vétérinaire');
