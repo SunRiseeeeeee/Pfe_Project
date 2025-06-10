@@ -36,7 +36,13 @@ class UserDetails {
       profilePicture: json['profilePicture']?.toString(),
     );
   }
+
+  @override
+  String toString() {
+    return 'UserDetails(id: $id, firstName: $firstName, lastName: $lastName, profilePicture: $profilePicture)';
+  }
 }
+
 
 // Model for Veterinarian (used in Post)
 class Veterinaire {

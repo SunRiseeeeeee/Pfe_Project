@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:io';
@@ -5,10 +6,9 @@ import 'package:vetapp_v1/services/chat_service.dart';
 import 'package:vetapp_v1/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
-
 import '../models/token_storage.dart';
+import '../services/user_service.dart';
 
-// Define interfaces for type safety
 interface class Participant {
   final String id;
   final String firstName;
@@ -23,8 +23,26 @@ interface class Participant {
   });
 
   factory Participant.fromJson(Map<String, dynamic> json) {
+    String extractId(dynamic id) {
+      if (id is String) return id;
+      try {
+        String idString = id.toString();
+        final regex = RegExp(r'id: ([a-fA-F0-9]{24})');
+        final match = regex.firstMatch(idString);
+        if (match != null) {
+          return match.group(1)!;
+        }
+        final altRegex = RegExp(r'([a-fA-F0-9]{24})');
+        final altMatch = altRegex.firstMatch(idString);
+        return altMatch?.group(0) ?? idString;
+      } catch (e) {
+        debugPrint('Error extracting participant ID: $e');
+        return '';
+      }
+    }
+
     return Participant(
-      id: json['id'] as String? ?? '',
+      id: extractId(json['id']),
       firstName: json['firstName'] as String? ?? 'Inconnu',
       lastName: json['lastName'] as String? ?? '',
       profilePicture: json['profilePicture'] as String?,
@@ -36,18 +54,42 @@ interface class LastMessage {
   final String content;
   final String type;
   final String createdAt;
+  final String senderId;
+  final List<String> readBy;
 
   LastMessage({
     required this.content,
     required this.type,
     required this.createdAt,
+    required this.senderId,
+    required this.readBy,
   });
 
   factory LastMessage.fromJson(Map<String, dynamic> json) {
+    String extractId(dynamic id) {
+      if (id is String) return id;
+      try {
+        String idString = id.toString();
+        final regex = RegExp(r'id: ([a-fA-F0-9]{24})');
+        final match = regex.firstMatch(idString);
+        if (match != null) {
+          return match.group(1)!;
+        }
+        final altRegex = RegExp(r'([a-fA-F0-9]{24})');
+        final altMatch = altRegex.firstMatch(idString);
+        return altMatch?.group(0) ?? idString;
+      } catch (e) {
+        debugPrint('Error extracting sender ID: $e');
+        return '';
+      }
+    }
+
     return LastMessage(
       content: json['content'] as String? ?? '',
       type: json['type'] as String? ?? 'text',
       createdAt: json['createdAt'] as String? ?? '',
+      senderId: extractId(json['senderId'] ?? json['sender']?['id'] ?? ''),
+      readBy: List<String>.from(json['readBy'] ?? []),
     );
   }
 }
@@ -56,8 +98,10 @@ interface class Conversation {
   final String chatId;
   final List<Participant> participants;
   final LastMessage? lastMessage;
-  final int unreadCount;
+  final int? unreadCount;
   final String updatedAt;
+  final bool isLastMessageUnread;
+  final String? clientId;
 
   Conversation({
     required this.chatId,
@@ -65,22 +109,34 @@ interface class Conversation {
     this.lastMessage,
     required this.unreadCount,
     required this.updatedAt,
+    required this.isLastMessageUnread,
+    this.clientId,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
     final participantsJson = json['participants'] as List<dynamic>? ?? [];
     final lastMessageJson = json['lastMessage'] as Map<String, dynamic>?;
+    final currentUserId = json['currentUserId'] as String?;
+
+    final lastMessage = lastMessageJson != null
+        ? LastMessage.fromJson(lastMessageJson)
+        : null;
+
+    final bool isUnread = lastMessage != null &&
+        lastMessage.senderId != currentUserId &&
+        currentUserId != null &&
+        !lastMessage.readBy.contains(currentUserId);
 
     return Conversation(
       chatId: json['chatId'] as String? ?? '',
       participants: participantsJson
           .map((p) => Participant.fromJson(p as Map<String, dynamic>))
           .toList(),
-      lastMessage: lastMessageJson != null
-          ? LastMessage.fromJson(lastMessageJson)
-          : null,
+      lastMessage: lastMessage,
       unreadCount: json['unreadCount'] as int? ?? 0,
       updatedAt: json['updatedAt'] as String? ?? '',
+      isLastMessageUnread: isUnread,
+      clientId: json['clientId'] as String?,
     );
   }
 }
@@ -94,8 +150,11 @@ class ConversationsScreen extends StatefulWidget {
 
 class _ConversationsScreenState extends State<ConversationsScreen> {
   final ChatService _chatService = ChatService();
+  final UserService _userService = UserService();
   List<Conversation> _conversations = [];
+  List<Conversation> _filteredConversations = []; // For client-side filtering
   String? _userId;
+  String? _userRole;
   bool _isLoading = true;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
@@ -105,6 +164,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
   void initState() {
     super.initState();
     _initialize();
+    _searchController.addListener(_onSearchChanged); // Listen to search input changes
   }
 
   Future<void> _initialize() async {
@@ -116,27 +176,79 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       if (userId != null) {
         setState(() {
           _userId = userId;
+          _userRole = role;
         });
         await _chatService.connect(userId, role);
         _chatService.onConversations().listen(
-              (data) {
+              (data) async {
             if (data['type'] == 'CONVERSATIONS_LIST') {
               final conversationsJson = data['conversations'] as List<dynamic>? ?? [];
-              print('Received CONVERSATIONS_LIST with ${conversationsJson.length} conversations');
+              debugPrint('Received ${conversationsJson.length} conversations');
+              for (var convo in conversationsJson) {
+                debugPrint(
+                    'Conversation: chatId=${convo['chatId']}, lastMessage=${convo['lastMessage']?['content'] ?? "None"}, senderId=${convo['lastMessage']?['senderId']}, unreadCount=${convo['unreadCount']}, clientId=${convo['clientId']}, participants=${convo['participants']}');
+              }
+              List<Conversation> updatedConversations = [];
+              for (var convo in conversationsJson) {
+                var conversationJson = {...convo as Map<String, dynamic>, 'currentUserId': _userId};
+                if (_userRole == 'veterinaire' || _userRole == 'secretary') {
+                  final clientId = convo['clientId'] as String?;
+                  if (clientId != null) {
+                    try {
+                      final clientData = await _userService.getUserById(clientId);
+                      conversationJson['participants'] = [
+                        {
+                          'id': clientId,
+                          'firstName': clientData['firstName'] ?? 'Inconnu',
+                          'lastName': clientData['lastName'] ?? '',
+                          'profilePicture': clientData['profilePicture'],
+                        }
+                      ];
+                    } catch (e) {
+                      debugPrint('Failed to fetch client data for $clientId: $e');
+                    }
+                  }
+                }
+                updatedConversations.add(Conversation.fromJson(conversationJson));
+              }
               setState(() {
-                _conversations = conversationsJson
-                    .map((c) => Conversation.fromJson(c as Map<String, dynamic>))
-                    .toList();
+                _conversations = updatedConversations;
+                _filteredConversations = updatedConversations; // Update filtered list
                 _isLoading = false;
-                print('Updated UI with ${_conversations.length} conversations');
-                for (final convo in _conversations) {
-                  print('Conversation ${convo.chatId}: lastMessage = ${convo.lastMessage?.content}');
+              });
+            } else if (data['type'] == 'MARK_AS_READ' && data['chatId'] != null) {
+              final chatId = data['chatId'] as String;
+              setState(() {
+                final index = _conversations.indexWhere((c) => c.chatId == chatId);
+                if (index != -1) {
+                  final convo = _conversations[index];
+                  _conversations[index] = Conversation(
+                    chatId: convo.chatId,
+                    participants: convo.participants,
+                    lastMessage: convo.lastMessage != null
+                        ? LastMessage(
+                      content: convo.lastMessage!.content,
+                      type: convo.lastMessage!.type,
+                      createdAt: convo.lastMessage!.createdAt,
+                      senderId: convo.lastMessage!.senderId,
+                      readBy: [...convo.lastMessage!.readBy, _userId!],
+                    )
+                        : null,
+                    unreadCount: 0,
+                    updatedAt: convo.updatedAt,
+                    isLastMessageUnread: false,
+                    clientId: convo.clientId,
+                  );
+                  _filteredConversations[index] = _conversations[index]; // Sync filtered list
                 }
               });
+              if (_userId != null) {
+                _chatService.getConversations(_userId!);
+              }
             }
           },
           onError: (error) {
-            print('Conversation stream error: $error');
+            debugPrint('Conversation stream error: $error');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text('Erreur de mise à jour : $error')),
@@ -156,7 +268,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         }
       }
     } catch (e) {
-      print('Initialization error: $e');
+      debugPrint('Initialization error: $e');
       setState(() {
         _isLoading = false;
       });
@@ -173,24 +285,80 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       _isSearching = !_isSearching;
       if (!_isSearching) {
         _searchController.clear();
-        _isLoading = true;
-        if (_userId != null) {
-          _chatService.getConversations(_userId!);
-        }
+        _filteredConversations = _conversations; // Reset to full list
+        _isLoading = false;
       }
     });
   }
 
-  void _onSearchChanged(String value) {
+  void _onSearchChanged() {
+    final searchTerm = _searchController.text.trim();
+    debugPrint('Search term changed: $searchTerm');
+
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 1000), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
       setState(() {
         _isLoading = true;
       });
+
       if (_userId != null) {
-        _chatService.getConversations(_userId!, searchTerm: value.trim().isNotEmpty ? value.trim() : null);
+        // Attempt server-side filtering
+        _chatService.getConversations(_userId!, searchTerm: searchTerm.isNotEmpty ? searchTerm : null).then((_) {
+          // If server-side filtering is not supported or returns unfiltered results,
+          // fallback to client-side filtering
+          if (searchTerm.isNotEmpty) {
+            setState(() {
+              _filteredConversations = _conversations.where((conversation) {
+                final participant = _selectDisplayParticipant(conversation);
+                final fullName = '${participant.firstName} ${participant.lastName}'.toLowerCase();
+                return fullName.contains(searchTerm.toLowerCase());
+              }).toList();
+              _isLoading = false;
+            });
+            debugPrint('Client-side filtered: ${_filteredConversations.length} conversations');
+          } else {
+            setState(() {
+              _filteredConversations = _conversations;
+              _isLoading = false;
+            });
+          }
+        }).catchError((e) {
+          debugPrint('Error fetching conversations with search: $e');
+          setState(() {
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur de recherche : $e')),
+          );
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
       }
     });
+  }
+
+  String _formatTime(String isoTime) {
+    try {
+      final dateTime = DateTime.parse(isoTime);
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inDays > 7) {
+        return '${dateTime.day}/${dateTime.month}';
+      } else if (difference.inDays > 0) {
+        return '${difference.inDays}j';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours}h';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes}m';
+      } else {
+        return 'Maintenant';
+      }
+    } catch (e) {
+      return '';
+    }
   }
 
   Widget _buildProfilePicture(String? profilePicture, double size) {
@@ -203,7 +371,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             height: size,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              print('Network image error for $profilePicture: $error');
+              debugPrint('Network image error for $profilePicture: $error');
               return _defaultAvatar(size);
             },
           ),
@@ -216,7 +384,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
             height: size,
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              print('File image error for $profilePicture: $error');
+              debugPrint('File image error for $profilePicture: $error');
               return _defaultAvatar(size);
             },
           ),
@@ -231,6 +399,61 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       radius: size / 2,
       backgroundColor: Colors.grey,
       child: Icon(Icons.person, color: Colors.white, size: size / 2),
+    );
+  }
+
+  Participant _selectDisplayParticipant(Conversation conversation) {
+    if (conversation.participants.isEmpty) {
+      return Participant(
+        id: '',
+        firstName: 'Inconnu',
+        lastName: '',
+      );
+    }
+
+    // For clients, show the vet's info
+    if (_userRole == 'client') {
+      return conversation.participants.firstWhere(
+            (p) => p.id != _userId,
+        orElse: () => Participant(
+          id: '',
+          firstName: 'Inconnu',
+          lastName: '',
+        ),
+      );
+    }
+    // For vets/secretaries, show the client's info
+    else if (_userRole == 'veterinaire' || _userRole == 'secretary') {
+      // First try to find by clientId if available
+      if (conversation.clientId != null) {
+        return conversation.participants.firstWhere(
+              (p) => p.id == conversation.clientId,
+          orElse: () => Participant(
+            id: conversation.clientId!,
+            firstName: 'Client',
+            lastName: '',
+          ),
+        );
+      }
+      // Fallback: find participant who is not the current user and not a secretary
+      return conversation.participants.firstWhere(
+            (p) => p.id != _userId && !p.firstName.toLowerCase().contains('secrétaire'),
+        orElse: () => Participant(
+          id: '',
+          firstName: 'Client',
+          lastName: '',
+        ),
+      );
+    }
+
+    // Default fallback
+    return conversation.participants.firstWhere(
+          (p) => p.id != _userId,
+      orElse: () => Participant(
+        id: '',
+        firstName: 'Inconnu',
+        lastName: '',
+      ),
     );
   }
 
@@ -252,21 +475,18 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               onPressed: () {
                 _searchController.clear();
                 setState(() {
-                  _isLoading = true;
+                  _filteredConversations = _conversations;
+                  _isLoading = false;
                 });
-                if (_userId != null) {
-                  _chatService.getConversations(_userId!);
-                }
               },
             ),
           ),
-          onChanged: _onSearchChanged,
         )
             : Text(
           'Conversations',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: Colors.purple[600],
         elevation: 0,
         actions: [
           IconButton(
@@ -278,7 +498,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _conversations.isEmpty
+          : _filteredConversations.isEmpty
           ? Center(
         child: Text(
           _searchController.text.isNotEmpty
@@ -288,29 +508,26 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         ),
       )
           : ListView.builder(
-        itemCount: _conversations.length,
+        itemCount: _filteredConversations.length,
         itemBuilder: (context, index) {
-          final conversation = _conversations[index];
-          final participants = conversation.participants;
-          final participant = participants.isNotEmpty
-              ? participants.firstWhere(
-                (p) => p.id != _userId,
-            orElse: () => participants[0],
-          )
-              : Participant(
-            id: '',
-            firstName: 'Inconnu',
-            lastName: '',
-          );
+          final conversation = _filteredConversations[index];
+          final participant = _selectDisplayParticipant(conversation);
           final lastMessage = conversation.lastMessage;
-          final chatId = conversation.chatId;
-          final unreadCount = conversation.unreadCount;
+
+          debugPrint('Rendering conversation ${index + 1}: chatId=${conversation.chatId}, '
+              'participant=${participant.firstName} ${participant.lastName}, '
+              'lastMessage=${lastMessage?.content ?? "None"}, '
+              'isLastMessageUnread=${conversation.isLastMessageUnread}, '
+              'unreadCount=${conversation.unreadCount}, '
+              'clientId=${conversation.clientId}');
 
           return ListTile(
             leading: _buildProfilePicture(participant.profilePicture, 50),
             title: Text(
               '${participant.firstName} ${participant.lastName}',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+              style: GoogleFonts.poppins(
+                fontWeight: conversation.isLastMessageUnread ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
             subtitle: Text(
               lastMessage != null && lastMessage.content.isNotEmpty
@@ -318,41 +535,66 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                   : 'Aucun message',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(color: Colors.grey),
-            ),
-            trailing: unreadCount > 0
-                ? CircleAvatar(
-              radius: 12,
-              backgroundColor: Colors.blue,
-              child: Text(
-                unreadCount.toString(),
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
+              style: GoogleFonts.poppins(
+                color: Colors.grey,
+                fontWeight: conversation.isLastMessageUnread ? FontWeight.bold : FontWeight.normal,
               ),
-            )
-                : null,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatScreen(
-                    chatId: chatId,
-                    veterinaireId: participant.id,
-                    participants: participants
-                        .map((p) => {
-                      'id': p.id,
-                      'firstName': p.firstName,
-                      'lastName': p.lastName,
-                      'profilePicture': p.profilePicture,
-                    })
-                        .toList(),
-                    vetId: participant.id, recipientId: null, recipientName: '',
+            ),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _formatTime(conversation.updatedAt),
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.grey,
                   ),
                 ),
-              );
+                if (conversation.unreadCount != null && conversation.unreadCount! > 0)
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '${conversation.unreadCount}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onTap: () async {
+              debugPrint('Tapped conversation ${conversation.chatId}');
+              if (_userId != null && conversation.unreadCount != null && conversation.unreadCount! > 0) {
+                await _chatService.markAsRead(chatId: conversation.chatId, userId: _userId!);
+              }
+              if (mounted) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ChatScreen(
+                      chatId: conversation.chatId,
+                      veterinaireId: _userRole == 'client' ? participant.id : null,
+                      participants: conversation.participants
+                          .map((p) => {
+                        'id': p.id,
+                        'firstName': p.firstName,
+                        'lastName': p.lastName,
+                        'profilePicture': p.profilePicture,
+                      })
+                          .toList(),
+                      vetId: _userRole == 'client' ? participant.id : null,
+                      recipientId: _userRole != 'client' ? (conversation.clientId ?? participant.id) : null,
+                      recipientName: '${participant.firstName} ${participant.lastName}'.trim(),
+                    ),
+                  ),
+                );
+              }
             },
           );
         },
@@ -362,6 +604,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _debounceTimer?.cancel();
     _chatService.dispose();

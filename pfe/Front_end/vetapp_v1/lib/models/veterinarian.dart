@@ -6,10 +6,11 @@ class Veterinarian {
   final String lastName;
   final String? profilePicture;
   final double rating;
-  final double averageRating; // ✅ NEW
+  final double averageRating;
   final String? workingHours;
   final String? description;
   final Map<String, dynamic>? address;
+  final String? mapsLocation; // ✅ NEW: Added mapsLocation field for the URL
 
   Veterinarian({
     required this.id,
@@ -17,10 +18,11 @@ class Veterinarian {
     required this.lastName,
     this.profilePicture,
     required this.rating,
-    required this.averageRating, // ✅ NEW
+    required this.averageRating,
     this.workingHours,
     this.description,
     this.address,
+    this.mapsLocation, // ✅ NEW: Included in constructor
   });
 
   factory Veterinarian.fromJson(Map<String, dynamic> json) {
@@ -68,16 +70,28 @@ class Veterinarian {
       }
     }
 
+    String? safeMapsLocation(dynamic value) { // ✅ NEW: Helper to parse mapsLocation
+      try {
+        if (value == null) return null;
+        if (value is String && value.isNotEmpty) return value;
+        return null;
+      } catch (e) {
+        debugPrint('Error parsing mapsLocation: $e');
+        return null;
+      }
+    }
+
     return Veterinarian(
       id: parseId(json['_id'] ?? json['id']),
       firstName: safeString(json['firstName'], fieldName: 'firstName'),
       lastName: safeString(json['lastName'], fieldName: 'lastName'),
       profilePicture: json['profilePicture'] is String ? json['profilePicture'] : null,
       rating: (json['rating'] is num ? json['rating'].toDouble() : 0.0),
-      averageRating: (json['averageRating'] is num ? json['averageRating'].toDouble() : 0.0), // ✅ NEW
+      averageRating: (json['averageRating'] is num ? json['averageRating'].toDouble() : 0.0),
       workingHours: safeWorkingHours(json['details'] ?? json['workingHours']),
       description: json['description'] is String ? json['description'] : null,
       address: json['address'] is Map<String, dynamic> ? json['address'] : null,
+      mapsLocation: safeMapsLocation(json['mapsLocation']), // ✅ NEW: Parse mapsLocation
     );
   }
 

@@ -1,8 +1,8 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export enum AppointmentType {
-  DOMICILE = "domicile",
-  CABINET = "cabinet",
+  DOMICILE = "household",
+  CABINET = "clinic",
 }
 
 export enum AppointmentStatus {

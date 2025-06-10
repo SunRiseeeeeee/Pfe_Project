@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../services/notif_service.dart';
+import '../models/service.dart';
+import '../services/service_service.dart';
+import 'service_details_screen.dart';
 
-class NotifScreen extends StatefulWidget {
-  const NotifScreen({super.key});
+class AllServicesScreen extends StatefulWidget {
+  const AllServicesScreen({super.key});
 
   @override
-  State<NotifScreen> createState() => _NotifScreenState();
+  State<AllServicesScreen> createState() => _AllServicesScreenState();
 }
 
-class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStateMixin {
-  List<Map<String, dynamic>> _notifications = [];
-  bool _isLoading = true;
-  String? _errorMessage;
+class _AllServicesScreenState extends State<AllServicesScreen> with SingleTickerProviderStateMixin {
+  late Future<Map<String, dynamic>> servicesFuture;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
+    servicesFuture = ServiceService.getAllServices();
+    debugPrint('Fetching all services');
+
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
@@ -26,51 +29,22 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
-    _initializeSocket();
-    _fetchNotifications();
+    _animationController.forward();
   }
 
   @override
   void dispose() {
     _animationController.dispose();
-    NotificationService().disconnectSocket();
     super.dispose();
   }
 
-  Future<void> _initializeSocket() async {
-    try {
-      await NotificationService().connectToSocket();
-      NotificationService().onNotificationReceived((notification) {
-        print('NotifScreen: New notification received: $notification');
-        setState(() {
-          _notifications.insert(0, notification);
-          print('NotifScreen: Updated notifications: $_notifications');
-        });
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to connect to notification server: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _fetchNotifications() async {
-    try {
-      final fetched = await NotificationService().fetchNotifications();
-      setState(() {
-        _notifications = fetched;
-        _isLoading = false;
-        _errorMessage = null;
-        print('NotifScreen: Fetched notifications: $_notifications');
-      });
-      _animationController.forward();
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Error fetching notifications: $e';
-      });
-    }
+  void _refreshServices() {
+    setState(() {
+      servicesFuture = ServiceService.getAllServices();
+      debugPrint('Refreshing all services');
+    });
+    _animationController.reset();
+    _animationController.forward();
   }
 
   @override
@@ -110,7 +84,7 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
                     ],
                   ),
                   child: Text(
-                    'Notifications',
+                    'All Services',
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -180,23 +154,6 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
                   onPressed: () => Navigator.pop(context),
                 ),
               ),
-              actions: [
-                Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-
-                ),
-              ],
             ),
             SliverToBoxAdapter(
               child: FadeTransition(
@@ -234,14 +191,14 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: const Icon(
-                                    Icons.notifications_active,
+                                    Icons.pets,
                                     color: Colors.white,
                                     size: 20,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Text(
-                                  'Appointment Notifications',
+                                  'Veterinary Services',
                                   style: GoogleFonts.poppins(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -252,7 +209,7 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Stay updated with your pet\'s appointment confirmations, reminders, and important veterinary notifications.',
+                              'Discover our comprehensive range of professional veterinary services designed to keep your pets healthy and happy.',
                               style: GoogleFonts.poppins(
                                 fontSize: 14,
                                 color: Colors.grey.shade600,
@@ -262,7 +219,7 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
                         ),
                       ),
                       const SizedBox(height: 24),
-                      _buildNotificationsList(),
+                      _buildServicesList(),
                     ],
                   ),
                 ),
@@ -274,17 +231,27 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildNotificationsList() {
-    if (_isLoading) {
-      return _buildLoadingState();
-    }
-    if (_errorMessage != null) {
-      return _buildErrorState(_errorMessage!);
-    }
-    if (_notifications.isEmpty) {
-      return _buildEmptyState();
-    }
-    return _buildNotificationItems();
+  Widget _buildServicesList() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: servicesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildLoadingState();
+        }
+        if (snapshot.hasError) {
+          debugPrint('FutureBuilder error: ${snapshot.error}');
+          return _buildErrorState(snapshot.error.toString());
+        }
+        final responseData = snapshot.data;
+        debugPrint('API response: $responseData');
+        if (responseData == null || !responseData['success'] || responseData['services'] == null || (responseData['services'] as List).isEmpty) {
+          return _buildEmptyState(responseData?['message'] ?? 'No services available.');
+        }
+        final List<Service> services = responseData['services'] as List<Service>;
+
+        return _buildServicesGrid(services);
+      },
+    );
   }
 
   Widget _buildLoadingState() {
@@ -314,7 +281,7 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
             ),
             const SizedBox(height: 16),
             Text(
-              'Loading notifications...',
+              'Loading services...',
               style: GoogleFonts.poppins(
                 color: Colors.grey.shade600,
                 fontSize: 16,
@@ -351,7 +318,7 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
           ),
           const SizedBox(height: 16),
           Text(
-            'Connection Error',
+            'Oops! Something went wrong',
             style: GoogleFonts.poppins(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -369,16 +336,9 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
           ),
           const SizedBox(height: 16),
           ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                _isLoading = true;
-                _errorMessage = null;
-              });
-              _initializeSocket();
-              _fetchNotifications();
-            },
+            onPressed: _refreshServices,
             icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
+            label: const Text('Try Again'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red.shade600,
               foregroundColor: Colors.white,
@@ -391,7 +351,7 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(String message) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -409,14 +369,14 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.notifications_none_rounded,
+              Icons.medical_services_outlined,
               color: Colors.grey.shade500,
               size: 40,
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            'No Notifications',
+            'No Services Available',
             style: GoogleFonts.poppins(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -425,7 +385,7 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
           ),
           const SizedBox(height: 8),
           Text(
-            'No new appointment notifications.',
+            message,
             style: GoogleFonts.poppins(
               fontSize: 14,
               color: Colors.grey.shade600,
@@ -437,25 +397,29 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildNotificationItems() {
-    return RefreshIndicator(
-      onRefresh: _fetchNotifications,
-      color: const Color(0xFF800080),
-      child: ListView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: _notifications.length,
-        itemBuilder: (context, index) {
-          return _buildNotificationCard(_notifications[index], index);
-        },
+  Widget _buildServicesGrid(List<Service> services) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 0.85,
       ),
+      itemCount: services.length,
+      itemBuilder: (context, index) {
+        return _buildServiceCard(services[index], index);
+      },
     );
   }
 
-  Widget _buildNotificationCard(Map<String, dynamic> notification, int index) {
-    final message = notification['message'] ?? 'No message';
-    final createdAt = notification['createdAt'] ?? DateTime.now().toString();
-    final isRead = notification['read'] ?? false;
+  Widget _buildServiceCard(Service service, int index) {
+    final imageUrl = service.image != null && service.image!.isNotEmpty
+        ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.1.16:3000')
+        : null;
+    final isValidImageUrl = imageUrl != null && imageUrl.startsWith('http');
+    debugPrint('Service $index image: $imageUrl, valid: $isValidImageUrl');
 
     return TweenAnimationBuilder<double>(
       duration: Duration(milliseconds: 600 + (index * 100)),
@@ -465,133 +429,132 @@ class _NotifScreenState extends State<NotifScreen> with SingleTickerProviderStat
           offset: Offset(0, 20 * (1 - value)),
           child: Opacity(
             opacity: value,
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: isRead ? null : Border.all(
-                  color: Colors.blue.shade200,
-                  width: 2,
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ServiceDetailsScreen(service: service)),
+                );
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 15,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () async {
-                    if (!isRead) {
-                      final success = await NotificationService().markAsRead(notification['id']);
-                      if (success) {
-                        setState(() {
-                          _notifications[index]['read'] = true;
-                        });
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Failed to mark notification as read',
-                              style: GoogleFonts.poppins(),
-                            ),
-                            backgroundColor: Colors.red.shade600,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: isRead
-                                ? LinearGradient(
-                              colors: [Colors.grey.shade300, Colors.grey.shade400],
-                            )
-                                : LinearGradient(
-                              colors: [Colors.blue.shade400, Colors.purple.shade400],
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: (isRead ? Colors.grey : Colors.blue).withOpacity(0.3),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.purple.shade100,
+                              Colors.blue.shade100,
                             ],
                           ),
-                          child: Icon(
-                            isRead ? Icons.notifications_outlined : Icons.notifications_active,
-                            color: Colors.white,
-                            size: 20,
-                          ),
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        child: ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                          child: Stack(
                             children: [
-                              Text(
-                                message,
-                                style: GoogleFonts.poppins(
-                                  fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
-                                  fontSize: 15,
-                                  color: Colors.grey.shade800,
+                              if (isValidImageUrl)
+                                Image.network(
+                                  imageUrl,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    debugPrint('Service network image error for $imageUrl: $error');
+                                    return _buildDefaultServiceImage();
+                                  },
+                                )
+                              else
+                                _buildDefaultServiceImage(),
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.9),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    Icons.medical_services,
+                                    size: 16,
+                                    color: Colors.purple.shade600,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.access_time,
-                                    size: 14,
-                                    color: Colors.grey.shade500,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Received: ${DateTime.parse(createdAt).toLocal().toString().substring(0, 16)}',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade500,
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ],
                           ),
                         ),
-                        if (!isRead)
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade600,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      flex: 1,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              service.name,
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.grey.shade800,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildDefaultServiceImage() {
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.purple.shade200,
+            Colors.blue.shade200,
+          ],
+        ),
+      ),
+      child: Icon(
+        Icons.medical_services_rounded,
+        size: 40,
+        color: Colors.white.withOpacity(0.8),
+      ),
     );
   }
 }
