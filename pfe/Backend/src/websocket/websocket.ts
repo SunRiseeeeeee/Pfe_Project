@@ -11,39 +11,64 @@ const wss = new WebSocketServer({ port: 3001 });
 const isValidObjectId = (id: string): boolean => mongoose.Types.ObjectId.isValid(id);
 
 const getOrCreateChat = async (
-  senderId: string,
-  veterinaireId: string
+  initiatorId: string,
+  veterinaireId: string,
+  clientId?: string
 ): Promise<Types.ObjectId> => {
-  if (!isValidObjectId(senderId) || !isValidObjectId(veterinaireId)) {
-    throw new Error('IDs utilisateurs invalides');
+  if (!isValidObjectId(initiatorId) || !isValidObjectId(veterinaireId)) {
+    throw new Error('IDs invalides');
   }
 
-  // Vérifier que l'expéditeur est un client
-  const sender = await User.findById(senderId);
-  if (!sender) throw new Error('Expéditeur introuvable');
+  const initiator = await User.findById(initiatorId);
+  if (!initiator) throw new Error('Utilisateur initiateur introuvable');
 
-  // Vérifier que le destinataire est bien un vétérinaire
   const veterinaire = await User.findById(veterinaireId);
+  if (!veterinaire || veterinaire.role !== UserRole.VETERINAIRE) {
+    throw new Error('Vétérinaire introuvable ou invalide');
+  }
 
-  // Récupérer tous les secrétaires associés à ce vétérinaire
-  const secretaires = await User.find({ 
-    role: UserRole.SECRETAIRE, 
-    veterinaireId: veterinaireId 
+  let finalClientId: string;
+
+  if (initiator.role === UserRole.CLIENT) {
+    finalClientId = initiatorId;
+  } else {
+    if (!clientId || !isValidObjectId(clientId)) {
+      throw new Error('clientId requis pour un vétérinaire ou une secrétaire');
+    }
+
+    const client = await User.findById(clientId);
+    if (!client || client.role !== UserRole.CLIENT) {
+      throw new Error('clientId invalide ou utilisateur non client');
+    }
+
+    if (initiator.role === UserRole.SECRETAIRE && initiator.veterinaireId?.toString() !== veterinaireId) {
+      throw new Error('Secrétaire non autorisé pour ce vétérinaire');
+    }
+
+    if (initiator.role === UserRole.VETERINAIRE && initiator._id.toString() !== veterinaireId) {
+      throw new Error('Vétérinaire non autorisé');
+    }
+
+    finalClientId = clientId;
+  }
+
+  // Récupérer les secrétaires du vétérinaire
+  const secretaires = await User.find({
+    role: UserRole.SECRETAIRE,
+    veterinaireId: veterinaireId,
   }).select('_id').lean();
 
-  // Créer le tableau des participants (client + vétérinaire + secrétaires)
   const participants = [
-    new Types.ObjectId(senderId),
+    new Types.ObjectId(finalClientId),
     new Types.ObjectId(veterinaireId),
-    ...secretaires.map(s => s._id)
+    ...secretaires.map(s => s._id),
   ].sort();
 
-  // Rechercher un chat existant avec exactement ces participants
   const existingChat = await Chat.findOne({
-    participants: { 
+    participants: {
       $all: participants,
-      $size: participants.length 
-    }
+      $size: participants.length,
+    },
   }).exec();
 
   if (existingChat) {
@@ -51,7 +76,6 @@ const getOrCreateChat = async (
     return existingChat.id;
   }
 
-  // Créer un nouveau chat si aucun existant
   const newChat = await Chat.create({
     participants,
     unreadCount: 0,
@@ -59,9 +83,10 @@ const getOrCreateChat = async (
     updatedAt: new Date(),
   });
 
-  console.log(`🆕 Nouveau chat créé avec ${participants.length} participants: ${newChat._id}`);
+  console.log(`🆕 Nouveau chat créé : ${newChat._id}`);
   return newChat.id;
 };
+
 
 wss.on('connection', (ws: WebSocket) => {
   console.log('Client connecté.');
@@ -366,10 +391,12 @@ case 'SEND_MESSAGE': {
   }
 
   // Obtenir ou créer le chat
-  const chatId = await getOrCreateChat(
-    role === UserRole.CLIENT ? senderId : clientId,
-    veterinaireId
-  );
+const chatId = await getOrCreateChat(
+  senderId,
+  veterinaireId,
+  role === UserRole.CLIENT ? undefined : clientId
+);
+
 
   const newMessage = await Message.create({
     chatId,
