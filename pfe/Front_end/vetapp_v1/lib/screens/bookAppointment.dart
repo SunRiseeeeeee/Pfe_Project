@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:vetapp_v1/services/pet_service.dart';
 import 'package:vetapp_v1/services/appointment_service.dart';
+import 'package:vetapp_v1/services/user_service.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import 'package:vetapp_v1/models/veterinarian.dart';
@@ -30,13 +31,14 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
   List<Map<String, dynamic>> pets = [];
   List<DateTime> acceptedAppointmentTimes = [];
-  final List<String> appointmentTypes = ['domicile', 'cabinet'];
-  final List<String> services = ['Consultation', 'Vaccination', 'Surgery', 'Grooming'];
+  final List<String> appointmentTypes = ['household', 'clinic'];
+  List<String> services = [];
 
   bool _isLoading = false;
   bool _isSubmitting = false;
   late final AppointmentService _appointmentService;
   late final PetService _petService;
+  late final UserService _userService;
   String? _errorMessage;
   final _scrollController = ScrollController();
   late Map<int, Map<String, String>> parsedWorkingHours;
@@ -56,6 +58,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
     _appointmentService = AppointmentService(dio: dio);
     _petService = PetService(dio: dio);
+    _userService = UserService();
 
     parsedWorkingHours = _parseWorkingHours(widget.workingHours);
     debugPrint('Parsed working hours: $parsedWorkingHours');
@@ -73,6 +76,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     try {
       final fetchedPets = await _petService.getUserPets();
       final acceptedTimesResponse = await _appointmentService.getAcceptedAppointmentTimes(widget.vet.id!);
+      final vetDetails = await _userService.getUserById(widget.vet.id!);
+      final fetchedServices = List<String>.from(vetDetails['details']?['services'] ?? []);
+
+      debugPrint('Fetched vet details: $vetDetails');
+      debugPrint('Fetched services: $fetchedServices');
       debugPrint('Fetched accepted appointment times response: $acceptedTimesResponse');
 
       if (acceptedTimesResponse['success'] == true) {
@@ -84,8 +92,9 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
       setState(() {
         pets = fetchedPets;
+        services = fetchedServices.isNotEmpty ? fetchedServices : ['No services available'];
         _isLoading = false;
-        debugPrint('setState: Pets loaded, isLoading: false, acceptedAppointmentTimes: $acceptedAppointmentTimes');
+        debugPrint('setState: Pets and services loaded, isLoading: false, acceptedAppointmentTimes: $acceptedAppointmentTimes');
       });
     } catch (e) {
       debugPrint('Error initializing data: $e');
@@ -103,6 +112,19 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       initialDate: DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+            ),
+            dialogBackgroundColor: Colors.white,
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -148,7 +170,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         final hour = current.hour;
         final minute = current.minute;
         timeSlots.add(TimeOfDay(hour: hour, minute: minute));
-        current = current.add(const Duration(minutes: 15));
+        current = current.add(const Duration(minutes: 30));
       }
     } catch (e) {
       debugPrint('Error generating time slots: $e');
@@ -163,15 +185,16 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Select Time'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: SizedBox(
             width: double.maxFinite,
             height: 300,
             child: GridView.builder(
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                childAspectRatio: 2,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
+                crossAxisCount: 3,
+                childAspectRatio: 2.5,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
               ),
               itemCount: timeSlots.length,
               itemBuilder: (context, index) {
@@ -189,16 +212,25 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                     decoration: BoxDecoration(
                       color: isValid ? Colors.white : Colors.red.withOpacity(0.1),
                       border: Border.all(
-                        color: isValid ? Colors.grey : Colors.red,
+                        color: isValid ? Theme.of(context).primaryColor : Colors.red,
+                        width: 1.5,
                       ),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: Center(
                       child: Text(
-                        time.format(context),
+                        time.format(context).replaceAll(RegExp(r'\s+'), ' '),
                         style: TextStyle(
-                          color: isValid ? Colors.black : Colors.red,
-                          fontWeight: isValid ? FontWeight.normal : FontWeight.bold,
+                          color: isValid ? Theme.of(context).primaryColor : Colors.red,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
                         ),
                       ),
                     ),
@@ -210,7 +242,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
             ),
           ],
         );
@@ -236,7 +268,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     );
 
     try {
-      // Check working hours
       final startTime = dateFormat.parse(dayHours['start']!);
       final endTime = dateFormat.parse(dayHours['end']!);
       final fullStart = DateTime(
@@ -257,7 +288,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       final isWithinHours = (selectedDateTime.isAfter(fullStart) || selectedDateTime.isAtSameMomentAs(fullStart)) &&
           (selectedDateTime.isBefore(fullEnd) || selectedDateTime.isAtSameMomentAs(fullEnd));
 
-      // Check pause time
       bool isDuringPause = false;
       if (dayHours['pauseStart'] != null && dayHours['pauseEnd'] != null) {
         final timeFormat = RegExp(r'^\d{2}:\d{2}$');
@@ -287,9 +317,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             (selectedDateTime.isAfter(fullPauseStart) && selectedDateTime.isBefore(fullPauseEnd));
       }
 
-      // Check for conflicts with accepted appointments
       bool hasConflict = acceptedAppointmentTimes.any((apptTime) {
-        final apptEnd = apptTime.add(const Duration(minutes: 20));
+        final apptEnd = apptTime.add(const Duration(minutes: 30));
         return selectedDateTime.isAfter(apptTime.subtract(const Duration(minutes: 1))) &&
             selectedDateTime.isBefore(apptEnd);
       });
@@ -339,7 +368,6 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           final weekday = daysMapping[day]!;
           final timeFormat = RegExp(r'^\d{1,2}:\d{2}$');
 
-          // Case 1: Entry has separate start, end, pauseStart, pauseEnd fields
           if (entry.containsKey('start') && entry.containsKey('end')) {
             final start = entry['start']?.toString();
             final end = entry['end']?.toString();
@@ -359,16 +387,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             } else {
               debugPrint('Invalid time format for day $day: start=$start, end=$end');
             }
-          }
-          // Case 2: Entry has a 'hours' field like "08:00 -> 12:00 (Break) -> 13:00 -> 18:00"
-          else if (entry.containsKey('hours')) {
+          } else if (entry.containsKey('hours')) {
             final hours = entry['hours']?.toString();
             if (hours == null || hours.isEmpty) {
               debugPrint('Empty hours field for day $day');
               continue;
             }
 
-            // Parse hours string: "start -> pauseStart (Break) -> pauseEnd -> end"
             final hoursPattern = RegExp(r'(\d{2}:\d{2})\s*->\s*(\d{2}:\d{2})\s*\(Break\)\s*->\s*(\d{2}:\d{2})\s*->\s*(\d{2}:\d{2})');
             final simplePattern = RegExp(r'(\d{2}:\d{2})\s*->\s*(\d{2}:\d{2})');
 
@@ -469,7 +494,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         selectedTime!.minute,
       );
 
-      final DateTime fullStart = DateTime(
+      final DateTime? fullStart = DateTime(
         selectedDate!.year,
         selectedDate!.month,
         selectedDate!.day,
@@ -477,7 +502,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         startTime.minute,
       );
 
-      final DateTime fullEnd = DateTime(
+      final fullEnd = DateTime(
         selectedDate!.year,
         selectedDate!.month,
         selectedDate!.day,
@@ -485,7 +510,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         endTime.minute,
       );
 
-      final isWithinHours = (selectedDateTime.isAfter(fullStart) || selectedDateTime.isAtSameMomentAs(fullStart)) &&
+      final isWithinHours = (selectedDateTime.isAfter(fullStart!) || selectedDateTime.isAtSameMomentAs(fullStart)) &&
           (selectedDateTime.isBefore(fullEnd) || selectedDateTime.isAtSameMomentAs(fullEnd));
 
       bool isDuringPause = false;
@@ -520,7 +545,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       }
 
       bool hasConflict = acceptedAppointmentTimes.any((apptTime) {
-        final apptEnd = apptTime.add(const Duration(minutes: 20));
+        final apptEnd = apptTime.add(const Duration(minutes: 30));
         return selectedDateTime.isAfter(apptTime.subtract(const Duration(minutes: 1))) &&
             selectedDateTime.isBefore(apptEnd);
       });
@@ -539,10 +564,11 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
         selectedDate == null ||
         selectedTime == null ||
         selectedAppointmentType == null ||
-        selectedService == null) {
-      debugPrint('Validation failed: Missing required fields');
+        selectedService == null ||
+        services.contains('No services available')) {
+      debugPrint('Validation failed: Missing required fields or no services available');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all required fields')),
+        const SnackBar(content: Text('Please fill all required fields or check veterinarian services')),
       );
       return;
     }
@@ -558,7 +584,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           selectedTime!.hour <= DateFormat('HH:mm').parse(pauseEndStr).hour;
 
       bool hasConflict = acceptedAppointmentTimes.any((apptTime) {
-        final apptEnd = apptTime.add(const Duration(minutes: 20));
+        final apptEnd = apptTime.add(const Duration(minutes: 30));
         final selectedDateTime = DateTime(
           selectedDate!.year,
           selectedDate!.month,
@@ -622,18 +648,18 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           caseDescription = null;
           debugPrint('setState: isSubmitting: false, form reset');
         });
-        // Refresh accepted appointment times
         await _initializeUserAndPets();
         if (mounted) {
           await showDialog(
             context: context,
             builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: const Text('Appointment Booked'),
               content: const Text('Your appointment has been booked. It is pending veterinarian approval.'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
+                  child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -660,7 +686,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     } catch (e) {
       debugPrint('Error creating appointment: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+        SnackBar(content: Text('Error creating appointment: ${e.toString()}')),
       );
       setState(() {
         _isSubmitting = false;
@@ -680,11 +706,16 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   Widget build(BuildContext context) {
     debugPrint('Building AppointmentsScreen, acceptedAppointmentTimes: $acceptedAppointmentTimes');
     return Scaffold(
-      appBar: AppBar(title: const Text('Book Appointment')),
+      appBar: AppBar(
+        title: const Text('Book Appointment'),
+        elevation: 0,
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-          ? Center(child: Text(_errorMessage!))
+          ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 16)))
           : _buildAppointmentForm(),
     );
   }
@@ -694,29 +725,35 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     debugPrint('Building appointment form, isSubmitting: $_isSubmitting');
     return SingleChildScrollView(
       controller: _scrollController,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionTitle('1. Select Your Pet'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           pets.isEmpty
-              ? const Text('No pets found. Please add a pet first.', style: TextStyle(color: Colors.red))
+              ? const Text('No pets found. Please add a pet first.', style: TextStyle(color: Colors.red, fontSize: 14))
               : _buildPetSelector(),
           const SizedBox(height: 24),
           _sectionTitle('2. Select Date & Time'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           _buildWorkingHours(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
                   onPressed: _selectDate,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: BorderSide(color: Theme.of(context).primaryColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                   child: Text(
                     selectedDate == null
                         ? 'Select Date'
                         : '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}',
+                    style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -724,10 +761,16 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: _selectTime,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: BorderSide(color: Theme.of(context).primaryColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                   child: Text(
                     selectedTime == null
                         ? 'Select Time'
-                        : localizations.formatTimeOfDay(selectedTime!),
+                        : localizations.formatTimeOfDay(selectedTime!).replaceAll(RegExp(r'\s+'), ' '),
+                    style: TextStyle(color: Theme.of(context).primaryColor, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -735,7 +778,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           ),
           const SizedBox(height: 24),
           _sectionTitle('3. Appointment Type'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           _buildDropdown(
             hint: 'Select type',
             value: selectedAppointmentType,
@@ -744,33 +787,40 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
           ),
           const SizedBox(height: 24),
           _sectionTitle('4. Service Needed'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           _buildDropdown(
-            hint: 'Select service',
+            hint: services.contains('No services available') ? 'No services available' : 'Select service',
             value: selectedService,
             items: services,
-            onChanged: (value) => setState(() => selectedService = value),
+            onChanged: services.contains('No services available')
+                ? null
+                : (value) => setState(() => selectedService = value),
           ),
           const SizedBox(height: 24),
           _sectionTitle('5. Case Description (Optional)'),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           TextField(
-            maxLines: 3,
-            decoration: const InputDecoration(
+            maxLines: 4,
+            decoration: InputDecoration(
               hintText: 'Describe your pet\'s condition...',
-              border: OutlineInputBorder(),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.grey[50],
             ),
             onChanged: (value) => caseDescription = value,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 18),
                 backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 3,
               ),
-              onPressed: _isSubmitting ? null : _createAppointment,
+              onPressed: (_isSubmitting || services.contains('No services available')) ? null : _createAppointment,
               child: _isSubmitting
                   ? const SizedBox(
                 width: 24,
@@ -779,7 +829,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               )
                   : const Text(
                 'BOOK APPOINTMENT',
-                style: TextStyle(fontSize: 16),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -789,29 +839,37 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   }
 
   Widget _sectionTitle(String text) {
-    return Text(text, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold));
+    return Text(
+      text,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+    );
   }
 
   Widget _buildDropdown({
     required String hint,
     required String? value,
     required List<String> items,
-    required Function(String?) onChanged,
+    required Function(String?)? onChanged,
   }) {
     return DropdownButtonFormField<String>(
       value: value,
       decoration: InputDecoration(
-        border: const OutlineInputBorder(),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        filled: true,
+        fillColor: Colors.grey[50],
         hintText: hint,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       items: items.map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(),
       onChanged: onChanged,
+      dropdownColor: Colors.white,
+      style: const TextStyle(color: Colors.black87, fontSize: 14),
     );
   }
 
   Widget _buildPetSelector() {
     return SizedBox(
-      height: 115,
+      height: 120,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: pets.length,
@@ -829,23 +887,25 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             padding: const EdgeInsets.only(right: 16),
             child: Card(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
                   color: isSelected ? Theme.of(context).primaryColor : Colors.grey.shade300,
-                  width: 1,
+                  width: 1.5,
                 ),
               ),
+              elevation: 2,
               child: InkWell(
                 onTap: petId != null ? () => setState(() => selectedPetId = petId) : null,
+                borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  width: 100,
+                  width: 110,
                   padding: const EdgeInsets.all(8),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       CircleAvatar(
-                        radius: 30,
+                        radius: 32,
                         backgroundColor: Colors.grey[200],
                         backgroundImage: imageUrl != null
                             ? NetworkImage(imageUrl)
@@ -856,8 +916,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                       Text(
                         name,
                         textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          fontSize: 13,
+                          color: Colors.black87,
                         ),
                       ),
                     ],
@@ -892,22 +956,101 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     final sortedHours = parsedWorkingHours.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
 
-    final hoursText = sortedHours.map((entry) {
-      final day = daysMapping[entry.key] ?? 'Day ${entry.key}';
-      final start = entry.value['start'] ?? 'N/A';
-      final end = entry.value['end'] ?? 'N/A';
-      final pauseStart = entry.value['pauseStart']?.isNotEmpty == true ? entry.value['pauseStart'] : null;
-      final pauseEnd = entry.value['pauseEnd']?.isNotEmpty == true ? entry.value['pauseEnd'] : null;
-      String formatted = '$day: $start - $end';
-      if (pauseStart != null && pauseEnd != null) {
-        formatted += ' (Break: $pauseStart - $pauseEnd)';
-      }
-      return formatted;
-    }).join('\n');
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: sortedHours.map((entry) {
+            final day = daysMapping[entry.key] ?? 'Day ${entry.key}';
+            final start = entry.value['start'] ?? 'N/A';
+            final end = entry.value['end'] ?? 'N/A';
+            final pauseStart = entry.value['pauseStart']?.isNotEmpty == true ? entry.value['pauseStart'] : null;
+            final pauseEnd = entry.value['pauseEnd']?.isNotEmpty == true ? entry.value['pauseEnd'] : null;
 
-    return Text(
-      'Working Hours:\n$hoursText',
-      style: const TextStyle(fontSize: 14, color: Colors.black87),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Day name
+                  SizedBox(
+                    width: 100,
+                    child: Text(
+                      day,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Time schedule
+                  Row(
+                    children: [
+                      _buildTimeChip('$start - ${pauseStart ?? end}', Colors.green),
+                      if (pauseStart != null && pauseEnd != null) ...[
+                        const SizedBox(width: 8),
+                        _buildBreakChip(),
+                        const SizedBox(width: 8),
+                        _buildTimeChip('$pauseEnd - $end', Colors.green),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeChip(String time, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color[100]!),
+      ),
+      child: Text(
+        time,
+        style: TextStyle(
+          color: color[700],
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBreakChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.orange[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange[100]!),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pause_circle_outline, size: 14, color: Colors.orange[600]),
+          const SizedBox(width: 4),
+          Text(
+            'Break',
+            style: TextStyle(
+              color: Colors.orange[600],
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

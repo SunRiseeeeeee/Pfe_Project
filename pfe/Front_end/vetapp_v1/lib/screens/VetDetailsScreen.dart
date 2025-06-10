@@ -11,6 +11,7 @@ import '../services/vet_service.dart';
 import '../screens/reviews_screen.dart';
 import '../screens/bookAppointment.dart';
 import './chat_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class VetDetailsScreen extends StatefulWidget {
   final Veterinarian vet;
@@ -157,18 +158,36 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
 
     setState(() => _isStartingChat = true);
     try {
+      if (!_chatService.isConnected()) {
+        await _chatService.connect(_userId!, _userRole!.toUpperCase());
+        print('Established WebSocket connection for user $_userId');
+      }
+      await _chatService.getConversations(_userId!).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => print('getConversations timed out, proceeding anyway'),
+      );
+
       final conversation = await _chatService
           .getOrCreateConversation(
         userId: _userId!,
         vetId: widget.vet.id,
       )
           .timeout(
-        const Duration(seconds: 30),
+        const Duration(seconds: 20),
         onTimeout: () => throw Exception('Conversation creation timed out'),
       );
 
       final chatId = conversation['chatId'] as String;
       final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
+
+      participants.forEach((participant) {
+        if (participant['profilePicture'] != null &&
+            (participant['profilePicture'] as String).contains('localhost')) {
+          participant['profilePicture'] = (participant['profilePicture'] as String)
+              .replaceAll('localhost', '192.168.1.16');
+        }
+      });
+
       print('Navigating to ChatScreen with chatId: $chatId, participants: $participants');
 
       if (mounted) {
@@ -190,8 +209,17 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
       print('Error starting conversation: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start conversation: $e')),
+          SnackBar(content: Text('Failed to start conversation: ${e.toString()}')),
         );
+      }
+      if (e.toString().contains('WebSocket')) {
+        _chatService.disconnect();
+        try {
+          await _chatService.connect(_userId!, _userRole!.toUpperCase());
+          print('Reconnected WebSocket after error');
+        } catch (reconnectError) {
+          print('Failed to reconnect WebSocket: $reconnectError');
+        }
       }
     } finally {
       if (mounted) {
@@ -200,74 +228,223 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     }
   }
 
-  String formatWorkingHours(dynamic workingHours) {
+  Future<void> _openMapsLocation() async {
+    final url = widget.vet.mapsLocation;
+    if (url != null && url.isNotEmpty) {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to open map location')),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No map location available')),
+      );
+    }
+  }
+
+  Widget _buildWorkingHoursDisplay() {
+    final workingHours = _parseWorkingHours(widget.vet.workingHours);
+
+    if (workingHours.isEmpty) {
+      return Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Text(
+              'Working hours not available',
+              style: GoogleFonts.poppins(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: workingHours.map((daySchedule) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 100,
+                    child: Text(
+                      daySchedule['day'] ?? 'Unknown',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  _buildTimeSchedule(daySchedule),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeSchedule(Map<String, dynamic> daySchedule) {
+    final start = daySchedule['start'] as String?;
+    final end = daySchedule['end'] as String?;
+    final pauseStart = daySchedule['pauseStart'] as String?;
+    final pauseEnd = daySchedule['pauseEnd'] as String?;
+
+    if (start == null || end == null || start.isEmpty || end.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.red[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red[100]!),
+        ),
+        child: Text(
+          'Closed',
+          style: GoogleFonts.poppins(
+            color: Colors.red[700],
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        _buildTimeChip('$start - ${pauseStart ?? end}', Colors.green),
+        if (pauseStart != null && pauseEnd != null && pauseEnd.isNotEmpty) ...[
+          const SizedBox(width: 8),
+          _buildBreakChip(),
+          const SizedBox(width: 8),
+          _buildTimeChip('$pauseEnd - $end', Colors.green),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTimeChip(String time, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color[100]!),
+      ),
+      child: Text(
+        time,
+        style: GoogleFonts.poppins(
+          color: color[700],
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBreakChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.orange[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange[100]!),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.pause_circle_outline, size: 14, color: Colors.orange[600]),
+          const SizedBox(width: 4),
+          Text(
+            'Break',
+            style: GoogleFonts.poppins(
+              color: Colors.orange[600],
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _parseWorkingHours(dynamic workingHours) {
     if (workingHours == null || (workingHours is String && workingHours.isEmpty)) {
-      return 'Not available';
+      return [];
     }
 
     try {
-      // If it's already a properly formatted list/Map, use it directly
       if (workingHours is List<Map<String, dynamic>>) {
-        return _formatHoursList(workingHours);
+        return workingHours;
       }
       if (workingHours is Map<String, dynamic>) {
-        return _formatHoursList([workingHours]);
+        return [workingHours];
       }
 
-      // Handle string input
       if (workingHours is String) {
         String sanitized = workingHours.trim();
-
-        // Convert the malformed JSON to proper JSON
         sanitized = _fixMalformedJson(sanitized);
 
         try {
           final parsed = jsonDecode(sanitized);
           if (parsed is List) {
-            return _formatHoursList(parsed.cast<Map<String, dynamic>>());
+            return parsed.cast<Map<String, dynamic>>();
           } else if (parsed is Map) {
-            return _formatHoursList([parsed.cast<String, dynamic>()]);
+            return [parsed.cast<String, dynamic>()];
           }
         } catch (e) {
           print('Error parsing sanitized working hours: $e\nSanitized: $sanitized');
-          return 'Invalid format';
+          return [];
         }
       }
 
-      return 'Not available';
+      return [];
     } catch (e) {
       print('Error parsing working hours: $e');
-      return 'Not available';
+      return [];
     }
   }
 
   String _fixMalformedJson(String input) {
     String result = input.trim();
 
-    // Step 1: If it's not an array and contains multiple objects, wrap in []
     if (!result.startsWith('[') && result.contains('}, {')) {
       result = '[${result}]';
     }
 
-    // Step 2: Quote property names (convert day: to "day":)
     result = result.replaceAllMapped(
       RegExp(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9]*)(\s*:)'),
           (match) => '${match.group(1)}"${match.group(2)}"${match.group(3)}',
     );
 
-    // Step 3: Quote string values (convert Monday to "Monday")
     result = result.replaceAllMapped(
       RegExp(r':\s*([a-zA-Z][a-zA-Z0-9]*)(\s*[,}])'),
           (match) => ': "${match.group(1)}"${match.group(2)}',
     );
 
-    // Step 4: Ensure time values are quoted (09:00 -> "09:00")
     result = result.replaceAllMapped(
       RegExp(r':\s*(\d{2}:\d{2})'),
           (match) => ': "${match.group(1)}"',
     );
 
-    // Step 5: Handle malformed times ("08":"00" -> "08:00" or "08":00)
     result = result.replaceAllMapped(
       RegExp(r'"(\d{2})":"(\d{2})"'),
           (match) => '"${match.group(1)}:${match.group(2)}"',
@@ -276,37 +453,18 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
           (match) => '"${match.group(1)}:${match.group(2)}"',
     );
 
-    // Step 6: Convert string "null" to null
     result = result.replaceAll(RegExp(r':\s*"null"'), ': null');
 
-    // Step 7: Remove _id fields
     result = result.replaceAllMapped(
       RegExp(r'"_id":\s*("[^"]*"|[a-fA-F0-9]+)(,\s*|\s*})'),
           (match) => '${match.group(2)}',
     );
 
-    // Step 8: Clean up trailing commas
     result = result.replaceAll(RegExp(r',\s*}'), '}').replaceAll(RegExp(r',\s*]'), ']');
 
     return result;
   }
 
-  String _formatHoursList(List<Map<String, dynamic>> hours) {
-    return hours.map((e) {
-      // Create a copy without _id
-      final cleaned = Map<String, dynamic>.from(e)..remove('_id');
-      final day = cleaned['day'] as String? ?? 'Unknown day';
-      final start = cleaned['start']?.toString() ?? '?';
-      final end = cleaned['end']?.toString() ?? '?';
-      final pauseStart = cleaned['pauseStart'] == 'null' ? null : cleaned['pauseStart']?.toString();
-      final pauseEnd = cleaned['pauseEnd'] == 'null' ? null : cleaned['pauseEnd']?.toString();
-
-      if (pauseStart != null && pauseEnd != null) {
-        return '$day: $start - $pauseStart (Break) $pauseEnd - $end';
-      }
-      return '$day: $start - $end';
-    }).join('\n');
-  }
   @override
   Widget build(BuildContext context) {
     String? profilePicture = widget.vet.profilePicture;
@@ -436,7 +594,7 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _infoStat(Icons.people, '4,500+', 'Patients'),
+                          _infoStat(Icons.people, '100+', 'Patients'),
                           _infoStat(Icons.history, '10+', 'Clients'),
                           _infoStat(Icons.star, averageRating.toStringAsFixed(1), 'Rating'),
                           GestureDetector(
@@ -444,6 +602,26 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                             child: _infoStat(Icons.comment, '$reviewCount', 'Reviews'),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Location',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: _openMapsLocation,
+                      child: Text(
+                        'See Location →',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          color: Colors.blue,
+                          decoration: TextDecoration.underline,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -467,11 +645,8 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      formatWorkingHours(widget.vet.workingHours),
-                      style: GoogleFonts.poppins(color: Colors.grey),
-                    ),
+                    const SizedBox(height: 12),
+                    _buildWorkingHoursDisplay(),
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -480,47 +655,62 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_userRole == 'client')
-              Row(
-                children: [
-                  // Posts Button
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isLoading
-                          ? null
-                          : () {
-                        // Navigate to PostsScreen or handle posts action
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (context) => PostsScreen(
-                              vetId: widget.vet.id,
-                            ),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue, // Customize color as needed
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_userRole == 'client') ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStyledButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (context) => PostsScreen(
+                                  vetId: widget.vet.id,
+                                ),
+                              ),
+                            );
+                          },
+                          backgroundColor: const Color(0xFF4A90E2),
+                          icon: Icons.article_outlined,
+                          label: 'Posts',
+                          isLoading: false,
                         ),
                       ),
-                      child: const Text(
-                        'Posts',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStyledButton(
+                          onPressed: _isLoading || _isStartingChat ? null : _startConversation,
+                          backgroundColor: const Color(0xFF00C9A7),
+                          icon: Icons.chat_bubble_outline,
+                          label: 'Chat',
+                          isLoading: _isStartingChat,
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  // Book Appointment Button
-                  Expanded(
-                    child: ElevatedButton(
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: _buildStyledButton(
                       onPressed: _isLoading || _isStartingChat
                           ? null
                           : () {
@@ -531,7 +721,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                                 ? widget.vet.workingHours as String
                                 : jsonEncode(widget.vet.workingHours);
 
-                            // Fix malformed JSON
                             hoursString = _fixMalformedJson(hoursString);
 
                             final parsed = jsonDecode(hoursString);
@@ -540,7 +729,6 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                             } else if (parsed is Map) {
                               workingHours = [parsed.cast<String, dynamic>()];
                             }
-                            // Remove _id and handle "null" strings
                             workingHours = workingHours
                                 .map((e) => Map<String, dynamic>.from(e)
                               ..remove('_id')
@@ -575,48 +763,92 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                           ),
                         );
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple,
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Book Appointment',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
-                      ),
+                      backgroundColor: const Color(0xFF7B68EE),
+                      icon: Icons.calendar_today_outlined,
+                      label: 'Book Appointment',
+                      isLoading: false,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Start Conversation Button
-                  _isStartingChat
-                      ? const CircularProgressIndicator(color: Colors.deepPurple)
-                      : IconButton(
-                    icon: const Icon(Icons.chat, color: Colors.green),
-                    onPressed: _isLoading ? null : _startConversation,
-                    tooltip: 'Start Chat',
                   ),
                 ],
-              ),
-            if (_userRole == 'admin')
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _deleteVeterinarian,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                if (_userRole == 'admin')
+                  SizedBox(
+                    width: double.infinity,
+                    child: _buildStyledButton(
+                      onPressed: _isLoading ? null : _deleteVeterinarian,
+                      backgroundColor: const Color(0xFFE74C3C),
+                      icon: Icons.delete_outline,
+                      label: 'Delete Veterinarian',
+                      isLoading: _isLoading,
+                      isDestructive: true,
                     ),
                   ),
-                  child: const Text(
-                    'Delete Veterinarian',
-                    style: TextStyle(fontSize: 16, color: Colors.white),
-                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStyledButton({
+    required VoidCallback? onPressed,
+    required Color backgroundColor,
+    required IconData icon,
+    required String label,
+    required bool isLoading,
+    bool isDestructive = false,
+  }) {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: onPressed != null
+            ? [
+          BoxShadow(
+            color: backgroundColor.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ]
+            : [],
+      ),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: backgroundColor,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: backgroundColor.withOpacity(0.5),
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        child: isLoading
+            ? const SizedBox(
+          height: 20,
+          width: 20,
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          ),
+        )
+            : Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
+            ),
           ],
         ),
       ),

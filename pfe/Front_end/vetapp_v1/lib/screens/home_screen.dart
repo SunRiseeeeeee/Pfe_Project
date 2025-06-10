@@ -15,10 +15,12 @@ import '../models/token_storage.dart';
 import 'package:dio/dio.dart';
 import '../models/service.dart';
 import '../services/service_service.dart';
+import 'all_services_screen.dart';
 import 'conversations_screen.dart';
 import '../services/chat_service.dart';
 import '../services/notif_service.dart' as notif;
 import 'notif_screen.dart';
+import 'service_details_screen.dart';
 
 class VetService {
   static const String baseUrl = "http://192.168.1.16:3000/api/users/veterinarians";
@@ -332,7 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (userRole == 'veterinarian' || userRole == 'secretary' || userRole == 'client') {
       return FloatingActionButton(
         onPressed: _openChat,
-        backgroundColor: Colors.blue,
+        backgroundColor: Colors.purple[600],
         elevation: 6,
         child: Stack(
           alignment: Alignment.center,
@@ -613,7 +615,7 @@ class _HomeContentState extends State<HomeContent> {
           alignment: Alignment.center,
           children: [
             IconButton(
-              icon: const Icon(Icons.notifications_none, size: 28),
+              icon: Icon(Icons.notifications_none, size: 25 ,color: Colors.purple[600],),
               onPressed: () {
                 Navigator.push(
                   context,
@@ -748,7 +750,7 @@ class _HomeContentState extends State<HomeContent> {
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.search),
+                      icon: Icon(Icons.search, color: Colors.purple[600],),
                       onPressed: _showSearchDialog,
                     ),
                     _buildNotificationIcon(),
@@ -759,11 +761,11 @@ class _HomeContentState extends State<HomeContent> {
             const SizedBox(height: 16),
             const AutoSlidingPageView(),
             const SizedBox(height: 20),
-            _buildSectionHeader('Services'),
+            _buildServicesSectionHeader('Services'),
             const SizedBox(height: 12),
             _buildServicesSection(),
             const SizedBox(height: 20),
-            _buildSectionHeader('Our best veterinarians'),
+            _buildVeterinariansSectionHeader('Our best veterinarians'),
             const SizedBox(height: 12),
             if ((locationFilter != null && locationFilter!.isNotEmpty) ||
                 specialtyFilter != null ||
@@ -802,10 +804,10 @@ class _HomeContentState extends State<HomeContent> {
                         label: Text('Specialty: $specialtyFilter'),
                         deleteIcon: const Icon(Icons.close, size: 16),
                         onDeleted: () {
-                          setState() {
+                          setState(() {
                             specialtyFilter = null;
                             _refreshVeterinarians(1);
-                          };
+                          });
                         },
                       ),
                   ],
@@ -826,7 +828,38 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  Widget _buildServicesSectionHeader(String title) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Poppins',
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => AllServicesScreen()),
+            );
+          },
+          child: Text(
+            'See All',
+            style: TextStyle(
+              color: Colors.purple[600],
+              fontFamily: 'Poppins',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVeterinariansSectionHeader(String title) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -839,7 +872,7 @@ class _HomeContentState extends State<HomeContent> {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.filter_list, color: Colors.blue),
+          icon: const Icon(Icons.filter_list, color: Colors.purple),
           onPressed: _showFilterDialog,
         ),
       ],
@@ -1027,53 +1060,65 @@ class _HomeContentState extends State<HomeContent> {
 
   Widget _buildServiceCard(Service service) {
     final imageUrl = service.image != null && service.image!.isNotEmpty
-        ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.1.18:3000')
+        ? service.image!.replaceAll('http://localhost:3000', 'http://192.168.1.16:3000')
         : null;
 
-    return ClipRRect(
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ServiceDetailsScreen(service: service),
+          ),
+        );
+      },
       borderRadius: BorderRadius.circular(16),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          imageUrl != null
-              ? Image.network(
-            imageUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              print('Image load error for $imageUrl: $error');
-              return Container(
-                color: Colors.grey,
-                child: const Icon(Icons.image_not_supported, color: Colors.white),
-              );
-            },
-          )
-              : Container(
-            color: Colors.grey,
-            child: const Icon(Icons.image_not_supported, color: Colors.white),
-          ),
-          Container(
-            alignment: Alignment.bottomLeft,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.black.withOpacity(0.6), Colors.transparent],
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            imageUrl != null
+                ? Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                print('Image load error for $imageUrl: $error');
+                return Container(
+                  color: Colors.grey,
+                  child: const Icon(Icons.image_not_supported, color: Colors.white),
+                );
+              },
+            )
+                : Container(
+              color: Colors.grey,
+              child: const Icon(Icons.image_not_supported, color: Colors.white),
+            ),
+            Container(
+              alignment: Alignment.bottomLeft,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.black.withOpacity(0.6), Colors.transparent],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                ),
+              ),
+              child: Text(
+                service.name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Poppins',
+                ),
               ),
             ),
-            child: Text(
-              service.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Poppins',
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
 
   Widget _buildPlaceholderCard() {
     return ClipRRect(
@@ -1263,9 +1308,9 @@ class _AutoSlidingPageViewState extends State<AutoSlidingPageView> {
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.deepPurple,
                     ),
-                    child: const Text(
+                    child: Text(
                       'Discover',
-                      style: TextStyle(fontFamily: 'Poppins'),
+                      style: TextStyle(fontFamily: 'Poppins', color: Colors.purple[600]),
                     ),
                   ),
                 ],

@@ -1,22 +1,24 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
 import '../models/token_storage.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatId;
-  final String veterinaireId;
+  final String? veterinaireId; // Changed to nullable
   final List<Map<String, dynamic>> participants;
+  final String? vetId; // Changed to nullable
+  final String? recipientId; // Changed to nullable
+  final String recipientName;
 
   const ChatScreen({
     super.key,
     required this.chatId,
     required this.veterinaireId,
     required this.participants,
-    required String vetId,
-    required recipientId,
-    required String recipientName,
+    required this.vetId,
+    required this.recipientId,
+    required this.recipientName,
   });
 
   @override
@@ -43,9 +45,9 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _isLoading = true);
     _userId = await TokenStorage.getUserId();
 
-    // Cache participant images
+    // Cache participant images (excluding current user)
     for (var participant in widget.participants) {
-      if (participant['profilePicture'] != null) {
+      if (participant['id'] != _userId && participant['profilePicture'] != null) {
         _participantImages[participant['id']] = participant['profilePicture'];
       }
     }
@@ -67,12 +69,8 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final otherParticipants = widget.participants
-        .where((p) => p['id'] != _userId)
-        .map((p) => '${p['firstName'] ?? ''} ${p['lastName'] ?? ''}'.trim())
-        .where((name) => name.isNotEmpty)
-        .toList();
-    _conversationTitle = otherParticipants.isEmpty ? 'Group Chat' : otherParticipants.join(', ');
+    // Use recipientName for the title
+    _conversationTitle = widget.recipientName.isNotEmpty ? widget.recipientName : 'Group Chat';
 
     try {
       final userRole = await TokenStorage.getUserRoleFromToken();
@@ -90,7 +88,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _setupMessageListeners() {
     _chatService.onNewMessage().listen((data) {
-      print('Received message event: $data');
       if (data['chatId'] == widget.chatId && data['type'] == 'NEW_MESSAGE') {
         final newMessage = data['message'] as Map<String, dynamic>;
         setState(() {
@@ -129,7 +126,6 @@ class _ChatScreenState extends State<ChatScreen> {
       } else if (data['type'] == 'MESSAGE_READ' && data['chatId'] == widget.chatId) {
         final messageId = data['messageId'] as String?;
         final readBy = List<String>.from(data['readBy'] ?? []);
-        print('Updating read status for message $messageId: $readBy');
         setState(() {
           _messages = _messages.map((m) {
             if (m['id'] == messageId) {
@@ -155,7 +151,6 @@ class _ChatScreenState extends State<ChatScreen> {
           'id': _userId,
           'firstName': 'You',
           'lastName': '',
-          'profilePicture': _participantImages[_userId],
         },
         'content': content,
         'createdAt': DateTime.now().toIso8601String(),
@@ -169,7 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       await _chatService.sendMessage(
         senderId: _userId!,
-        targetId: widget.veterinaireId,
+        targetId: widget.veterinaireId ?? widget.recipientId ?? '',
         content: content,
       );
     } catch (e) {
@@ -195,12 +190,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildAvatar(String? imageUrl, String? userId) {
-    if (imageUrl == null || imageUrl.isEmpty) {
-      return CircleAvatar(
-        radius: 20,
-        backgroundColor: Colors.grey[300],
-        child: const Icon(Icons.person, color: Colors.white),
-      );
+    if (imageUrl == null || imageUrl.isEmpty || userId == _userId) {
+      return const SizedBox(width: 0);
     }
 
     if (imageUrl.startsWith('http')) {
@@ -224,9 +215,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final senderName = '${sender?['firstName'] ?? ''} ${sender?['lastName'] ?? ''}'.trim();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isMe)
@@ -240,7 +231,7 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 if (!isMe && senderName.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.only(bottom: 4, left: 8),
                     child: Text(
                       senderName,
                       style: TextStyle(
@@ -251,23 +242,33 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                 Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  ),
                   padding: const EdgeInsets.symmetric(
-                    vertical: 10,
-                    horizontal: 14,
+                    vertical: 12,
+                    horizontal: 16,
                   ),
                   decoration: BoxDecoration(
-                    color: isMe ? Colors.blue[500] : Colors.grey[200],
+                    color: isMe ? Colors.deepPurple[400] : Colors.grey[200],
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isMe ? 16 : 4),
-                      bottomRight: Radius.circular(isMe ? 4 : 16),
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isMe ? 18 : 6),
+                      bottomRight: Radius.circular(isMe ? 6 : 18),
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Text(
                     message['content'] as String? ?? '',
                     style: TextStyle(
-                      color: isMe ? Colors.white : Colors.black,
+                      color: isMe ? Colors.white : Colors.black87,
                       fontSize: 16,
                     ),
                   ),
@@ -288,8 +289,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         const SizedBox(width: 4),
                         Icon(
                           isRead ? Icons.done_all : Icons.done,
-                          size: 15,
-                          color: isRead ? Colors.blue : Colors.grey,
+                          size: 14,
+                          color: isRead ? Colors.blueAccent : Colors.grey[400],
                         ),
                       ],
                     ],
@@ -298,11 +299,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
           ),
-          if (isMe)
-            Padding(
-              padding: const EdgeInsets.only(left: 8),
-              child: _buildAvatar(sender?['profilePicture'], sender?['id']),
-            ),
         ],
       ),
     );
@@ -332,11 +328,15 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text(
           _conversationTitle,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         backgroundColor: Colors.deepPurple,
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
+        centerTitle: true,
       ),
       body: Column(
         children: [
@@ -347,18 +347,32 @@ class _ChatScreenState extends State<ChatScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.deepPurple.withOpacity(0.05),
-                    Colors.grey.withOpacity(0.1),
+                    Colors.deepPurple.withOpacity(0.03),
+                    Colors.grey.withOpacity(0.05),
                   ],
                 ),
               ),
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _messages.isEmpty
-                  ? const Center(
-                child: Text(
-                  'No messages yet',
-                  style: TextStyle(color: Colors.grey),
+                  ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.forum_outlined,
+                      size: 48,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Start the conversation',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
                 ),
               )
                   : ListView.builder(
@@ -373,15 +387,15 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.2),
-                  spreadRadius: 1,
-                  blurRadius: 3,
-                  offset: const Offset(0, -1),
+                  color: Colors.grey.withOpacity(0.1),
+                  spreadRadius: 2,
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
                 ),
               ],
             ),
@@ -400,7 +414,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         decoration: const InputDecoration(
                           hintText: 'Type a message...',
                           border: InputBorder.none,
+                          hintStyle: TextStyle(color: Colors.grey),
                         ),
+                        style: const TextStyle(fontSize: 16),
                         maxLines: null,
                         onSubmitted: (_) => _sendMessage(),
                       ),
@@ -412,9 +428,17 @@ class _ChatScreenState extends State<ChatScreen> {
                   decoration: BoxDecoration(
                     color: Colors.deepPurple,
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.deepPurple.withOpacity(0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.send, color: Colors.white),
+                    iconSize: 24,
                     onPressed: _sendMessage,
                   ),
                 ),

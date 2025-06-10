@@ -15,13 +15,26 @@ class AddPetScreen extends StatefulWidget {
 class _AddPetScreenState extends State<AddPetScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _speciesController = TextEditingController();
-  final _breedController = TextEditingController();
+  String? _selectedSpecies;
+  String? _selectedBreed;
   String? _selectedGender;
   DateTime? _selectedBirthDate;
   File? _imageFile;
   late final PetService _petService;
   bool _isLoading = false;
+
+  final List<String> speciesList = ['Dog', 'Cat', 'Rabbit', 'Bird', 'Hamster', 'Ferret', 'Guinea Pig', 'Fish'];
+
+  final Map<String, List<String>> breedMap = {
+    'Dog': ['Labrador', 'Poodle', 'Bulldog', 'Beagle', 'German Shepherd', 'Golden Retriever', 'Chihuahua', 'Rottweiler', 'Dachshund', 'Boxer'],
+    'Cat': ['Persian', 'Maine Coon', 'Siamese', 'Sphynx', 'Ragdoll', 'Bengal', 'British Shorthair', 'Scottish Fold', 'Abyssinian', 'American Shorthair'],
+    'Rabbit': ['Holland Lop', 'Mini Rex', 'Lionhead', 'Netherland Dwarf', 'Flemish Giant', 'Mini Lop', 'Rex', 'English Angora', 'Harlequin', 'Dutch'],
+    'Bird': ['Budgerigar', 'Cockatiel', 'Lovebird', 'Canary', 'Finch', 'Parrotlet', 'Conure', 'Amazon', 'African Grey', 'Macaw'],
+    'Hamster': ['Syrian', 'Dwarf Campbell', 'Winter White', 'Roborovski', 'Chinese', 'Teddy Bear', 'Russian Dwarf', 'Albino', 'Long-haired', 'Short-haired'],
+    'Ferret': ['Standard', 'Angora', 'Black-footed', 'Blaze', 'Sable', 'Albino', 'Champagne', 'Chocolate', 'Cinnamon', 'Panda'],
+    'Guinea Pig': ['Abyssinian', 'Peruvian', 'Silkie', 'American', 'Teddy', 'Texel', 'Coronet', 'White Crested', 'Rex', 'Baldwin'],
+    'Fish': ['Betta', 'Goldfish', 'Guppy', 'Neon Tetra', 'Angelfish', 'Discus', 'Molly', 'Platy', 'Corydoras', 'Zebra Danio'],
+  };
 
   @override
   void initState() {
@@ -95,8 +108,8 @@ class _AddPetScreenState extends State<AddPetScreen> {
 
         final response = await _petService.createPet(
           name: _nameController.text,
-          species: _speciesController.text,
-          breed: _breedController.text,
+          species: _selectedSpecies!,
+          breed: _selectedBreed!,
           gender: _selectedGender,
           birthDate: _selectedBirthDate != null
               ? DateFormat('yyyy-MM-dd').format(_selectedBirthDate!)
@@ -223,32 +236,48 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                       : null,
                                 ),
                                 const SizedBox(height: 24),
-                                TextFormField(
-                                  controller: _speciesController,
+                                DropdownButtonFormField<String>(
+                                  value: _selectedSpecies,
+                                  items: speciesList.map((species) {
+                                    return DropdownMenuItem<String>(
+                                      value: species,
+                                      child: Text(species),
+                                    );
+                                  }).toList(),
                                   decoration: inputDecoration.copyWith(
                                     labelText: 'Species',
                                     prefixIcon: const Icon(Icons.category),
                                   ),
-                                  validator: (value) => value == null || value.trim().isEmpty
-                                      ? 'Please enter the species'
-                                      : null,
+                                  onChanged: (value) => setState(() {
+                                    _selectedSpecies = value;
+                                    _selectedBreed = null; // Reset breed when species changes
+                                  }),
+                                  validator: (value) => value == null ? 'Please select a species' : null,
                                 ),
                                 const SizedBox(height: 24),
-                                TextFormField(
-                                  controller: _breedController,
+                                DropdownButtonFormField<String>(
+                                  value: _selectedBreed,
+                                  items: (_selectedSpecies != null ? breedMap[_selectedSpecies] ?? [] : [])
+                                      .map((breed) {
+                                    return DropdownMenuItem<String>(
+                                      value: breed,
+                                      child: Text(breed),
+                                    );
+                                  }).toList(),
                                   decoration: inputDecoration.copyWith(
                                     labelText: 'Breed',
                                     prefixIcon: const Icon(Icons.pets),
                                   ),
-                                  validator: (value) => value == null || value.trim().isEmpty
-                                      ? 'Please enter the breed'
+                                  onChanged: _selectedSpecies != null
+                                      ? (value) => setState(() => _selectedBreed = value)
                                       : null,
+                                  validator: (value) => value == null ? 'Please select a breed' : null,
                                 ),
                                 const SizedBox(height: 24),
                                 DropdownButtonFormField<String>(
                                   value: _selectedGender,
                                   items: ['Male', 'Female'].map((gender) {
-                                    return DropdownMenuItem(
+                                    return DropdownMenuItem<String>(
                                       value: gender,
                                       child: Text(gender),
                                     );
@@ -384,8 +413,6 @@ class _AddPetScreenState extends State<AddPetScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _speciesController.dispose();
-    _breedController.dispose();
     super.dispose();
   }
 }
