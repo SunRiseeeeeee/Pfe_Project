@@ -21,16 +21,9 @@ const getOrCreateChat = async (
   // Vérifier que l'expéditeur est un client
   const sender = await User.findById(senderId);
   if (!sender) throw new Error('Expéditeur introuvable');
-  if (sender.role !== UserRole.CLIENT) {
-    throw new Error('Seuls les clients peuvent initier une conversation');
-  }
 
   // Vérifier que le destinataire est bien un vétérinaire
   const veterinaire = await User.findById(veterinaireId);
-  if (!veterinaire) throw new Error('Vétérinaire introuvable');
-  if (veterinaire.role !== UserRole.VETERINAIRE) {
-    throw new Error('Le destinataire doit être un vétérinaire');
-  }
 
   // Récupérer tous les secrétaires associés à ce vétérinaire
   const secretaires = await User.find({ 
