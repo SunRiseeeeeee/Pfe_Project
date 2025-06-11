@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/secretary_service.dart';
 import '../models/token_storage.dart';
 import './secretary_details_screen.dart';
+import './edit_secretary_screen.dart'; // Add this import
 
 class SecretaryScreen extends StatefulWidget {
   const SecretaryScreen({Key? key}) : super(key: key);
@@ -259,6 +260,25 @@ class _SecretaryScreenState extends State<SecretaryScreen> {
     );
   }
 
+  void _showEditSecretaryDialog(Secretary secretary) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditSecretaryScreen(secretary: secretary),
+      ),
+    );
+
+    // If a secretary was updated, refresh the list
+    if (result != null && result is Secretary) {
+      setState(() {
+        final index = secretaries.indexWhere((s) => s.id == result.id);
+        if (index != -1) {
+          secretaries[index] = result;
+        }
+      });
+    }
+  }
+
   void _deleteSecretary(String secretaryId) {
     showDialog(
       context: context,
@@ -397,7 +417,9 @@ class _SecretaryScreenState extends State<SecretaryScreen> {
                   ),
                   padding: const EdgeInsets.all(16),
                   child: isLoading
-                      ? const Center(child: CircularProgressIndicator(color: Color(0xFF800080)))
+                      ? const Center(child: CircularProgressIndicator(color
+
+                      : Color(0xFF800080)))
                       : errorMessage != null
                       ? Center(child: Text(errorMessage!, style: GoogleFonts.poppins(color: Colors.red)))
                       : secretaries.isEmpty
@@ -477,9 +499,18 @@ class _SecretaryScreenState extends State<SecretaryScreen> {
                               if (secretary.phoneNumber != null) Text(secretary.phoneNumber!, style: GoogleFonts.poppins()),
                             ],
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Color(0xFF800080)),
-                            onPressed: () => _deleteSecretary(secretary.id),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Color(0xFF800080)),
+                                onPressed: () => _showEditSecretaryDialog(secretary),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Color(0xFF800080)),
+                                onPressed: () => _deleteSecretary(secretary.id),
+                              ),
+                            ],
                           ),
                         ),
                       );

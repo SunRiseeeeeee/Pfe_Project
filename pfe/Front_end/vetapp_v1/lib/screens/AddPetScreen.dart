@@ -15,6 +15,7 @@ class AddPetScreen extends StatefulWidget {
 class _AddPetScreenState extends State<AddPetScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _otherBreedController = TextEditingController(); // New controller for other breed
   String? _selectedSpecies;
   String? _selectedBreed;
   String? _selectedGender;
@@ -26,14 +27,14 @@ class _AddPetScreenState extends State<AddPetScreen> {
   final List<String> speciesList = ['Dog', 'Cat', 'Rabbit', 'Bird', 'Hamster', 'Ferret', 'Guinea Pig', 'Fish'];
 
   final Map<String, List<String>> breedMap = {
-    'Dog': ['Labrador', 'Poodle', 'Bulldog', 'Beagle', 'German Shepherd', 'Golden Retriever', 'Chihuahua', 'Rottweiler', 'Dachshund', 'Boxer'],
-    'Cat': ['Persian', 'Maine Coon', 'Siamese', 'Sphynx', 'Ragdoll', 'Bengal', 'British Shorthair', 'Scottish Fold', 'Abyssinian', 'American Shorthair'],
-    'Rabbit': ['Holland Lop', 'Mini Rex', 'Lionhead', 'Netherland Dwarf', 'Flemish Giant', 'Mini Lop', 'Rex', 'English Angora', 'Harlequin', 'Dutch'],
-    'Bird': ['Budgerigar', 'Cockatiel', 'Lovebird', 'Canary', 'Finch', 'Parrotlet', 'Conure', 'Amazon', 'African Grey', 'Macaw'],
-    'Hamster': ['Syrian', 'Dwarf Campbell', 'Winter White', 'Roborovski', 'Chinese', 'Teddy Bear', 'Russian Dwarf', 'Albino', 'Long-haired', 'Short-haired'],
-    'Ferret': ['Standard', 'Angora', 'Black-footed', 'Blaze', 'Sable', 'Albino', 'Champagne', 'Chocolate', 'Cinnamon', 'Panda'],
-    'Guinea Pig': ['Abyssinian', 'Peruvian', 'Silkie', 'American', 'Teddy', 'Texel', 'Coronet', 'White Crested', 'Rex', 'Baldwin'],
-    'Fish': ['Betta', 'Goldfish', 'Guppy', 'Neon Tetra', 'Angelfish', 'Discus', 'Molly', 'Platy', 'Corydoras', 'Zebra Danio'],
+    'Dog': ['Labrador', 'Poodle', 'Bulldog', 'Beagle', 'German Shepherd', 'Golden Retriever', 'Chihuahua', 'Rottweiler', 'Dachshund', 'Boxer', 'Other'],
+    'Cat': ['Persian', 'Maine Coon', 'Siamese', 'Sphynx', 'Ragdoll', 'Bengal', 'British Shorthair', 'Scottish Fold', 'Abyssinian', 'American Shorthair', 'Other'],
+    'Rabbit': ['Holland Lop', 'Mini Rex', 'Lionhead', 'Netherland Dwarf', 'Flemish Giant', 'Mini Lop', 'Rex', 'English Angora', 'Harlequin', 'Dutch', 'Other'],
+    'Bird': ['Budgerigar', 'Cockatiel', 'Lovebird', 'Canary', 'Finch', 'Parrotlet', 'Conure', 'Amazon', 'African Grey', 'Macaw', 'Other'],
+    'Hamster': ['Syrian', 'Dwarf Campbell', 'Winter White', 'Roborovski', 'Chinese', 'Teddy Bear', 'Russian Dwarf', 'Albino', 'Long-haired', 'Short-haired', 'Other'],
+    'Ferret': ['Standard', 'Angora', 'Black-footed', 'Blaze', 'Sable', 'Albino', 'Champagne', 'Chocolate', 'Cinnamon', 'Panda', 'Other'],
+    'Guinea Pig': ['Abyssinian', 'Peruvian', 'Silkie', 'American', 'Teddy', 'Texel', 'Coronet', 'White Crested', 'Rex', 'Baldwin', 'Other'],
+    'Fish': ['Betta', 'Goldfish', 'Guppy', 'Neon Tetra', 'Angelfish', 'Discus', 'Molly', 'Platy', 'Corydoras', 'Zebra Danio', 'Other'],
   };
 
   @override
@@ -106,10 +107,18 @@ class _AddPetScreenState extends State<AddPetScreen> {
           print('Image file size: ${_imageFile!.lengthSync() / 1024 / 1024} MB');
         }
 
+        // Determine the breed to send
+        String breedToSend = '';
+        if (_selectedBreed == 'Other') {
+          breedToSend = _otherBreedController.text.trim();
+        } else if (_selectedBreed != null) {
+          breedToSend = _selectedBreed!;
+        }
+
         final response = await _petService.createPet(
           name: _nameController.text,
           species: _selectedSpecies!,
-          breed: _selectedBreed!,
+          breed: breedToSend,
           gender: _selectedGender,
           birthDate: _selectedBirthDate != null
               ? DateFormat('yyyy-MM-dd').format(_selectedBirthDate!)
@@ -251,6 +260,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                   onChanged: (value) => setState(() {
                                     _selectedSpecies = value;
                                     _selectedBreed = null; // Reset breed when species changes
+                                    _otherBreedController.clear(); // Clear other breed field
                                   }),
                                   validator: (value) => value == null ? 'Please select a species' : null,
                                 ),
@@ -265,14 +275,33 @@ class _AddPetScreenState extends State<AddPetScreen> {
                                     );
                                   }).toList(),
                                   decoration: inputDecoration.copyWith(
-                                    labelText: 'Breed',
+                                    labelText: 'Breed (Optional)',
                                     prefixIcon: const Icon(Icons.pets),
                                   ),
                                   onChanged: _selectedSpecies != null
-                                      ? (value) => setState(() => _selectedBreed = value)
+                                      ? (value) => setState(() {
+                                    _selectedBreed = value;
+                                    if (value != 'Other') {
+                                      _otherBreedController.clear(); // Clear other breed field if not "Other"
+                                    }
+                                  })
                                       : null,
-                                  validator: (value) => value == null ? 'Please select a breed' : null,
+                                  validator: null, // Remove validation to make breed optional
                                 ),
+                                // Show other breed text field when "Other" is selected
+                                if (_selectedBreed == 'Other') ...[
+                                  const SizedBox(height: 24),
+                                  TextFormField(
+                                    controller: _otherBreedController,
+                                    decoration: inputDecoration.copyWith(
+                                      labelText: 'Specify Other Breed',
+                                      prefixIcon: const Icon(Icons.edit),
+                                    ),
+                                    validator: (value) => value == null || value.trim().isEmpty
+                                        ? 'Please specify the breed'
+                                        : null,
+                                  ),
+                                ],
                                 const SizedBox(height: 24),
                                 DropdownButtonFormField<String>(
                                   value: _selectedGender,
@@ -413,6 +442,7 @@ class _AddPetScreenState extends State<AddPetScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _otherBreedController.dispose(); // Dispose the new controller
     super.dispose();
   }
 }

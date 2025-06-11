@@ -206,6 +206,70 @@ class SecretaryService {
     }
   }
 
+  // Update a secretary
+  Future<Secretary> updateSecretary(String secretaryId, Map<String, dynamic> secretaryData, [File? image]) async {
+    final token = await TokenStorage.getToken();
+    if (token == null) {
+      throw Exception('Authentication token not found');
+    }
+
+    var request = http.MultipartRequest(
+      'PUT',
+      Uri.parse('$baseUrl/users/$secretaryId'),
+    );
+    request.headers['Authorization'] = 'Bearer $token';
+
+    // Add text fields
+    secretaryData.forEach((key, value) {
+      request.fields[key] = value.toString();
+    });
+
+    // Add image file if provided
+    if (image != null) {
+      final exists = await image.exists();
+      final length = exists ? await image.length() : 0;
+      final filename = image.path.split('/').last;
+      final extension = filename.split('.').last.toLowerCase();
+      debugPrint('Uploading image: ${image.path}, Exists: $exists, Size: $length bytes, Filename: $filename, Extension: $extension');
+      if (!exists) {
+        throw Exception('Image file does not exist: ${image.path}');
+      }
+      String mimeType;
+      switch (extension) {
+        case 'jpg':
+        case 'jpeg':
+          mimeType = 'image/jpeg';
+          break;
+        case 'png':
+          mimeType = 'image/png';
+          break;
+        case 'gif':
+          mimeType = 'image/gif';
+          break;
+        default:
+          mimeType = 'image/jpeg';
+      }
+      final file = await http.MultipartFile.fromPath(
+        'profilePicture',
+        image.path,
+        contentType: MediaType('image', extension == 'jpg' ? 'jpeg' : extension),
+      );
+      request.files.add(file);
+      debugPrint('Multipart fields: ${request.fields}, Files: ${request.files.length}, MIME: $mimeType');
+    }
+
+    final response = await request.send();
+    final responseBody = await response.stream.bytesToString();
+    debugPrint('Update secretary response: $responseBody');
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(responseBody);
+      return Secretary.fromJson(data['user'] ?? data);
+    } else {
+      throw Exception('Failed to update secretary: $responseBody');
+    }
+  }
+
   // Delete a secretary
   Future<void> deleteSecretary(String secretaryId) async {
     final token = await TokenStorage.getToken();

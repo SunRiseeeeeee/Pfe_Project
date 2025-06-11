@@ -545,22 +545,36 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: _isSearching
-            ? TextField(
-          controller: _searchController,
-          autofocus: true,
-          style: GoogleFonts.poppins(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'Rechercher par nom...',
-            hintStyle: GoogleFonts.poppins(color: Colors.white70),
-            border: InputBorder.none,
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.clear, color: Colors.white),
-              onPressed: () {
-                _searchController.clear();
-                _applySearchFilter();
-              },
+            ? Row(
+          children: [
+            Expanded(
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Colors.white,
+                      width: 1.0,
+                    ),
+                  ),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  style: GoogleFonts.poppins(color: Colors.white),
+                  cursorColor: Colors.white,
+                  decoration: InputDecoration(
+                    hintText: 'Search with name...',
+                    hintStyle: GoogleFonts.poppins(color: Colors.white70),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    contentPadding: const EdgeInsets.only(bottom: 4),
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         )
             : Text(
           'Conversations',
@@ -578,7 +592,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               color: Colors.white,
             ),
             onPressed: _toggleSearch,
-            tooltip: _isSearching ? 'Annuler la recherche' : 'Rechercher',
+            tooltip: _isSearching ? 'Cancel the search' : 'Rechercher',
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white),
@@ -604,8 +618,8 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               const SizedBox(height: 16),
               Text(
                 _searchController.text.isNotEmpty
-                    ? 'Aucune conversation trouvée pour "${_searchController.text}"'
-                    : 'Aucune conversation',
+                    ? 'No conversation found for "${_searchController.text}"'
+                    : 'No conversation',
                 style: GoogleFonts.poppins(
                   color: Colors.grey[600],
                   fontSize: 16,
