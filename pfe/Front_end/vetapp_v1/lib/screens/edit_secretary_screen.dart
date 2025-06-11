@@ -320,7 +320,7 @@ class _EditSecretaryScreenState extends State<EditSecretaryScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                       
+
 
                         // Password Field (Editable)
                         TextField(
