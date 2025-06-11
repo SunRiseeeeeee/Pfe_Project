@@ -149,46 +149,47 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   }
 
   void _startConversation() async {
-    if (_userId == null) {
+    if (_userId == null || _userRole == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to start a chat')),
+        const SnackBar(content: Text('Veuillez vous connecter pour démarrer une conversation')),
       );
       return;
     }
 
     setState(() => _isStartingChat = true);
+
     try {
+      // Ensure WebSocket connection
       if (!_chatService.isConnected()) {
         await _chatService.connect(_userId!, _userRole!.toUpperCase());
-        print('Established WebSocket connection for user $_userId');
+        print('WebSocket connected for user $_userId with role: $_userRole');
       }
-      await _chatService.getConversations(_userId!).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => print('getConversations timed out, proceeding anyway'),
-      );
 
-      final conversation = await _chatService
-          .getOrCreateConversation(
+      // Determine the role
+      final role = _userRole!.toLowerCase();
+      String targetId;
+      String recipientName;
+
+      if (role == 'veterinaire') {
+        // ❗ This part assumes you have a `client` object or selection logic
+        throw Exception("Vétérinaire: client cible manquant pour démarrer la conversation.");
+      } else {
+        // Client or other user starting the conversation with the veterinarian
+        targetId = widget.vet.id;
+        recipientName = 'Dr. ${widget.vet.firstName} ${widget.vet.lastName}'.trim();
+        print('Utilisateur (${_userRole}) démarrant une conversation avec le vétérinaire: $recipientName');
+      }
+
+      // Get or create the conversation
+      final conversation = await _chatService.getOrCreateConversation(
         userId: _userId!,
-        vetId: widget.vet.id,
-      )
-          .timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw Exception('Conversation creation timed out'),
+        targetId: targetId,
       );
 
       final chatId = conversation['chatId'] as String;
       final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
 
-      participants.forEach((participant) {
-        if (participant['profilePicture'] != null &&
-            (participant['profilePicture'] as String).contains('localhost')) {
-          participant['profilePicture'] = (participant['profilePicture'] as String)
-              .replaceAll('localhost', '192.168.1.16');
-        }
-      });
-
-      print('Navigating to ChatScreen with chatId: $chatId, participants: $participants');
+      print('Conversation trouvée/créée: Chat ID: $chatId, Participants: ${participants.length}');
 
       if (mounted) {
         Navigator.push(
@@ -196,30 +197,23 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
           MaterialPageRoute<void>(
             builder: (context) => ChatScreen(
               chatId: chatId,
-              veterinaireId: widget.vet.id,
+              veterinaireId: role == 'veterinaire' ? _userId! : widget.vet.id,
               participants: participants,
-              vetId: '',
-              recipientId: null,
-              recipientName: '',
+              recipientId: targetId,
+              recipientName: recipientName,
             ),
           ),
         );
       }
     } catch (e) {
-      print('Error starting conversation: $e');
+      print('Erreur lors du démarrage de la conversation: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start conversation: ${e.toString()}')),
+          SnackBar(
+            content: Text('Impossible de démarrer la conversation: ${e.toString()}'),
+            duration: const Duration(seconds: 3),
+          ),
         );
-      }
-      if (e.toString().contains('WebSocket')) {
-        _chatService.disconnect();
-        try {
-          await _chatService.connect(_userId!, _userRole!.toUpperCase());
-          print('Reconnected WebSocket after error');
-        } catch (reconnectError) {
-          print('Failed to reconnect WebSocket: $reconnectError');
-        }
       }
     } finally {
       if (mounted) {
@@ -330,12 +324,12 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
 
     return Row(
       children: [
-        _buildTimeChip('$start - ${pauseStart ?? end}', Colors.green),
+        _buildTimeChip('$start - ${pauseStart ?? end}', Colors.purple),
         if (pauseStart != null && pauseEnd != null && pauseEnd.isNotEmpty) ...[
           const SizedBox(width: 8),
           _buildBreakChip(),
           const SizedBox(width: 8),
-          _buildTimeChip('$pauseEnd - $end', Colors.green),
+          _buildTimeChip('$pauseEnd - $end', Colors.purple),
         ],
       ],
     );
@@ -364,19 +358,19 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.orange[50],
+        color: Colors.red[50],
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.orange[100]!),
+        border: Border.all(color: Colors.red[100]!),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.pause_circle_outline, size: 14, color: Colors.orange[600]),
+          Icon(Icons.pause_circle_outline, size: 14, color: Colors.red[600]),
           const SizedBox(width: 4),
           Text(
             'Break',
             style: GoogleFonts.poppins(
-              color: Colors.orange[600],
+              color: Colors.red[600],
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
@@ -604,23 +598,47 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Location',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+
+                    const SizedBox(height: 16), // Increased spacing for better visual hierarchy
                     GestureDetector(
                       onTap: _openMapsLocation,
-                      child: Text(
-                        'See Location →',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          color: Colors.blue,
-                          decoration: TextDecoration.underline,
+                      child: Card(
+                        elevation: 3, // Subtle shadow for depth
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12), // Rounded corners
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50], // Light blue background for a soft look
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue[100]!, width: 1), // Subtle border
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 20,
+                                color: Colors.blue[800], // Deep blue for contrast
+                              ),
+                              const SizedBox(width: 8), // Space between icon and text
+                              Text(
+                                'View Location',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600, // Bolder for emphasis
+                                  color: Colors.blue[800], // Matching deep blue
+                                ),
+                              ),
+                              const Spacer(), // Push arrow to the right
+                              Icon(
+                                Icons.arrow_forward,
+                                size: 18,
+                                color: Colors.blue[800], // Match icon color
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

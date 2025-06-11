@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/client_service.dart';
+import '../services/chat_service.dart';
 import '../models/token_storage.dart';
 import 'AnimalFicheScreen.dart';
 
+import 'chat_screen.dart';
 
 class VetClientScreen extends StatefulWidget {
   const VetClientScreen({super.key});
@@ -298,39 +301,155 @@ class ClientDetailsScreen extends StatefulWidget {
 
 class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
   late final ClientService _clientService;
+  final ChatService _chatService = ChatService();
   List<Animal> _animals = [];
   bool _isLoadingAnimals = true;
+  bool _isStartingChat = false;
   String _animalErrorMessage = '';
+  String? _userId;
+  String? _userRole;
 
   @override
   void initState() {
     super.initState();
     final dio = Provider.of<Dio>(context, listen: false);
     _clientService = ClientService(dio: dio);
-    _loadAnimals();
+    _initialize();
   }
 
-  Future<void> _loadAnimals() async {
+  Future<void> _initialize() async {
     setState(() {
       _isLoadingAnimals = true;
       _animalErrorMessage = '';
     });
 
     try {
+      // Fetch user ID and role
+      _userId = await TokenStorage.getUserId();
+      _userRole = await TokenStorage.getUserRoleFromToken();
+      debugPrint('User ID: $_userId, Role: $_userRole');
+
+      if (_userId != null && _userRole != null) {
+        // Connect to ChatService
+        await _chatService.connect(_userId!, _userRole!.toUpperCase());
+        debugPrint('WebSocket connected for user $_userId with role: $_userRole');
+      } else {
+        debugPrint('User ID or role not found');
+      }
+
+      // Load client animals
+      await _loadAnimals();
+    } catch (e) {
+      debugPrint('Initialization error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to initialize: $e')),
+        );
+      }
+    } finally {
+      setState(() => _isLoadingAnimals = false);
+    }
+  }
+
+  Future<void> _loadAnimals() async {
+    try {
       final animals = await _clientService.fetchClientAnimals(widget.vetId, widget.client.id);
       debugPrint('Fetched animals for client ${widget.client.id}: ${animals.length}');
       setState(() {
         _animals = animals;
+        _animalErrorMessage = '';
       });
     } catch (e) {
       debugPrint('Error loading animals: $e');
       setState(() {
         _animalErrorMessage = 'Error loading pets: $e';
       });
+    }
+  }
+
+  Future<void> _startConversation() async {
+    if (_userId == null || _userRole == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please log in to start a conversation')),
+      );
+      return;
+    }
+
+    if (!['veterinaire', 'secretaire'].contains(_userRole!.toLowerCase())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Only veterinarians or secretaries can start conversations')),
+      );
+      return;
+    }
+
+    setState(() => _isStartingChat = true);
+
+    try {
+      // Ensure WebSocket connection
+      if (!_chatService.isConnected()) {
+        await _chatService.connect(_userId!, _userRole!.toUpperCase());
+        debugPrint('WebSocket reconnected for user $_userId with role: $_userRole');
+      }
+
+      // Start conversation with client
+      final targetId = widget.client.id;
+      final recipientName = '${widget.client.firstName} ${widget.client.lastName}'.trim();
+      debugPrint('Starting conversation with client: $recipientName (ID: $targetId})');
+
+      // Get or create conversation
+      final conversation = await _chatService.getOrCreateConversation(
+        userId: _userId!,
+        targetId: targetId,
+      );
+
+      final chatId = conversation['chatId'] as String;
+      final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
+
+      debugPrint('Conversation found/created: Chat ID: $chatId, Participants: ${participants.length}');
+
+      // Determine veterinaireId based on role
+      String? veterinaireId;
+      String? vetId;
+      if (_userRole!.toLowerCase() == 'veterinaire') {
+        veterinaireId = _userId;
+        vetId = _userId;
+      } else if (_userRole!.toLowerCase() == 'secretaire') {
+        veterinaireId = await TokenStorage.getVeterinaireId() ?? widget.vetId;
+        vetId = veterinaireId;
+      }
+
+      if (mounted) {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatId: chatId,
+              veterinaireId: veterinaireId,
+              participants: participants,
+              vetId: vetId,
+              recipientId: targetId,
+              recipientName: recipientName,
+            ),
+          ),
+        );
+
+        // Refresh conversations if message was sent
+        if (result == true) {
+          debugPrint('Message sent, refreshing conversations');
+          // Optionally notify parent screen to refresh conversations
+        }
+      }
+    } catch (e) {
+      debugPrint('Error starting conversation: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start conversation: $e')),
+        );
+      }
     } finally {
-      setState(() {
-        _isLoadingAnimals = false;
-      });
+      if (mounted) {
+        setState(() => _isStartingChat = false);
+      }
     }
   }
 
@@ -368,6 +487,66 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildStyledButton({
+    required VoidCallback? onPressed,
+    required Color backgroundColor,
+    required IconData icon,
+    required String label,
+    required bool isLoading,
+  }) {
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: onPressed != null
+            ? [
+          BoxShadow(
+            color: backgroundColor.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ]
+            : [],
+      ),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: backgroundColor,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: backgroundColor.withOpacity(0.5),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        child: isLoading
+            ? const SizedBox(
+          height: 20,
+          width: 20,
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          ),
+        )
+            : Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -503,6 +682,15 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
                                 overflow: TextOverflow.ellipsis,
                                 maxLines: 1,
                               ),
+                              const SizedBox(height: 8),
+                              if (['veterinaire', 'secretaire'].contains(_userRole?.toLowerCase()))
+                                _buildStyledButton(
+                                  onPressed: _isStartingChat ? null : _startConversation,
+                                  backgroundColor: const Color(0xF5914ABB),
+                                  icon: Icons.chat_bubble_outline,
+                                  label: 'Start Conversation',
+                                  isLoading: _isStartingChat,
+                                ),
                             ],
                           ),
                         ),
@@ -585,6 +773,12 @@ class _ClientDetailsScreenState extends State<ClientDetailsScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _chatService.dispose();
+    super.dispose();
   }
 }
 

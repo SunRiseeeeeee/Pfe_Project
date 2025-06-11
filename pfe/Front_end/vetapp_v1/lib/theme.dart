@@ -3,13 +3,14 @@ import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static ThemeData buildLightTheme() {
-    final Color primaryColor = Colors.deepPurple;
-    final Color primaryContainer = Color(0xFF5E35B1);
-    final Color secondaryColor = Color(0xFF7C4DFF);
+    final Color primaryColor = Color(0xFFA11D95);
+    final Color primaryContainer = Color(0xFF800080);
+    final Color secondaryColor = Color(0xFF800080);
     final Color secondaryContainer = Colors.deepPurple[200]!;
     final Color surfaceColor = Colors.white;
     final Color backgroundColor = Color(0xFFF5F5F5);
     final Color onSurfaceColor = Color(0xFF212121);
+    final Color appBarTextColor = Colors.white;
     final Color errorColor = Color(0xFFD32F2F);
 
     return ThemeData(
@@ -41,7 +42,7 @@ class AppTheme {
         elevation: 0,
         iconTheme: IconThemeData(color: Colors.white),
         titleTextStyle: GoogleFonts.poppins(
-          color: Colors.white,
+          color: Colors.white, // Explicitly set to pure white
           fontSize: 20,
           fontWeight: FontWeight.bold,
         ),
@@ -197,7 +198,7 @@ class AppTheme {
         elevation: 0,
         iconTheme: IconThemeData(color: Colors.white),
         titleTextStyle: GoogleFonts.poppins(
-          color: onSurfaceColor,
+          color: Colors.white, // Explicitly set to pure white
           fontSize: 20,
           fontWeight: FontWeight.bold,
         ),

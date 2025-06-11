@@ -52,17 +52,24 @@ const getOrCreateChat = async (
     finalClientId = clientId;
   }
 
-  // Récupérer les secrétaires du vétérinaire
+  // Retrieve secretaries associated with the veterinarian
   const secretaires = await User.find({
     role: UserRole.SECRETAIRE,
     veterinaireId: veterinaireId,
-  }).select('_id').lean();
+  }).select('_id firstName lastName').lean();
 
   const participants = [
     new Types.ObjectId(finalClientId),
     new Types.ObjectId(veterinaireId),
     ...secretaires.map(s => s._id),
   ].sort();
+
+  // Log participants for debugging
+  console.log(`Participants for chat: ${participants.length}`);
+  for (const participantId of participants) {
+    const user = await User.findById(participantId).select('firstName lastName role');
+    console.log(`- ${user?.firstName} ${user?.lastName} (${user?.role}, ID: ${participantId})`);
+  }
 
   const existingChat = await Chat.findOne({
     participants: {
@@ -86,7 +93,6 @@ const getOrCreateChat = async (
   console.log(`🆕 Nouveau chat créé : ${newChat._id}`);
   return newChat.id;
 };
-
 
 wss.on('connection', (ws: WebSocket) => {
   console.log('Client connecté.');
@@ -331,7 +337,7 @@ case 'SEND_MESSAGE': {
   if (!senderId || !veterinaireId || !content) {
     ws.send(JSON.stringify({
       type: 'ERROR',
-      message: 'senderId, veterinaireId et content sont requis',
+      message: 'senderId, veterinaireId, et content sont requis',
     }));
     break;
   }
@@ -355,25 +361,12 @@ case 'SEND_MESSAGE': {
     break;
   }
 
-  // Validation spécifique par rôle
-  if (role === UserRole.SECRETAIRE) {
-    if (!sender.veterinaireId || sender.veterinaireId.toString() !== veterinaireId) {
-      ws.send(JSON.stringify({
-        type: 'ERROR',
-        message: 'Secrétaire non autorisé pour ce vétérinaire',
-      }));
-      break;
-    }
-    if (!clientId) {
-      ws.send(JSON.stringify({
-        type: 'ERROR',
-        message: 'clientId est requis pour un secrétaire',
-      }));
-      break;
-    }
-  }
+  // Determine clientId based on role
+  let finalClientId: string | undefined;
 
-  if (role === UserRole.VETERINAIRE) {
+  if (role === UserRole.CLIENT) {
+    finalClientId = senderId; // Client is the sender
+  } else if (role === UserRole.VETERINAIRE) {
     if (sender._id.toString() !== veterinaireId) {
       ws.send(JSON.stringify({
         type: 'ERROR',
@@ -388,15 +381,27 @@ case 'SEND_MESSAGE': {
       }));
       break;
     }
+    finalClientId = clientId;
+  } else if (role === UserRole.SECRETAIRE) {
+    if (!sender.veterinaireId || sender.veterinaireId.toString() !== veterinaireId) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'Secrétaire non autorisé pour ce vétérinaire',
+      }));
+      break;
+    }
+    if (!clientId) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        message: 'clientId est requis pour un secrétaire',
+      }));
+      break;
+    }
+    finalClientId = clientId;
   }
 
-  // Obtenir ou créer le chat
-const chatId = await getOrCreateChat(
-  senderId,
-  veterinaireId,
-  role === UserRole.CLIENT ? undefined : clientId
-);
-
+  // Get or create chat with client, vet, and secretaries (if any)
+  const chatId = await getOrCreateChat(senderId, veterinaireId, finalClientId);
 
   const newMessage = await Message.create({
     chatId,
@@ -420,12 +425,10 @@ const chatId = await getOrCreateChat(
     break;
   }
 
-  // Notifier les autres participants
+  // Notify all participants
   for (const participant of chat.participants) {
     const participantId = participant._id.toString();
     if (participantId === senderId) continue;
-
-    console.log(`🔔 Notification envoyée à ${participantId}`);
 
     const recipientSocket = clients.get(participantId);
     if (recipientSocket?.readyState === WebSocket.OPEN) {
@@ -441,6 +444,7 @@ const chatId = await getOrCreateChat(
             firstName: sender.firstName,
             lastName: sender.lastName,
             profilePicture: sender.profilePicture,
+            role: sender.role,
           },
           createdAt: newMessage.createdAt,
         },
@@ -454,7 +458,7 @@ const chatId = await getOrCreateChat(
     }
   }
 
-  // Répondre à l'expéditeur
+  // Respond to sender
   ws.send(JSON.stringify({
     type: 'MESSAGE_SENT',
     status: 'success',

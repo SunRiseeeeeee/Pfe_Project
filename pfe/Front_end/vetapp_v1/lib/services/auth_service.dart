@@ -46,9 +46,13 @@ class AuthService {
         print("Refresh Token: $refreshToken");
         print("User ID: $userId");
 
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('accessToken', accessToken);
-        await prefs.setString('refreshToken', refreshToken);
+        await TokenStorage.storeTokens(accessToken, refreshToken);
+        await TokenStorage.setToken(
+          accessToken,
+          userId,
+          response.data["user"]["firstName"],
+          response.data["user"]["lastName"],
+        );
 
         return {
           "success": true,
@@ -109,11 +113,8 @@ class AuthService {
         final accessToken = response.data["tokens"]["accessToken"];
         final refreshToken = response.data["tokens"]["refreshToken"];
 
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('userId', userId);
-        await prefs.setString('accessToken', accessToken);
-        await prefs.setString('refreshToken', refreshToken);
         await TokenStorage.storeTokens(accessToken, refreshToken);
+        await TokenStorage.setToken(accessToken, userId, firstName, lastName);
 
         return {
           "success": true,
@@ -132,6 +133,57 @@ class AuthService {
       return {
         "success": false,
         "message": e.response?.data["message"] ?? "An error occurred. Please try again.",
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> refreshToken() async {
+    try {
+      final refreshToken = await TokenStorage.getRefreshToken();
+      if (refreshToken == null) {
+        throw Exception('No refresh token found');
+      }
+
+      final response = await _dio.post(
+        "/refresh-token",
+        data: {
+          "refreshToken": refreshToken,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final accessToken = response.data["tokens"]["accessToken"];
+        final newRefreshToken = response.data["tokens"]["refreshToken"];
+        final userId = response.data["user"]["id"];
+        final firstName = response.data["user"]["firstName"];
+        final lastName = response.data["user"]["lastName"];
+
+        await TokenStorage.storeTokens(accessToken, newRefreshToken);
+        await TokenStorage.setToken(
+          accessToken,
+          userId,
+          firstName,
+          lastName,
+          newRefreshToken,
+        );
+
+
+        return {
+          "success": true,
+          "accessToken": accessToken,
+          "refreshToken": newRefreshToken,
+        };
+      } else {
+        return {
+          "success": false,
+          "message": response.data["message"] ?? "Failed to refresh token",
+        };
+      }
+    } on DioException catch (e) {
+      print("Refresh token error: ${e.response?.data}, Status: ${e.response?.statusCode}");
+      return {
+        "success": false,
+        "message": e.response?.data["message"] ?? "Failed to refresh token",
       };
     }
   }

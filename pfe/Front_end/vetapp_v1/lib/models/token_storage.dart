@@ -7,6 +7,11 @@ class TokenStorage {
     return prefs.getString('accessToken');
   }
 
+  static Future<String?> getRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('refreshToken');
+  }
+
   static Future<String?> getUserId() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('userId');
@@ -27,8 +32,7 @@ class TokenStorage {
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -48,8 +52,7 @@ class TokenStorage {
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -69,8 +72,7 @@ class TokenStorage {
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -92,14 +94,12 @@ class TokenStorage {
       print('TokenStorage: Email from SharedPreferences: $email');
       return email;
     }
-    print('TokenStorage: No email found in SharedPreferences');
 
     final token = await getToken();
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -117,29 +117,86 @@ class TokenStorage {
     return null;
   }
 
-  static Future<void> setToken(String token, String userId, String firstName, String lastName) async {
+  /// ✅ UPDATED: Stores accessToken and optionally refreshToken
+  static Future<void> setToken(
+      String accessToken,
+      String userId,
+      String firstName,
+      String lastName, [
+        String? refreshToken,
+      ]) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('accessToken', token);
+    await prefs.setString('accessToken', accessToken);
+    if (refreshToken != null) {
+      await prefs.setString('refreshToken', refreshToken);
+    }
     await prefs.setString('userId', userId);
     await prefs.setString('firstName', firstName);
     await prefs.setString('lastName', lastName);
+
     try {
-      final username = JwtDecoder.decode(token)['username'];
-      await prefs.setString('username', username);
+      final decodedToken = JwtDecoder.decode(accessToken);
+      final username = decodedToken['username'];
+      if (username != null) {
+        await prefs.setString('username', username);
+      }
+      final veterinaireId = decodedToken['veterinaireId'];
+      if (veterinaireId != null) {
+        await prefs.setString('veterinaireId', veterinaireId);
+      }
     } catch (e) {
-      print('TokenStorage: Error saving username from token: $e');
+      print('TokenStorage: Error saving username or veterinaireId from token: $e');
     }
+  }
+
+  static Future<void> storeTokens(String accessToken, String refreshToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('accessToken', accessToken);
+    await prefs.setString('refreshToken', refreshToken);
   }
 
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('accessToken');
+    await prefs.remove('refreshToken');
     await prefs.remove('userId');
     await prefs.remove('firstName');
     await prefs.remove('lastName');
     await prefs.remove('username');
     await prefs.remove('email');
+    await prefs.remove('veterinaireId');
   }
 
-  static storeTokens(accessToken, refreshToken) {}
+  static Future<String?> getVeterinaireId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final veterinaireId = prefs.getString('veterinaireId');
+    if (veterinaireId != null) {
+      print('TokenStorage: Veterinaire ID from SharedPreferences: $veterinaireId');
+      return veterinaireId;
+    }
+
+    final token = await getToken();
+    if (token != null) {
+      try {
+        final decodedToken = JwtDecoder.decode(token);
+        if (JwtDecoder.isExpired(token)) {
+          print('TokenStorage: Token is expired');
+          return null;
+        }
+        final vetId = decodedToken['veterinaireId'];
+        if (vetId != null) {
+          print('TokenStorage: Decoded veterinaireId: $vetId');
+          await prefs.setString('veterinaireId', vetId);
+          return vetId;
+        }
+        print('TokenStorage: No veterinaireId found in token');
+        return null;
+      } catch (e) {
+        print('TokenStorage: Error decoding veterinaireId: $e');
+        return null;
+      }
+    }
+    print('TokenStorage: No token found for veterinaireId');
+    return null;
+  }
 }
