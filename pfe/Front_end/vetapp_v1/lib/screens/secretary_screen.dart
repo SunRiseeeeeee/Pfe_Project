@@ -490,15 +490,10 @@ class _SecretaryScreenState extends State<SecretaryScreen> {
                           ),
                           title: Text(
                             '${secretary.firstName} ${secretary.lastName}',
-                            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(0xFF800080)),
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: const Color(
+                                0xFF1C1A1A)),
                           ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (secretary.email != null) Text(secretary.email!, style: GoogleFonts.poppins()),
-                              if (secretary.phoneNumber != null) Text(secretary.phoneNumber!, style: GoogleFonts.poppins()),
-                            ],
-                          ),
+
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

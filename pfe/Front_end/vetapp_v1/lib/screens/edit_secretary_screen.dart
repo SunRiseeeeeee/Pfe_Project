@@ -320,21 +320,7 @@ class _EditSecretaryScreenState extends State<EditSecretaryScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Username Field (Read-only)
-                        TextField(
-                          controller: usernameController,
-                          decoration: InputDecoration(
-                            labelText: 'Username (Cannot be changed)',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            labelStyle: GoogleFonts.poppins(color: Colors.grey),
-                            filled: true,
-                            fillColor: Colors.grey[100],
-                            suffixIcon: const Icon(Icons.lock, color: Colors.grey),
-                          ),
-                          style: GoogleFonts.poppins(color: Colors.grey),
-                          enabled: false, // Makes the field read-only
-                        ),
-                        const SizedBox(height: 16),
+                       
 
                         // Password Field (Editable)
                         TextField(
@@ -386,7 +372,7 @@ class _EditSecretaryScreenState extends State<EditSecretaryScreen> {
                               'Update Secretary',
                               style: GoogleFonts.poppins(
                                 color: Colors.white,
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
