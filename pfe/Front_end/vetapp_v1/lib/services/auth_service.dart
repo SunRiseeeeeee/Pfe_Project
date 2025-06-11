@@ -159,7 +159,14 @@ class AuthService {
         final lastName = response.data["user"]["lastName"];
 
         await TokenStorage.storeTokens(accessToken, newRefreshToken);
-        await TokenStorage.setToken(accessToken, userId, firstName, lastName);
+        await TokenStorage.setToken(
+          accessToken,
+          userId,
+          firstName,
+          lastName,
+          newRefreshToken,
+        );
+
 
         return {
           "success": true,

@@ -324,12 +324,12 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
 
     return Row(
       children: [
-        _buildTimeChip('$start - ${pauseStart ?? end}', Colors.green),
+        _buildTimeChip('$start - ${pauseStart ?? end}', Colors.purple),
         if (pauseStart != null && pauseEnd != null && pauseEnd.isNotEmpty) ...[
           const SizedBox(width: 8),
           _buildBreakChip(),
           const SizedBox(width: 8),
-          _buildTimeChip('$pauseEnd - $end', Colors.green),
+          _buildTimeChip('$pauseEnd - $end', Colors.purple),
         ],
       ],
     );
@@ -358,19 +358,19 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.orange[50],
+        color: Colors.red[50],
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.orange[100]!),
+        border: Border.all(color: Colors.red[100]!),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.pause_circle_outline, size: 14, color: Colors.orange[600]),
+          Icon(Icons.pause_circle_outline, size: 14, color: Colors.red[600]),
           const SizedBox(width: 4),
           Text(
             'Break',
             style: GoogleFonts.poppins(
-              color: Colors.orange[600],
+              color: Colors.red[600],
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
@@ -598,23 +598,47 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Location',
-                      style: GoogleFonts.poppins(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+
+                    const SizedBox(height: 16), // Increased spacing for better visual hierarchy
                     GestureDetector(
                       onTap: _openMapsLocation,
-                      child: Text(
-                        'See Location →',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          color: Colors.blue,
-                          decoration: TextDecoration.underline,
+                      child: Card(
+                        elevation: 3, // Subtle shadow for depth
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12), // Rounded corners
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50], // Light blue background for a soft look
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue[100]!, width: 1), // Subtle border
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.location_on_outlined,
+                                size: 20,
+                                color: Colors.blue[800], // Deep blue for contrast
+                              ),
+                              const SizedBox(width: 8), // Space between icon and text
+                              Text(
+                                'View Location',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600, // Bolder for emphasis
+                                  color: Colors.blue[800], // Matching deep blue
+                                ),
+                              ),
+                              const Spacer(), // Push arrow to the right
+                              Icon(
+                                Icons.arrow_forward,
+                                size: 18,
+                                color: Colors.blue[800], // Match icon color
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

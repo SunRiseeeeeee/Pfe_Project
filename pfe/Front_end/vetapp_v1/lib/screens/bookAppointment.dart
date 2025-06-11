@@ -991,12 +991,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                   // Time schedule
                   Row(
                     children: [
-                      _buildTimeChip('$start - ${pauseStart ?? end}', Colors.green),
+                      _buildTimeChip('$start - ${pauseStart ?? end}', Colors.purple),
                       if (pauseStart != null && pauseEnd != null) ...[
                         const SizedBox(width: 8),
                         _buildBreakChip(),
                         const SizedBox(width: 8),
-                        _buildTimeChip('$pauseEnd - $end', Colors.green),
+                        _buildTimeChip('$pauseEnd - $end', Colors.purple),
                       ],
                     ],
                   ),
@@ -1039,12 +1039,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.pause_circle_outline, size: 14, color: Colors.orange[600]),
+          Icon(Icons.pause_circle_outline, size: 14, color: Colors.red[600]),
           const SizedBox(width: 4),
           Text(
             'Break',
             style: TextStyle(
-              color: Colors.orange[600],
+              color: Colors.red[600],
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),

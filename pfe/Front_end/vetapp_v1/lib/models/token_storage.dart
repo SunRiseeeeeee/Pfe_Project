@@ -32,8 +32,7 @@ class TokenStorage {
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -53,8 +52,7 @@ class TokenStorage {
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -74,8 +72,7 @@ class TokenStorage {
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -97,14 +94,12 @@ class TokenStorage {
       print('TokenStorage: Email from SharedPreferences: $email');
       return email;
     }
-    print('TokenStorage: No email found in SharedPreferences');
 
     final token = await getToken();
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
@@ -122,14 +117,25 @@ class TokenStorage {
     return null;
   }
 
-  static Future<void> setToken(String token, String userId, String firstName, String lastName) async {
+  /// ✅ UPDATED: Stores accessToken and optionally refreshToken
+  static Future<void> setToken(
+      String accessToken,
+      String userId,
+      String firstName,
+      String lastName, [
+        String? refreshToken,
+      ]) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('accessToken', token);
+    await prefs.setString('accessToken', accessToken);
+    if (refreshToken != null) {
+      await prefs.setString('refreshToken', refreshToken);
+    }
     await prefs.setString('userId', userId);
     await prefs.setString('firstName', firstName);
     await prefs.setString('lastName', lastName);
+
     try {
-      final decodedToken = JwtDecoder.decode(token);
+      final decodedToken = JwtDecoder.decode(accessToken);
       final username = decodedToken['username'];
       if (username != null) {
         await prefs.setString('username', username);
@@ -173,8 +179,7 @@ class TokenStorage {
     if (token != null) {
       try {
         final decodedToken = JwtDecoder.decode(token);
-        bool hasExpired = JwtDecoder.isExpired(token);
-        if (hasExpired) {
+        if (JwtDecoder.isExpired(token)) {
           print('TokenStorage: Token is expired');
           return null;
         }
