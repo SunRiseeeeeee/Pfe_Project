@@ -150,7 +150,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       });
 
       // Connect to chat service
-      await _chatService.connect(userId, role);
+      await _chatService.connect(userId, role.toUpperCase());
 
       // Listen to conversation updates
       _conversationsSubscription = _chatService.onConversations().listen(
@@ -172,8 +172,8 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       // Listen to new messages for real-time updates
       _messagesSubscription = _chatService.onNewMessage().listen(
             (data) {
-          if (data['type'] == 'NEW_MESSAGE') {
-            // Refresh conversations when new message arrives
+          if (data['type'] == 'NEW_MESSAGE' || data['type'] == 'MESSAGE_SENT') {
+            // Force refresh conversations for immediate update
             _refreshConversations();
           } else if (data['type'] == 'MESSAGE_READ') {
             _handleMessageRead(data);
@@ -194,7 +194,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur d $e')),
+          SnackBar(content: Text('Erreur d\'initialisation : $e')),
         );
       }
     }
@@ -205,8 +205,8 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
 
     final updatedConversations = conversationsJson
         .map((convo) => Conversation.fromJson(
-        convo as Map<String, dynamic>,
-        _userId ?? ''
+      convo as Map<String, dynamic>,
+      _userId ?? '',
     ))
         .toList();
 
@@ -242,8 +242,12 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
   }
 
   Future<void> _refreshConversations() async {
-    if (_userId != null) {
-      await _chatService.getConversations(_userId!);
+    if (_userId != null && mounted) {
+      try {
+        await _chatService.getConversations(_userId!);
+      } catch (e) {
+        debugPrint('Refresh conversations error: $e');
+      }
     }
   }
 
@@ -415,9 +419,6 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     final isUnread = conversation.hasUnreadMessages &&
         !conversation.isLastMessageFromCurrentUser(_userId ?? '');
 
-    // Add role badge for display
-
-
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       elevation: isUnread ? 2 : 1,
@@ -444,14 +445,12 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
         ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
               _formatTime(conversation.updatedAt),
               style: GoogleFonts.poppins(
                 fontSize: 12,
                 color: Colors.grey[500],
-                fontWeight: isUnread ? FontWeight.w500 : FontWeight.normal,
               ),
             ),
             const SizedBox(height: 4),
@@ -473,72 +472,72 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
               ),
           ],
         ),
-        onTap: () => _onConversationTap(conversation, participant),
+        onTap: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatScreen(
+                chatId: conversation.chatId,
+                veterinaireId: _getVeterinaireId(conversation, participant),
+                participants: conversation.participants
+                    .map((p) => {
+                  'id': p.id,
+                  'firstName': p.firstName,
+                  'lastName': p.lastName,
+                  'profilePicture': p.profilePicture,
+                  'role': p.role,
+                })
+                    .toList(),
+                vetId: _getVeterinaireId(conversation, participant),
+                recipientId: _getRecipientId(conversation, participant),
+                recipientName: '${participant.firstName} ${participant.lastName}'.trim(),
+              ),
+            ),
+          );
+          // Refresh conversations when returning from ChatScreen
+          if (result == true && _userId != null) {
+            await _refreshConversations();
+          }
+        },
       ),
     );
   }
 
-  Future<void> _onConversationTap(Conversation conversation, Participant participant) async {
-    // Mark as read if there are unread messages
-    if (_userId != null && conversation.unreadCount > 0) {
-      await _chatService.markAsRead(
-        chatId: conversation.chatId,
-        userId: _userId!,
-      );
-    }
-
-    if (mounted) {
-      // Prepare navigation parameters based on user role and participant
-      String? veterinaireId;
-      String? recipientId;
-      String? vetId;
-
-      final currentUserRole = _userRole?.toLowerCase();
-
-      if (currentUserRole == 'client') {
-        // Client -> show vet or secretary
-        if (participant.role?.toLowerCase() == 'veterinaire') {
-          veterinaireId = participant.id;
-          vetId = participant.id;
-        } else {
-          // If talking to secretary, we need to find the associated vet
-          veterinaireId = participant.id; // This might be the secretary
-          recipientId = participant.id;
-        }
-      } else if (currentUserRole == 'veterinaire') {
-        // Veterinarian -> show client
-        recipientId = participant.id;
-        veterinaireId = _userId; // Current user is the vet
-      } else if (currentUserRole == 'secretaire' || currentUserRole == 'secretary') {
-        // Secretary -> show client
-        recipientId = participant.id;
-        // Get the associated veterinarian ID
-        vetId = await TokenStorage.getVeterinaireId();
-        veterinaireId = vetId;
-      }
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            chatId: conversation.chatId,
-            veterinaireId: veterinaireId,
-            participants: conversation.participants
-                .map((p) => {
-              'id': p.id,
-              'firstName': p.firstName,
-              'lastName': p.lastName,
-              'profilePicture': p.profilePicture,
-              'role': p.role,
-            })
-                .toList(),
-            vetId: vetId,
-            recipientId: recipientId,
-            recipientName: '${participant.firstName} ${participant.lastName}'.trim(),
-          ),
+  String? _getVeterinaireId(Conversation conversation, Participant participant) {
+    final currentUserRole = _userRole?.toLowerCase();
+    if (currentUserRole == 'client') {
+      // Client: return veterinarian or secretary ID
+      return conversation.participants.firstWhere(
+            (p) => p.role?.toLowerCase() == 'veterinaire',
+        orElse: () => conversation.participants.firstWhere(
+              (p) => p.role?.toLowerCase() == 'secretaire' || p.role?.toLowerCase() == 'secretary',
+          orElse: () => Participant(id: '', firstName: '', lastName: ''),
         ),
-      );
+      ).id;
+    } else if (currentUserRole == 'veterinaire') {
+      // Veterinarian: return own ID
+      return _userId;
+    } else if (currentUserRole == 'secretaire' || currentUserRole == 'secretary') {
+      // Secretary: return associated veterinarian ID
+      return conversation.participants.firstWhere(
+            (p) => p.role?.toLowerCase() == 'veterinaire',
+        orElse: () => Participant(id: '', firstName: '', lastName: ''),
+      ).id;
     }
+    return null;
+  }
+
+  String? _getRecipientId(Conversation conversation, Participant participant) {
+    final currentUserRole = _userRole?.toLowerCase();
+    if (currentUserRole == 'veterinaire' || currentUserRole == 'secretaire' || currentUserRole == 'secretary') {
+      // Veterinarian/Secretary: return client ID
+      return conversation.participants.firstWhere(
+            (p) => p.role?.toLowerCase() == 'client',
+        orElse: () => Participant(id: '', firstName: '', lastName: ''),
+      ).id;
+    }
+    // Client: no recipient ID needed
+    return null;
   }
 
   @override

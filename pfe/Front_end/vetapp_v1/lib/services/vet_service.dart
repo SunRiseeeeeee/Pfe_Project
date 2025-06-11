@@ -1,9 +1,61 @@
 import 'package:dio/dio.dart';
 import '../models/token_storage.dart';
+import './auth_service.dart'; // Import AuthService for refresh token logic
 
 class VetService {
   static const String baseUrl = "http://192.168.1.16:3000/api/users";
   static final Dio _dio = Dio();
+
+  // Initialize Dio with token refresh interceptor
+  static void _initializeDio() {
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final token = await TokenStorage.getToken();
+        if (token != null) {
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        print("REQUEST[${options.method}] => PATH: ${options.path}, DATA: ${options.data}");
+        return handler.next(options);
+      },
+      onResponse: (response, handler) {
+        print("RESPONSE[${response.statusCode}] => PATH: ${response.requestOptions.path}, DATA: ${response.data}");
+        return handler.next(response);
+      },
+      onError: (DioException e, handler) async {
+        print("ERROR[${e.response?.statusCode}] => PATH: ${e.requestOptions.path}, MESSAGE: ${e.response?.data['message'] ?? e.message}");
+        if (e.response?.statusCode == 401) {
+          final authService = AuthService();
+          final refreshResult = await authService.refreshToken();
+          if (refreshResult["success"]) {
+            final newToken = refreshResult["accessToken"];
+            e.requestOptions.headers['Authorization'] = 'Bearer $newToken';
+            try {
+              final retryResponse = await _dio.request(
+                e.requestOptions.path,
+                data: e.requestOptions.data,
+                queryParameters: e.requestOptions.queryParameters,
+                options: Options(
+                  method: e.requestOptions.method,
+                  headers: e.requestOptions.headers,
+                ),
+              );
+              return handler.resolve(retryResponse);
+            } catch (retryError) {
+              return handler.next(retryError as DioException);
+            }
+          } else {
+            return handler.next(e);
+          }
+        }
+        return handler.next(e);
+      },
+    ));
+  }
+
+  // Call initialize in a static constructor
+  static void init() {
+    _initializeDio();
+  }
 
   static Future<Map<String, dynamic>> fetchVeterinarians({
     String? rating,

@@ -19,6 +19,7 @@ class _ServiceScreenState extends State<ServiceScreen> {
   @override
   void initState() {
     super.initState();
+    ServiceService.init(); // Initialize Dio interceptors
     _refreshServices();
   }
 
@@ -94,6 +95,21 @@ class _ServiceScreenState extends State<ServiceScreen> {
                           if (pickedFile != null) {
                             final file = File(pickedFile.path);
                             if (await file.exists()) {
+                              // Validate file type and size
+                              final extension = pickedFile.path.toLowerCase();
+                              if (!extension.endsWith('.jpg') && !extension.endsWith('.jpeg') && !extension.endsWith('.png')) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Only JPG, JPEG, or PNG images are allowed')),
+                                );
+                                return;
+                              }
+                              final fileSize = await file.length();
+                              if (fileSize > 5 * 1024 * 1024) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Image file size must be less than 5MB')),
+                                );
+                                return;
+                              }
                               setDialogState(() {
                                 selectedImage = file;
                                 print('Selected image: ${selectedImage!.path}');
@@ -118,8 +134,19 @@ class _ServiceScreenState extends State<ServiceScreen> {
                         backgroundColor: const Color(0xFF800080),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: Text(selectedImage == null ? 'Pick Image' : 'Image Selected', style: GoogleFonts.poppins(color: Colors.white)),
+                      child: Text(
+                        selectedImage == null ? 'Pick Image' : 'Image Selected',
+                        style: GoogleFonts.poppins(color: Colors.white),
+                      ),
                     ),
+                    if (selectedImage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          'Selected: ${selectedImage!.path.split('/').last} (${(selectedImage!.lengthSync() ~/ 1024)}KB)',
+                          style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
+                        ),
+                      ),
                   ],
                 ),
               );
@@ -169,11 +196,19 @@ class _ServiceScreenState extends State<ServiceScreen> {
                 if (result['success']) {
                   _refreshServices();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(isEdit ? 'Service updated' : 'Service created'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    SnackBar(
+                      content: Text(result['message'] ?? (isEdit ? 'Service updated' : 'Service created')),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(result['message'] ?? 'Operation failed'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    SnackBar(
+                      content: Text(result['message'] ?? 'Operation failed'),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                   );
                 }
               },
@@ -194,11 +229,19 @@ class _ServiceScreenState extends State<ServiceScreen> {
     if (result['success']) {
       _refreshServices();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: const Text('Service deleted'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        SnackBar(
+          content: const Text('Service deleted'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'] ?? 'Failed to delete service'), behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        SnackBar(
+          content: Text(result['message'] ?? 'Failed to delete service'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
       );
     }
   }

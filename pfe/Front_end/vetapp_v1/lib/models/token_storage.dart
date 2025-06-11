@@ -2,10 +2,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 
 class TokenStorage {
-  // Existing methods (unchanged)
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('accessToken');
+  }
+
+  static Future<String?> getRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('refreshToken');
   }
 
   static Future<String?> getUserId() async {
@@ -130,7 +134,6 @@ class TokenStorage {
       if (username != null) {
         await prefs.setString('username', username);
       }
-      // Store veterinaireId for secretaries
       final veterinaireId = decodedToken['veterinaireId'];
       if (veterinaireId != null) {
         await prefs.setString('veterinaireId', veterinaireId);
@@ -140,9 +143,16 @@ class TokenStorage {
     }
   }
 
+  static Future<void> storeTokens(String accessToken, String refreshToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('accessToken', accessToken);
+    await prefs.setString('refreshToken', refreshToken);
+  }
+
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('accessToken');
+    await prefs.remove('refreshToken');
     await prefs.remove('userId');
     await prefs.remove('firstName');
     await prefs.remove('lastName');
@@ -151,7 +161,6 @@ class TokenStorage {
     await prefs.remove('veterinaireId');
   }
 
-  // New method to get veterinaireId for secretaries
   static Future<String?> getVeterinaireId() async {
     final prefs = await SharedPreferences.getInstance();
     final veterinaireId = prefs.getString('veterinaireId');
@@ -172,7 +181,7 @@ class TokenStorage {
         final vetId = decodedToken['veterinaireId'];
         if (vetId != null) {
           print('TokenStorage: Decoded veterinaireId: $vetId');
-          await prefs.setString('veterinaireId', vetId); // Cache for future use
+          await prefs.setString('veterinaireId', vetId);
           return vetId;
         }
         print('TokenStorage: No veterinaireId found in token');
@@ -184,10 +193,5 @@ class TokenStorage {
     }
     print('TokenStorage: No token found for veterinaireId');
     return null;
-  }
-
-  static storeTokens(accessToken, refreshToken) {
-    // Placeholder for storing refresh token if needed
-    print('TokenStorage: storeTokens called with accessToken and refreshToken');
   }
 }

@@ -234,8 +234,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         .where((msg) => msg['content'] != null && msg['content'].toString().trim().isNotEmpty)
         .toList();
 
+    // Sort messages by creation time to ensure proper order
+    messages.sort((a, b) {
+      final aTime = a['createdAt'] as String? ?? '';
+      final bTime = b['createdAt'] as String? ?? '';
+      if (aTime.isEmpty || bTime.isEmpty) return 0;
+
+      try {
+        final aDateTime = DateTime.parse(aTime);
+        final bDateTime = DateTime.parse(bTime);
+        return aDateTime.compareTo(bDateTime); // Oldest first, newest last
+      } catch (e) {
+        return 0;
+      }
+    });
+
     setState(() {
-      _messages = messages.reversed.toList(); // Newest at bottom
+      _messages = messages; // Keep chronological order: oldest at top, newest at bottom
     });
 
     // Auto-scroll to bottom with delay
@@ -261,14 +276,30 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final existingIndex = _messages.indexWhere((m) => m['id'] == messageId);
 
         if (existingIndex == -1) {
+          // Add new message at the end (bottom of the list)
           _messages.add(newMessage);
         } else {
           _messages[existingIndex] = newMessage;
         }
       } else {
-        // Fallback for messages without ID
+        // Fallback for messages without ID - add at the end
         _messages.add(newMessage);
       }
+
+      // Sort messages to maintain chronological order
+      _messages.sort((a, b) {
+        final aTime = a['createdAt'] as String? ?? '';
+        final bTime = b['createdAt'] as String? ?? '';
+        if (aTime.isEmpty || bTime.isEmpty) return 0;
+
+        try {
+          final aDateTime = DateTime.parse(aTime);
+          final bDateTime = DateTime.parse(bTime);
+          return aDateTime.compareTo(bDateTime); // Oldest first, newest last
+        } catch (e) {
+          return 0;
+        }
+      });
     });
 
     // Auto-scroll and mark as read
