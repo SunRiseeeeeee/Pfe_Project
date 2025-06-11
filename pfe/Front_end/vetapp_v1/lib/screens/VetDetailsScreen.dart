@@ -149,46 +149,47 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
   }
 
   void _startConversation() async {
-    if (_userId == null) {
+    if (_userId == null || _userRole == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please log in to start a chat')),
+        const SnackBar(content: Text('Veuillez vous connecter pour démarrer une conversation')),
       );
       return;
     }
 
     setState(() => _isStartingChat = true);
+
     try {
+      // Ensure WebSocket connection
       if (!_chatService.isConnected()) {
         await _chatService.connect(_userId!, _userRole!.toUpperCase());
-        print('Established WebSocket connection for user $_userId');
+        print('WebSocket connected for user $_userId with role: $_userRole');
       }
-      await _chatService.getConversations(_userId!).timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => print('getConversations timed out, proceeding anyway'),
-      );
 
-      final conversation = await _chatService
-          .getOrCreateConversation(
+      // Determine the role
+      final role = _userRole!.toLowerCase();
+      String targetId;
+      String recipientName;
+
+      if (role == 'veterinaire') {
+        // ❗ This part assumes you have a `client` object or selection logic
+        throw Exception("Vétérinaire: client cible manquant pour démarrer la conversation.");
+      } else {
+        // Client or other user starting the conversation with the veterinarian
+        targetId = widget.vet.id;
+        recipientName = 'Dr. ${widget.vet.firstName} ${widget.vet.lastName}'.trim();
+        print('Utilisateur (${_userRole}) démarrant une conversation avec le vétérinaire: $recipientName');
+      }
+
+      // Get or create the conversation
+      final conversation = await _chatService.getOrCreateConversation(
         userId: _userId!,
-        vetId: widget.vet.id,
-      )
-          .timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw Exception('Conversation creation timed out'),
+        targetId: targetId,
       );
 
       final chatId = conversation['chatId'] as String;
       final participants = List<Map<String, dynamic>>.from(conversation['participants'] ?? []);
 
-      participants.forEach((participant) {
-        if (participant['profilePicture'] != null &&
-            (participant['profilePicture'] as String).contains('localhost')) {
-          participant['profilePicture'] = (participant['profilePicture'] as String)
-              .replaceAll('localhost', '192.168.1.16');
-        }
-      });
-
-      print('Navigating to ChatScreen with chatId: $chatId, participants: $participants');
+      print('Conversation trouvée/créée: Chat ID: $chatId, Participants: ${participants.length}');
 
       if (mounted) {
         Navigator.push(
@@ -196,30 +197,23 @@ class _VetDetailsScreenState extends State<VetDetailsScreen> {
           MaterialPageRoute<void>(
             builder: (context) => ChatScreen(
               chatId: chatId,
-              veterinaireId: widget.vet.id,
+              veterinaireId: role == 'veterinaire' ? _userId! : widget.vet.id,
               participants: participants,
-              vetId: '',
-              recipientId: null,
-              recipientName: '',
+              recipientId: targetId,
+              recipientName: recipientName,
             ),
           ),
         );
       }
     } catch (e) {
-      print('Error starting conversation: $e');
+      print('Erreur lors du démarrage de la conversation: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start conversation: ${e.toString()}')),
+          SnackBar(
+            content: Text('Impossible de démarrer la conversation: ${e.toString()}'),
+            duration: const Duration(seconds: 3),
+          ),
         );
-      }
-      if (e.toString().contains('WebSocket')) {
-        _chatService.disconnect();
-        try {
-          await _chatService.connect(_userId!, _userRole!.toUpperCase());
-          print('Reconnected WebSocket after error');
-        } catch (reconnectError) {
-          print('Failed to reconnect WebSocket: $reconnectError');
-        }
       }
     } finally {
       if (mounted) {

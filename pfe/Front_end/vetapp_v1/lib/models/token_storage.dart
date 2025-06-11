@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 
 class TokenStorage {
+  // Existing methods (unchanged)
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('accessToken');
@@ -124,10 +125,18 @@ class TokenStorage {
     await prefs.setString('firstName', firstName);
     await prefs.setString('lastName', lastName);
     try {
-      final username = JwtDecoder.decode(token)['username'];
-      await prefs.setString('username', username);
+      final decodedToken = JwtDecoder.decode(token);
+      final username = decodedToken['username'];
+      if (username != null) {
+        await prefs.setString('username', username);
+      }
+      // Store veterinaireId for secretaries
+      final veterinaireId = decodedToken['veterinaireId'];
+      if (veterinaireId != null) {
+        await prefs.setString('veterinaireId', veterinaireId);
+      }
     } catch (e) {
-      print('TokenStorage: Error saving username from token: $e');
+      print('TokenStorage: Error saving username or veterinaireId from token: $e');
     }
   }
 
@@ -139,7 +148,46 @@ class TokenStorage {
     await prefs.remove('lastName');
     await prefs.remove('username');
     await prefs.remove('email');
+    await prefs.remove('veterinaireId');
   }
 
-  static storeTokens(accessToken, refreshToken) {}
+  // New method to get veterinaireId for secretaries
+  static Future<String?> getVeterinaireId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final veterinaireId = prefs.getString('veterinaireId');
+    if (veterinaireId != null) {
+      print('TokenStorage: Veterinaire ID from SharedPreferences: $veterinaireId');
+      return veterinaireId;
+    }
+
+    final token = await getToken();
+    if (token != null) {
+      try {
+        final decodedToken = JwtDecoder.decode(token);
+        bool hasExpired = JwtDecoder.isExpired(token);
+        if (hasExpired) {
+          print('TokenStorage: Token is expired');
+          return null;
+        }
+        final vetId = decodedToken['veterinaireId'];
+        if (vetId != null) {
+          print('TokenStorage: Decoded veterinaireId: $vetId');
+          await prefs.setString('veterinaireId', vetId); // Cache for future use
+          return vetId;
+        }
+        print('TokenStorage: No veterinaireId found in token');
+        return null;
+      } catch (e) {
+        print('TokenStorage: Error decoding veterinaireId: $e');
+        return null;
+      }
+    }
+    print('TokenStorage: No token found for veterinaireId');
+    return null;
+  }
+
+  static storeTokens(accessToken, refreshToken) {
+    // Placeholder for storing refresh token if needed
+    print('TokenStorage: storeTokens called with accessToken and refreshToken');
+  }
 }
