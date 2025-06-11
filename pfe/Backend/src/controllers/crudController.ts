@@ -6,6 +6,7 @@ import { userUpload } from '../services/userMulterConfig';
 import ReviewRating from "../models/Review";
 import Veterinaire from '../models/User'; // Ajuste le chemin selon ta structure
 import Secretaire from '../models/User'; // Ajuste le chemin selon ta structure
+import bcrypt from 'bcryptjs';
 
 import path from "path";
 import fs from 'fs';
@@ -103,7 +104,7 @@ export const updateUser: ExpressController = async (req, res) => {
       }
 
       // Protection des champs sensibles
-      const protectedFields = ['email', 'role', 'password', 'veterinaireId', 'isActive'];
+      const protectedFields = [ 'role', 'veterinaireId', 'isActive'];
       const invalidUpdate = protectedFields.some(field => field in updateFields);
       
       if (invalidUpdate) {
@@ -136,7 +137,11 @@ export const updateUser: ExpressController = async (req, res) => {
           const tempPath = path.join(__dirname, '..', '..', 'uploads', 'users', req.file.filename);
           if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
         }
-        
+        if (updateFields.password) {
+          const salt = await bcrypt.genSalt(10);
+          updateFields.password = await bcrypt.hash(updateFields.password, salt);
+        }
+
         return sendJsonResponse(res, 404, {
           success: false,
           message: "Utilisateur non trouvé"

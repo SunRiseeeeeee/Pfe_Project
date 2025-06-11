@@ -377,8 +377,6 @@ export class UserService {
     return AuthService.logout(userId);
   }
   //#endregion
-  //#region CRUD Operations
-// Ensure this is the ONLY declaration of createUser
 // Modifiez la méthode createUser comme suit :
 static async createUser(userData: UserCreateData, extraDetails: ExtraDetails = {}): Promise<IUser> {
   try {
