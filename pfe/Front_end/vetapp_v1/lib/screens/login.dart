@@ -300,7 +300,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                         ),
                         const SizedBox(height: 16),
                         const Text(
-                          'VetApp',
+                          'CheeboVet',
                           style: TextStyle(
                             fontSize: 40,
                             fontWeight: FontWeight.bold,

@@ -44,7 +44,7 @@ class LandingPage extends StatelessWidget {
                 const SizedBox(height: 16),
                 // App Title
                 const Text(
-                  'VetApp',
+                  'CheeboVet',
                   style: TextStyle(
                     fontSize: 48,
                     fontWeight: FontWeight.bold,

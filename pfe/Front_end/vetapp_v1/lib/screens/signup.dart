@@ -205,7 +205,7 @@ class _SignUpPageState extends State<SignUpPage> {
               child: Column(
                 children: [
                   const Text(
-                    'VetApp',
+                    'CheeboVet',
                     style: TextStyle(
                       fontSize: 36,
                       fontWeight: FontWeight.bold,
